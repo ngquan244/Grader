@@ -1,0 +1,31 @@
+gradio
+requests
+langgraph
+langchain
+langchain-community
+langchain-ollama
+
+# Notebook execution
+jupyter
+nbconvert
+nbformat
+papermill
+ipykernel
+
+# Image processing for grading
+opencv-python
+pillow
+matplotlib
+
+# Data processing
+pandas
+numpy
+
+# Testing
+pytest
+pytest-cov
+
+# Development
+black
+flake8
+mypy
