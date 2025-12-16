@@ -4,12 +4,22 @@ Notebook execution tool for running Kaggle notebooks locally
 import json
 import subprocess
 import os
-from typing import Optional, Type, Dict, Any
+from typing import Optional, Type, Dict, Any, List
 from pathlib import Path
 from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
 from .config import Config
 from .logger import logger
+import pyodbc
+
+
+SQL_SERVER_CONN_STR = (
+    "Driver={ODBC Driver 17 for SQL Server};"
+    "Server=244-NGUYEN-QUAN\\SQL2022;"
+    "Database=Agent;"
+    "Trusted_Connection=yes;"
+    "Encrypt=no;"
+)
 
 
 class NotebookExecutorInput(BaseModel):
@@ -99,6 +109,12 @@ class NotebookExecutorTool(BaseTool):
                 
                 # Read results from output notebook
                 result = self._extract_results(output_path)
+                try:
+                    if isinstance(result, dict) and "results" in result:
+                        self._save_results_to_db(result["results"])
+                except Exception as db_err:
+                    logger.error(f" Error saving results to DB: {str(db_err)}")
+
                 logger.info(f" Results extracted: {type(result)}")
                 logger.info(f" Result keys: {result.keys() if isinstance(result, dict) else 'N/A'}")
                 
@@ -204,6 +220,69 @@ class NotebookExecutorTool(BaseTool):
     async def _arun(self, notebook_name: str = "grading-timing-mark.ipynb") -> str:
         """Execute tool asynchronously"""
         return self._run(notebook_name)
+
+    def _save_results_to_db(self, results: List[Dict[str, Any]]):
+        """
+        Lưu danh sách kết quả chấm điểm vào SQL Server
+        KHÔNG ảnh hưởng logic chính
+        """
+        if not results:
+            return
+
+        conn = pyodbc.connect(SQL_SERVER_CONN_STR)
+        cursor = conn.cursor()
+
+        sql = """
+        MERGE dbo.FinalExamResult AS target
+        USING (
+            SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        ) AS source (
+            student_id, name, email, student_code, exam_code,
+            total_questions, correct, wrong, blank, score
+        )
+        ON target.student_id = source.student_id
+        AND target.exam_code = source.exam_code
+
+        WHEN MATCHED THEN
+            UPDATE SET
+                name = source.name,
+                email = source.email,
+                student_code = source.student_code,
+                total_questions = source.total_questions,
+                correct = source.correct,
+                wrong = source.wrong,
+                blank = source.blank,
+                score = source.score
+
+        WHEN NOT MATCHED THEN
+            INSERT (
+                student_id, name, email, student_code, exam_code,
+                total_questions, correct, wrong, blank, score
+            )
+            VALUES (
+                source.student_id, source.name, source.email, source.student_code, source.exam_code,
+                source.total_questions, source.correct, source.wrong, source.blank, source.score
+            );
+        """
+
+        for r in results:
+            cursor.execute(
+                sql,
+                r.get("student_id"),
+                r.get("name"),
+                r.get("email"),
+                r.get("student_code"),
+                r.get("exam_code"),
+                int(r.get("total_questions", 0)),
+                int(r.get("correct", 0)),
+                int(r.get("wrong", 0)),
+                int(r.get("blank", 0)),
+                float(r.get("score", 0))
+            )
+
+        conn.commit()
+        cursor.close()
+        conn.close()
 
 
 # Add to tools registry
