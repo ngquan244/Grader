@@ -4,6 +4,8 @@ langgraph
 langchain
 langchain-community
 langchain-ollama
+pdfplumber
+ollama
 
 # Notebook execution
 jupyter
