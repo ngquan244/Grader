@@ -1,6 +1,3 @@
-"""
-Main entry point for the Teaching Assistant Grader application
-"""
 import sys
 from src.ui import create_ui
 

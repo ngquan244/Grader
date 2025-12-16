@@ -159,7 +159,7 @@ def create_ui():
         with gr.Tabs():
             # Tab 1: Grading System
             with gr.Tab("Chấm Điểm Tự Động"):
-                # Main content: Chat bên trái, Upload bên phải
+                # Main content: Chat bên trái, Upload bên phải (image & PDF side by side, reduced width)
                 with gr.Row():
                     # Chat Section - bên trái (nhỏ hơn)
                     with gr.Column(scale=3):
@@ -170,23 +170,39 @@ def create_ui():
                             show_label=True,
                             elem_classes="chatbot"
                         )
-                    
-                    # Image Upload Section - bên phải
+                    # Upload Section - bên phải (image & PDF side by side, both compact)
                     with gr.Column(scale=2):
-                        with gr.Group(elem_classes="upload-card"):
-                            gr.Markdown("###  Upload Ảnh Bài Thi")
-                            image_upload = gr.File(
-                                label="Chọn ảnh bài thi (có thể chọn nhiều ảnh)",
-                                file_count="multiple",
-                                file_types=["image"],
-                                type="filepath"
-                            )
-                            upload_status = gr.Textbox(
-                                label="Trạng thái",
-                                value=" Chưa upload ảnh nào",
-                                interactive=False,
-                                elem_classes="status-display"
-                            )
+                        with gr.Row():
+                            with gr.Column(scale=1, min_width=120, elem_id="image-upload-col"):
+                                with gr.Group(elem_classes="upload-card"):
+                                    gr.Markdown("###  Upload Ảnh Bài Thi")
+                                    image_upload = gr.File(
+                                        label="Chọn ảnh bài thi (có thể chọn nhiều ảnh)",
+                                        file_count="multiple",
+                                        file_types=["image"],
+                                        type="filepath"
+                                    )
+                                    upload_status = gr.Textbox(
+                                        label="Trạng thái",
+                                        value=" Chưa upload ảnh nào",
+                                        interactive=False,
+                                        elem_classes="status-display"
+                                    )
+                            with gr.Column(scale=1, min_width=120, elem_id="pdf-upload-col"):
+                                with gr.Group(elem_classes="upload-card"):
+                                    gr.Markdown("###  Upload PDF Đề Thi")
+                                    exam_pdf_upload = gr.File(
+                                        label="Chọn file PDF đề thi (1 file)",
+                                        file_count="single",
+                                        file_types=[".pdf"],
+                                        type="filepath"
+                                    )
+                                    exam_pdf_status = gr.Textbox(
+                                        label="Trạng thái PDF",
+                                        value=" Chưa upload PDF đề thi",
+                                        interactive=False,
+                                        elem_classes="status-display"
+                                    )
                 
                 # Message Input Section
                 with gr.Row():
@@ -299,25 +315,25 @@ def create_ui():
                             label=" Số câu hỏi trong quiz",
                             info="Chọn số lượng câu hỏi muốn tạo"
                         )
-                        btn_generate_quiz = gr.Button("✨ Tạo Quiz & Tạo Link", variant="primary", size="lg")
+                        btn_generate_quiz = gr.Button(" Tạo Quiz & Tạo Link", variant="primary", size="lg")
                         
                         quiz_file_path = gr.Textbox(
-                            label="📎 Đường dẫn file Quiz",
+                            label="Đường dẫn file Quiz",
                             placeholder="File quiz sẽ được tạo sau khi bạn nhấn nút trên",
                             interactive=False
                         )
                         
-                        quiz_output = gr.HTML(
-                            label=" Xem Trước Quiz",
-                            value="<div style='padding:40px; text-align:center; color:#666;'>Chưa có quiz. Hãy upload PDF và tạo quiz.</div>"
-                        )
+                        # quiz_output = gr.HTML(
+                        #     label=" Xem Trước Quiz",
+                        #     value="<div style='padding:40px; text-align:center; color:#666;'>Chưa có quiz. Hãy upload PDF và tạo quiz.</div>"
+                        # )
                         
                         gr.Markdown("---")
-                        gr.Markdown("###  Quiz Online - URL Live")
+                        gr.Markdown("###  Quiz Link")
                         
                         quiz_link_display = gr.HTML(
                             value="<div style='padding: 20px; background: #f0f0f0; border-radius: 10px; text-align: center; color: #666;'>Link sẽ hiển thị sau khi tạo quiz...</div>",
-                            label=" Link Quiz Online"
+                            label=" Link Quiz"
                         )
                         
                         with gr.Row():
@@ -338,12 +354,9 @@ def create_ui():
                                 <li>Nhấn <strong>" Tạo File Quiz HTML"</strong></li>
                                 <li><strong>Copy đường dẫn</strong> file HTML từ ô "Link Quiz Online"</li>
                                 <li>Dán vào trình duyệt hoặc <strong>gửi file cho sinh viên</strong></li>
-                                <li>Sinh viên mở file HTML → Điền thông tin → Làm bài</li>
-                                <li>Kết quả tự động lưu vào <code>quiz-gen/quiz_results/</code></li>
+                                <li>Sinh viên mở file HTML --> Điền thông tin --> Làm bài</li>
                             </ol>
-                            <p style='color:#155724; margin-top:15px; font-weight:bold;'>
-                                 Link có hiệu lực 72 giờ |  Mỗi quiz có link riêng biệt
-                            </p>
+                            
                         </div>
                         """)
 
@@ -455,39 +468,24 @@ def create_ui():
                 ui_logger.info(f"Đã tạo file HTML: {html_path}")
                 
                 # Return both status and file path
-                status = f" Quiz HTML đã sẵn sàng!\n\n Quiz: {latest_quiz_id}\n Số câu: {len(questions)}\n\n Mở file HTML bằng trình duyệt để làm bài"
+                status = f" Quiz HTML đã sẵn sàng!\n\n Quiz: {latest_quiz_id}\n Số câu: {len(questions)}\n\n Mở link bằng trình duyệt để làm bài"
                 file_url = f"file:///{str(html_path).replace(chr(92), '/')}"
                 
                 # Create clickable HTML link
                 link_html = f"""
-                <div style="padding: 25px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                            border-radius: 15px; text-align: center;">
-                    <h3 style="color: white; margin-bottom: 15px;"> Link Quiz HTML</h3>
-                    <a href="{file_url}" target="_blank" 
-                       style="display: inline-block; padding: 15px 40px; background: white; 
-                              color: #667eea; text-decoration: none; border-radius: 10px; 
-                              font-weight: bold; font-size: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-                              transition: all 0.3s;"
-                       onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 6px 20px rgba(0,0,0,0.3)';"
-                       onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 4px 15px rgba(0,0,0,0.2)';">
-                         Mở Quiz HTML
-                    </a>
-                    <div style="margin-top: 20px; padding: 15px; background: rgba(255,255,255,0.2); 
-                                border-radius: 10px;">
-                        <p style="color: white; font-size: 14px; margin-bottom: 8px;">
-                            <strong>File:</strong> {html_path.name}
-                        </p>
-                        <p style="color: white; font-size: 12px; word-break: break-all;">
-                            {file_url}
-                        </p>
+                <div style="padding: 32px 24px; background: linear-gradient(120deg, #6a82fb 0%, #fc5c7d 100%); border-radius: 18px; text-align: center; box-shadow: 0 8px 32px rgba(102,126,234,0.18); position: relative; overflow: hidden;">
+                    <div style='position:absolute;top:-30px;right:-30px;opacity:0.12;font-size:120px;pointer-events:none;'></div>
+                    <h2 style="color: #fff; margin-bottom: 18px; font-size: 2rem; letter-spacing: 1px; font-weight: 800; text-shadow: 0 2px 12px #764ba2; display: flex; align-items: center; justify-content: center; gap: 12px;">
+                        <span style='font-size:2.2rem;'></span> Link Quiz
+                    </h2>
+                    <!-- Button mở quiz link đã bị loại bỏ do hạn chế bảo mật trình duyệt với file:// -->
+                    <div style="margin-top: 22px; padding: 16px; background: rgba(255,255,255,0.22); border-radius: 12px; display: flex; flex-direction: column; align-items: center; gap: 8px;">
+                        <div style="display: flex; align-items: center; gap: 8px; width: 100%; justify-content: center;">
+                            <input id="quizLinkInput" type="text" value="{file_url}" readonly style="width: 70%; padding: 7px 10px; border-radius: 6px; border: none; font-size: 0.98em; background: rgba(255,255,255,0.7); color: #764ba2; font-weight: 600; outline: none; margin-right: 4px;" />
+                            <button onclick="navigator.clipboard.writeText(document.getElementById('quizLinkInput').value);this.innerText='Đã copy!';setTimeout(()=>this.innerText='Copy link',1200);" style="padding: 7px 18px; border-radius: 6px; border: none; background: #764ba2; color: #fff; font-weight: 700; font-size: 1em; cursor: pointer; transition: background 0.2s;">Copy link</button>
+                        </div>
                     </div>
-                    <div style="margin-top: 15px; padding: 12px; background: rgba(255,255,255,0.15); 
-                                border-radius: 8px;">
-                        <p style="color: white; font-size: 13px;">
-                             <strong>Cách chia sẻ:</strong> Gửi file <code style="background: rgba(0,0,0,0.2); 
-                            padding: 2px 6px; border-radius: 4px;">{html_path.name}</code> cho sinh viên
-                        </p>
-                    </div>
+                    
                 </div>
                 """
                 
@@ -605,7 +603,7 @@ def create_ui():
         def generate_quiz_link(num_questions, cache):
             """Generate quiz HTML content and save quiz data for sharing"""
             if not cache:
-                return "<div style='color:red; padding:20px;'>❌ Bạn cần upload PDF trước.</div>", ""
+                return "<div style='color:red; padding:20px;'> Bạn cần upload PDF trước.</div>", ""
             
             quiz_list = random.sample(cache, min(num_questions, len(cache)))
             
@@ -808,30 +806,72 @@ def create_ui():
             with open(quiz_file, 'w', encoding='utf-8') as f:
                 f.write(full_html)
             
-            # Create preview HTML for display  
-            preview_html = f"""
-            <div style='padding:25px; background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                        border-radius:15px; margin-bottom:20px; color:white;'>
-                <h2 style='margin:0 0 20px 0;'> Quiz Đã Được Tạo Thành Công!</h2>
-                <div style='background:rgba(255,255,255,0.2); padding:20px; border-radius:10px; margin-bottom:15px;'>
-                    <p style='margin:5px 0; font-size:16px;'><strong> Quiz ID:</strong> {quiz_id}</p>
-                    <p style='margin:5px 0; font-size:16px;'><strong> Số câu:</strong> {len(quiz_list)} câu</p>
-                    <p style='margin:5px 0; font-size:16px;'><strong> Thời gian tạo:</strong> {timestamp}</p>
-                </div>
-            </div>
+            # # Create preview HTML for display  
+            # preview_html = f"""
+            # <div style='padding:25px; background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            #             border-radius:15px; margin-bottom:20px; color:white;'>
+            #     <h2 style='margin:0 0 20px 0;'> Quiz Đã Được Tạo Thành Công!</h2>
+            #     <div style='background:rgba(255,255,255,0.2); padding:20px; border-radius:10px; margin-bottom:15px;'>
+            #         <p style='margin:5px 0; font-size:16px;'><strong> Quiz ID:</strong> {quiz_id}</p>
+            #         <p style='margin:5px 0; font-size:16px;'><strong> Số câu:</strong> {len(quiz_list)} câu</p>
+            #         <p style='margin:5px 0; font-size:16px;'><strong> Thời gian tạo:</strong> {timestamp}</p>
+            #     </div>
+            # </div>
             
-            <div style='padding:20px; background:#f8f9fa; border-radius:10px;'>
-                <h4 style='color:#333; margin-top:0;'> Xem Trước Quiz</h4>
-                <iframe src="file:///{quiz_file}" width="100%" height="600px" 
-                        style="border:2px solid #ddd; border-radius:10px; background:white;"></iframe>
-            </div>
-            """
+            # <div style='padding:20px; background:#f8f9fa; border-radius:10px;'>
+            #     <h4 style='color:#333; margin-top:0;'> Xem Trước Quiz</h4>
+            #     <iframe src="file:///{quiz_file}" width="100%" height="600px" 
+            #             style="border:2px solid #ddd; border-radius:10px; background:white;"></iframe>
+            # </div>
+            # """
             
             # Generate quiz link - just use current Gradio app with query parameter
             # The quiz will be accessible via the main app's share link + ?quiz=quiz_id
-            quiz_link_text = f" Quiz ID: {quiz_id}\n\n Để truy cập online:\n1. Chia sẻ link Gradio share của app này\n2. Thêm ?__theme=light vào cuối URL\n3. Sinh viên vào Tab 'Làm Quiz Online'\n4. Chọn quiz {quiz_id} và làm bài\n\n💾 File HTML: {quiz_file}"
+            quiz_link_text = f'''
+<div style="background: linear-gradient(135deg, #e0eafc 0%, #cfdef3 100%); border-radius: 16px; border: 2px solid #667eea; padding: 28px 28px 18px 28px; margin: 0 0 10px 0; box-shadow: 0 4px 18px rgba(102,126,234,0.10);">
+    <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 10px;">
+        <span style="font-size: 2.2rem;"></span>
+        <span style="font-size: 1.3rem; color: #4b5fa7; font-weight: 700; letter-spacing: 1px;">Quiz {quiz_id} ĐÃ SẴN SÀNG!</span>
+    </div>
+   
+    <ol style="margin: 0 0 12px 18px; color: #333; font-size: 1rem;">
+       
+        <li>Nhấn Tạo File Quiz HTML để tạo <b>{quiz_id}</b> và làm bài</li>
+    </ol>
+    <div style="background: #f8f9fa; border-radius: 8px; padding: 12px 16px; margin-bottom: 10px; border: 1px solid #d1d5db; display: flex; align-items: center; gap: 10px;">
+        <span style="color: #333; font-size: 1rem;">File HTML Quiz: <b>{quiz_file.name}</b></span>
+    </div>
+    
+</div>
+'''
             
-            return preview_html, quiz_link_text
+            return "", quiz_link_text
+
+
+        # Custom handler: When exam PDF is uploaded, replace the target file
+        def handle_exam_pdf_upload(files):
+            if not files:
+                return " Chưa upload PDF đề thi"
+            try:
+                # Gradio File returns a string path or a tempfile object with .name
+                if isinstance(files, list):
+                    file_obj = files[0] if files else None
+                else:
+                    file_obj = files
+                if file_obj is None:
+                    return " Không tìm thấy file PDF"
+                # If file_obj is a string, use directly; if it has .name, use .name
+                src_path = getattr(file_obj, 'name', file_obj)
+                if not src_path or not Path(src_path).exists():
+                    return " Không tìm thấy file PDF hợp lệ"
+                dest_path = Config.PROJECT_ROOT / "data" / "quiz" / "Đề thi Xử lý ảnh kỳ 2 năm học 2022-2023 - UET.pdf"
+                dest_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src_path, dest_path)
+                ui_logger.info(f"Đã thay thế file PDF đề thi: {dest_path}")
+                return f" Đã upload và thay thế file PDF đề thi!"
+            except Exception as e:
+                ui_logger.error(f"Lỗi upload PDF đề thi: {str(e)}")
+                return f" Lỗi upload PDF: {str(e)}"
 
         # Event handlers - Grading System
         image_upload.change(
@@ -839,7 +879,11 @@ def create_ui():
             [image_upload],
             [upload_status]
         )
-        
+        exam_pdf_upload.change(
+            handle_exam_pdf_upload,
+            [exam_pdf_upload],
+            [exam_pdf_status]
+        )
         msg.submit(
             user_submit,
             [msg, chat_history, model_selector, max_iterations],
@@ -855,20 +899,17 @@ def create_ui():
             None,
             [chatbox, chat_history, iterations_display, tools_display]
         )
-        
         # Event handlers - Quiz Generator
         btn_extract.click(
             handle_pdf_upload_quiz,
             [pdf_input, questions_cache],
             [pdf_status, total_questions_display, questions_cache]
         )
-        
         btn_generate_quiz.click(
             generate_quiz_link,
             [num_questions_slider, questions_cache],
-            [quiz_output, quiz_link_display]
+            [quiz_link_display]
         )
-        
         btn_start_quiz_server.click(
             start_quiz_server_for_latest,
             [],
