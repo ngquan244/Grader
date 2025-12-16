@@ -12,11 +12,20 @@ from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
 from .notebook_tool import get_notebook_tool
 from .config import Config
+from .config import Config
+
+receiver = Config.EMAIL_RECEIVER
+user = Config.EMAIL_USER
+password = Config.EMAIL_PASSWORD
 import pyodbc
 from typing import List, Dict, Any
 from openpyxl import Workbook
 from openpyxl.styles import Font
 import datetime
+import yagmail
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 SQL_SERVER_CONN_STR = (
@@ -453,6 +462,7 @@ class ExamSummaryInput(BaseModel):
     )
 
 
+
 class ExamResultSummaryTool(BaseTool):
     """
     Tool tổng hợp kết quả bài thi theo mã đề
@@ -475,9 +485,11 @@ class ExamResultSummaryTool(BaseTool):
        - Điểm trung bình, cao nhất, thấp nhất
        - Đánh giá tổng quan kết quả bài thi
        - File Excel tổng hợp
+       - Gửi email file Excel đến địa chỉ cố định
     """
 
     args_schema: Type[BaseModel] = ExamSummaryInput
+
 
     def _run(self, exam_code: str) -> str:
         try:
@@ -538,6 +550,21 @@ class ExamResultSummaryTool(BaseTool):
                 results=results
             )
 
+            # Gửi email cố định
+            subject = f"Kết quả tổng hợp mã đề {exam_code}"
+            body = f"Đính kèm file Excel tổng hợp kết quả bài thi mã đề {exam_code}."
+            sent = self._send_excel_email(
+                file_path=excel_file,
+                to_email=Config.EMAIL_RECEIVER,
+                subject=subject,
+                body=body
+            )
+            if sent:
+                logger.info(f"File Excel đã được gửi đến {Config.EMAIL_RECEIVER}")
+            else:
+                logger.warning(f"Không thể gửi file Excel đến {Config.EMAIL_RECEIVER}")
+
+            
             cursor.close()
             conn.close()
 
@@ -579,6 +606,25 @@ class ExamResultSummaryTool(BaseTool):
             return "Kết quả ở mức trung bình, nhiều sinh viên còn hổng kiến thức."
         else:
             return "Kết quả thấp, cần xem lại đề thi hoặc phương pháp giảng dạy."
+    
+    def _send_excel_email(self, file_path: str, to_email: str, subject: str, body: str):
+        """
+        Gửi file Excel qua email
+        """
+        try:
+            # Config tài khoản gửi email (có thể lưu ở Config)
+            yag = yagmail.SMTP(user=Config.EMAIL_USER, password=Config.EMAIL_PASSWORD)
+            yag.send(
+                to=to_email,
+                subject=subject,
+                contents=body,
+                attachments=file_path
+            )
+            logger.info(f"Excel file sent to {to_email}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to send email: {str(e)}")
+            return False    
 
     def _export_to_excel(
         self,
