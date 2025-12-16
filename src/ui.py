@@ -506,10 +506,10 @@ def create_ui():
         def generate_standalone_quiz_html(quiz_id, questions):
             """Generate complete standalone HTML file"""
             html = f"""<!DOCTYPE html>
-<html lang="vi">
+<html lang=\"vi\">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset=\"UTF-8\">
+    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
     <title> {quiz_id}</title>
     <style>
         * {{ box-sizing: border-box; margin: 0; padding: 0; }}
@@ -553,162 +553,22 @@ def create_ui():
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1> Bài Kiểm Tra Trực Tuyến</h1>
-            <p style="font-size: 18px; margin-top: 10px;">Quiz ID: {quiz_id}</p>
-        </div>
-        <div class="content">
-            <div class="student-form" id="studentForm">
-                <h3 style="margin-bottom: 25px; color: #667eea; font-size: 24px;">👤 Thông Tin Sinh Viên</h3>
-                <div class="form-group">
-                    <label>Họ và Tên *</label>
-                    <input type="text" id="studentName" placeholder="Nhập họ tên đầy đủ" required>
-                </div>
-                <div class="form-group">
-                    <label>Mã Sinh Viên *</label>
-                    <input type="text" id="studentId" placeholder="Nhập mã sinh viên" required>
-                </div>
-                <div class="form-group">
-                    <label>Email *</label>
-                    <input type="email" id="studentEmail" placeholder="example@email.com" required>
-                </div>
-                <button onclick="startQuiz()" class="submit-btn">▶ Bắt Đầu Làm Bài</button>
-            </div>
-            
-            <div class="info-display" id="infoDisplay"></div>
-            
-            <div id="quizContent" style="display: none;">
-                <div style="background: #fff3cd; padding: 15px; border-radius: 10px; margin-bottom: 20px; 
-                            border-left: 5px solid #ffc107; text-align: center;">
-                    <h4 style="color: #856404; margin-bottom: 10px;"> Thời gian làm bài</h4>
-                    <div id="timer" style="font-size: 32px; font-weight: bold; color: #856404;">05:00</div>
-                    <p style="color: #856404; margin-top: 10px; font-size: 14px;">
-                         Bài thi sẽ tự động nộp khi hết giờ
-                    </p>
-                </div>
-                <h3 style="color: #667eea; margin-bottom: 30px; font-size: 24px;"> Câu Hỏi ({len(questions)} câu)</h3>
-"""
+    <div class=\"container\">\n        <div class=\"header\">\n            <h1> Bài Kiểm Tra Trực Tuyến</h1>\n            <p style=\"font-size: 18px; margin-top: 10px;\">Quiz ID: {quiz_id}</p>\n        </div>\n        <div class=\"content\">\n            <div class=\"student-form\" id=\"studentForm\">\n                <h3 style=\"margin-bottom: 25px; color: #667eea; font-size: 24px;\">Thông Tin Sinh Viên</h3>\n                <div class=\"form-group\">\n                    <label>Họ và Tên *</label>\n                    <input type=\"text\" id=\"studentName\" placeholder=\"Nhập họ tên đầy đủ\" required>\n                </div>\n                <div class=\"form-group\">\n                    <label>Mã Sinh Viên *</label>\n                    <input type=\"text\" id=\"studentId\" placeholder=\"Nhập mã sinh viên\" required>\n                </div>\n                <div class=\"form-group\">\n                    <label>Email *</label>\n                    <input type=\"email\" id=\"studentEmail\" placeholder=\"example@email.com\" required>\n                </div>\n                <button onclick=\"startQuiz()\" class=\"submit-btn\">Bắt Đầu Làm Bài</button>\n            </div>\n            <div class=\"info-display\" id=\"infoDisplay\"></div>\n            <div id=\"quizContent\" style=\"display: none;\">\n                <h3 style=\"color: #667eea; margin-bottom: 30px; font-size: 24px;\"> Câu Hỏi ({len(questions)} câu)</h3>\n"""
             
             # Add questions
             for i, q in enumerate(questions, start=1):
                 html += f"""
-                <div class="question-card">
-                    <div class="question-text">Câu {i}: {q['question']}</div>
-"""
+                <div class=\"question-card\">\n                    <div class=\"question-text\">Câu {i}: {q['question']}</div>\n"""
                 for letter, text in q['options'].items():
                     html += f"""
-                    <label class="option-label">
-                        <input type="radio" name="q{i}" value="{letter}" 
-                               data-correct="{q['correct']['letter']}" 
-                               onclick="checkAnswer(this, {i})">
-                        {letter}. {text}
-                    </label>
-"""
+                    <label class=\"option-label\">\n                        <input type=\"radio\" name=\"q{i}\" value=\"{letter}\" 
+                               data-correct=\"{q['correct']['letter']}\" 
+                               onclick=\"checkAnswer(this, {i})\">\n                        {letter}. {text}\n                    </label>\n"""
                 html += f"""
-                    <div id="result{i}" class="result"></div>
-                </div>
-"""
+                    <div id=\"result{i}\" class=\"result\"></div>\n                </div>\n"""
             
             html += f"""
-                <button onclick="submitQuiz()" class="submit-btn"> Nộp Bài</button>
-                <div class="score-panel" id="scorePanel">
-                    <h3> KẾT QUẢ</h3>
-                    <h2 id="scoreText"></h2>
-                    <p id="scoreDetail" style="font-size: 18px; margin-top: 10px;"></p>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <script>
-        let studentInfo = {{}};
-        let answers = {{}};
-        const totalQuestions = {len(questions)};
-        
-        function startQuiz() {{
-            const name = document.getElementById('studentName').value.trim();
-            const id = document.getElementById('studentId').value.trim();
-            const email = document.getElementById('studentEmail').value.trim();
-            
-            if (!name || !id || !email) {{
-                alert('❌ Vui lòng điền đầy đủ thông tin!');
-                return;
-            }}
-            
-            studentInfo = {{ name, id, email }};
-            
-            document.getElementById('studentForm').style.display = 'none';
-            document.getElementById('infoDisplay').style.display = 'block';
-            document.getElementById('infoDisplay').innerHTML = `
-                <h4 style="margin-bottom: 15px; color: #667eea;">👤 Thông tin của bạn:</h4>
-                <p><strong>Họ tên:</strong> ${{name}}</p>
-                <p><strong>MSSV:</strong> ${{id}}</p>
-                <p><strong>Email:</strong> ${{email}}</p>
-            `;
-            document.getElementById('quizContent').style.display = 'block';
-            
-            window.scrollTo({{ top: 0, behavior: 'smooth' }});
-        }}
-        
-        function checkAnswer(radio, questionNum) {{
-            const correct = radio.getAttribute('data-correct');
-            const result = document.getElementById('result' + questionNum);
-            const labels = radio.parentNode.parentNode.querySelectorAll('.option-label');
-            
-            labels.forEach(l => {{
-                l.style.background = '';
-                l.style.borderColor = '#ddd';
-            }});
-            
-            result.style.display = 'block';
-            
-            if(radio.value === correct) {{
-                radio.parentNode.style.background = '#d4edda';
-                radio.parentNode.style.borderColor = '#28a745';
-                result.innerHTML = '<span style="color:green;"> Chính xác!</span>';
-                result.style.background = '#d4edda';
-                result.style.color = '#155724';
-                answers[questionNum] = true;
-            }} else {{
-                radio.parentNode.style.background = '#f8d7da';
-                radio.parentNode.style.borderColor = '#dc3545';
-                result.innerHTML = '<span style="color:red;"> Sai rồi! Đáp án đúng: ' + correct + '</span>';
-                result.style.background = '#f8d7da';
-                result.style.color = '#721c24';
-                answers[questionNum] = false;
-            }}
-        }}
-        
-        function submitQuiz() {{
-            const answeredCount = Object.keys(answers).length;
-            if (answeredCount < totalQuestions) {{
-                if (!confirm(`Bạn mới trả lời ${{answeredCount}}/${{totalQuestions}} câu. Bạn có chắc muốn nộp bài?`)) {{
-                    return;
-                }}
-            }}
-            
-            const correctCount = Object.values(answers).filter(a => a === true).length;
-            const score = ((correctCount / totalQuestions) * 100).toFixed(1);
-            
-            document.getElementById('scoreText').textContent = score + ' điểm';
-            document.getElementById('scoreDetail').textContent = 
-                `Đúng ${{correctCount}}/${{totalQuestions}} câu`;
-            document.getElementById('scorePanel').style.display = 'block';
-            
-            window.scrollTo({{ top: document.getElementById('scorePanel').offsetTop - 100, behavior: 'smooth' }});
-            
-            console.log('Kết quả:', {{
-                ...studentInfo,
-                score: score,
-                correct: correctCount,
-                total: totalQuestions,
-                quizId: '{quiz_id}'
-            }});
-        }}
-    </script>
-</body>
-</html>"""
+                <button onclick=\"submitQuiz()\" class=\"submit-btn\"> Nộp Bài</button>\n                <div class=\"score-panel\" id=\"scorePanel\">\n                    <h3> KẾT QUẢ</h3>\n                    <h2 id=\"scoreText\"></h2>\n                    <p id=\"scoreDetail\" style=\"font-size: 18px; margin-top: 10px;\"></p>\n                </div>\n            </div>\n        </div>\n    </div>\n    <script>\n        let studentInfo = {{}};\n        let answers = {{}};\n        const totalQuestions = {len(questions)};\n        function startQuiz() {{\n            const name = document.getElementById('studentName').value.trim();\n            const id = document.getElementById('studentId').value.trim();\n            const email = document.getElementById('studentEmail').value.trim();\n            if (!name || !id || !email) {{\n                alert(' Vui lòng điền đầy đủ thông tin!');\n                return;\n            }}\n            studentInfo = {{ name, id, email }};\n            document.getElementById('studentForm').style.display = 'none';\n            document.getElementById('infoDisplay').style.display = 'block';\n            document.getElementById('infoDisplay').innerHTML = `\n                <h4 style=\"margin-bottom: 15px; color: #667eea;\">Thông tin của bạn:</h4>\n                <p><strong>Họ tên:</strong> ${{name}}</p>\n                <p><strong>MSSV:</strong> ${{id}}</p>\n                <p><strong>Email:</strong> ${{email}}</p>\n            `;\n            document.getElementById('quizContent').style.display = 'block';\n            window.scrollTo({{ top: 0, behavior: 'smooth' }});\n        }}\n        function checkAnswer(radio, questionNum) {{\n            const correct = radio.getAttribute('data-correct');\n            const result = document.getElementById('result' + questionNum);\n            const labels = radio.parentNode.parentNode.querySelectorAll('.option-label');\n            labels.forEach(l => {{\n                l.style.background = '';\n                l.style.borderColor = '#ddd';\n            }});\n            // Không hiển thị kết quả đúng/sai cho học sinh\n            result.style.display = 'none';\n            if(radio.value === correct) {{\n                radio.parentNode.style.background = '#d4edda';\n                radio.parentNode.style.borderColor = '#28a745';\n                answers[questionNum] = true;\n            }} else {{\n                radio.parentNode.style.background = '#f8d7da';\n                radio.parentNode.style.borderColor = '#dc3545';\n                answers[questionNum] = false;\n            }}\n        }}\n        function submitQuiz() {{\n            let correctCount = 0;\n            let answeredCount = 0;\n            // Duyệt qua tất cả các câu hỏi\n            for (let i = 1; i <= totalQuestions; i++) {{\n                const radios = document.getElementsByName('q' + i);\n                let selected = null;\n                let correct = null;\n                for (let r of radios) {{\n                    if (r.checked) selected = r.value;\n                    correct = r.getAttribute('data-correct');\n                }}\n                if (selected !== null) {{\n                    answeredCount++;\n                    if (selected === correct) correctCount++;\n                }}\n            }}\n            if (answeredCount < totalQuestions) {{\n                if (!confirm(`Bạn mới trả lời ${{answeredCount}}/${{totalQuestions}} câu. Bạn có chắc muốn nộp bài?`)) {{\n                    return;\n                }}\n            }}\n            // Tính điểm trên thang 10\n            const score = ((correctCount / totalQuestions) * 10).toFixed(1);\n            document.getElementById('scoreText').textContent = score + ' điểm';\n            document.getElementById('scoreDetail').textContent = \n                `Đúng ${{correctCount}}/${{totalQuestions}} câu`;\n            document.getElementById('scorePanel').style.display = 'block';\n            window.scrollTo({{ top: document.getElementById('scorePanel').offsetTop - 100, behavior: 'smooth' }});\n            console.log('Kết quả:', {{\n                ...studentInfo,\n                score: score,\n                correct: correctCount,\n                total: totalQuestions,\n                quizId: '{quiz_id}'\n            }});\n        }}\n    </script>\n</body>\n</html>"""
             
             return html
         

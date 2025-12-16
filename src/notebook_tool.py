@@ -150,8 +150,8 @@ class NotebookExecutorTool(BaseTool):
         try:
             logger.info(f" Extracting results from: {output_path}")
             
-            # Try to find final_result.json in kaggle directory
-            result_file = Config.PROJECT_ROOT / "kaggle" / "final_result.json"
+            # Try to find final_result.json in project root directory
+            result_file = Config.PROJECT_ROOT / "final_result.json"
             logger.info(f" Looking for result file: {result_file}")
             logger.info(f" Result file exists: {result_file.exists()}")
             
