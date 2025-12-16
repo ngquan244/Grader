@@ -12,6 +12,16 @@ from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
 from .notebook_tool import get_notebook_tool
 from .config import Config
+import pyodbc
+from typing import List, Dict, Any
+
+SQL_SERVER_CONN_STR = (
+    "Driver={ODBC Driver 17 for SQL Server};"
+    "Server=244-NGUYEN-QUAN\\SQL2022;"
+    "Database=Agent;"
+    "Trusted_Connection=yes;"
+    "Encrypt=no;"
+)
 
 # Import quiz-gen utilities
 sys.path.append(str(Path(__file__).parent.parent / "quiz-gen"))
@@ -417,6 +427,148 @@ class QuizGeneratorTool(BaseTool):
         """Execute tool asynchronously"""
         return self._run(num_questions)
 
+from typing import Type, List, Dict, Any
+from langchain.tools import BaseTool
+from pydantic import BaseModel, Field
+import pyodbc
+import json
+from .logger import logger
+
+SQL_SERVER_CONN_STR = (
+    "Driver={ODBC Driver 17 for SQL Server};"
+    "Server=244-NGUYEN-QUAN\\SQL2022;"
+    "Database=Agent;"
+    "Trusted_Connection=yes;"
+    "Encrypt=no;"
+)
+
+
+class ExamSummaryInput(BaseModel):
+    exam_code: str = Field(
+        description="Mã đề thi cần tổng hợp (ví dụ: 000)"
+    )
+
+
+class ExamResultSummaryTool(BaseTool):
+    """
+    Tool tổng hợp kết quả bài thi theo mã đề
+    """
+
+    name: str = "summarize_exam_results"
+    description: str = """
+    Tổng hợp kết quả chấm điểm từ bảng FinalExamResult theo mã đề thi.
+
+    Sử dụng khi người dùng yêu cầu:
+    - Tổng hợp kết quả mã đề
+    - Thống kê điểm bài thi
+    - Xem kết quả toàn bộ sinh viên theo mã đề
+
+    Tool sẽ:
+    1. Query các cột cần thiết:
+       - student_id, name, email, exam_code, score
+    2. Trả về:
+       - Danh sách sinh viên
+       - Điểm trung bình, cao nhất, thấp nhất
+       - Đánh giá tổng quan kết quả bài thi
+    """
+
+    args_schema: Type[BaseModel] = ExamSummaryInput
+
+    def _run(self, exam_code: str) -> str:
+        try:
+            logger.info(f" Summarizing results for exam_code={exam_code}")
+
+            conn = pyodbc.connect(SQL_SERVER_CONN_STR)
+            cursor = conn.cursor()
+
+            sql = """
+            SELECT
+                student_id,
+                name,
+                email,
+                exam_code,
+                score
+            FROM dbo.FinalExamResult
+            WHERE exam_code = ?
+            ORDER BY score DESC
+            """
+
+            cursor.execute(sql, exam_code)
+            rows = cursor.fetchall()
+
+            if not rows:
+                return json.dumps({
+                    "exam_code": exam_code,
+                    "message": "Không tìm thấy kết quả cho mã đề này"
+                }, ensure_ascii=False, indent=2)
+
+            results: List[Dict[str, Any]] = []
+            scores = []
+
+            for r in rows:
+                score = float(r.score)
+                scores.append(score)
+
+                results.append({
+                    "student_id": r.student_id,
+                    "name": r.name,
+                    "email": r.email,
+                    "exam_code": r.exam_code,
+                    "score": score,
+                    "evaluation": self._evaluate_score(score)
+                })
+
+            summary = {
+                "total_students": len(scores),
+                "average_score": round(sum(scores) / len(scores), 2),
+                "max_score": max(scores),
+                "min_score": min(scores),
+            }
+
+            assessment = self._overall_assessment(summary["average_score"])
+
+            cursor.close()
+            conn.close()
+
+            return json.dumps({
+                "exam_code": exam_code,
+                "summary": summary,
+                "overall_assessment": assessment,
+                "results": results
+            }, ensure_ascii=False, indent=2)
+
+        except Exception as e:
+            logger.error(f" Error summarizing exam results: {str(e)}")
+            logger.exception(e)
+            return json.dumps({
+                "error": str(e),
+                "type": type(e).__name__
+            }, ensure_ascii=False, indent=2)
+
+    async def _arun(self, exam_code: str) -> str:
+        return self._run(exam_code)
+
+    def _evaluate_score(self, score: float) -> str:
+        if score >= 8.5:
+            return "Xuất sắc"
+        elif score >= 7.0:
+            return "Tốt"
+        elif score >= 5.0:
+            return "Đạt"
+        else:
+            return "Chưa đạt"
+
+    def _overall_assessment(self, avg_score: float) -> str:
+        if avg_score >= 8.0:
+            return "Kết quả bài thi rất tốt, đa số sinh viên nắm vững kiến thức."
+        elif avg_score >= 6.5:
+            return "Kết quả bài thi khá tốt, còn một số điểm cần cải thiện."
+        elif avg_score >= 5.0:
+            return "Kết quả ở mức trung bình, nhiều sinh viên còn hổng kiến thức."
+        else:
+            return "Kết quả thấp, cần xem lại đề thi hoặc phương pháp giảng dạy."
+
+
 
 # Registry of all available tools
 def get_all_tools() -> list[BaseTool]:
@@ -425,6 +577,7 @@ def get_all_tools() -> list[BaseTool]:
         get_notebook_tool(),
         CalculatorTool(),
         QuizGeneratorTool(),
+        ExamResultSummaryTool()
     ]
 
 
