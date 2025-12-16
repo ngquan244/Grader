@@ -14,6 +14,10 @@ from .notebook_tool import get_notebook_tool
 from .config import Config
 import pyodbc
 from typing import List, Dict, Any
+from openpyxl import Workbook
+from openpyxl.styles import Font
+import datetime
+
 
 SQL_SERVER_CONN_STR = (
     "Driver={ODBC Driver 17 for SQL Server};"
@@ -470,6 +474,7 @@ class ExamResultSummaryTool(BaseTool):
        - Danh sách sinh viên
        - Điểm trung bình, cao nhất, thấp nhất
        - Đánh giá tổng quan kết quả bài thi
+       - File Excel tổng hợp
     """
 
     args_schema: Type[BaseModel] = ExamSummaryInput
@@ -503,7 +508,7 @@ class ExamResultSummaryTool(BaseTool):
                 }, ensure_ascii=False, indent=2)
 
             results: List[Dict[str, Any]] = []
-            scores = []
+            scores: List[float] = []
 
             for r in rows:
                 score = float(r.score)
@@ -527,6 +532,12 @@ class ExamResultSummaryTool(BaseTool):
 
             assessment = self._overall_assessment(summary["average_score"])
 
+            excel_file = self._export_to_excel(
+                exam_code=exam_code,
+                summary=summary,
+                results=results
+            )
+
             cursor.close()
             conn.close()
 
@@ -534,7 +545,8 @@ class ExamResultSummaryTool(BaseTool):
                 "exam_code": exam_code,
                 "summary": summary,
                 "overall_assessment": assessment,
-                "results": results
+                "results": results,
+                "excel_file": excel_file
             }, ensure_ascii=False, indent=2)
 
         except Exception as e:
@@ -567,6 +579,77 @@ class ExamResultSummaryTool(BaseTool):
             return "Kết quả ở mức trung bình, nhiều sinh viên còn hổng kiến thức."
         else:
             return "Kết quả thấp, cần xem lại đề thi hoặc phương pháp giảng dạy."
+
+    def _export_to_excel(
+        self,
+        exam_code: str,
+        summary: Dict[str, Any],
+        results: List[Dict[str, Any]]
+    ) -> str:
+        wb = Workbook()
+
+        # ===== Sheet 1: Summary =====
+        ws_summary = wb.active
+        ws_summary.title = "Summary"
+
+        ws_summary["A1"] = "Exam Code"
+        ws_summary["B1"] = exam_code
+
+        ws_summary["A3"] = "Total Students"
+        ws_summary["B3"] = summary["total_students"]
+
+        ws_summary["A4"] = "Average Score"
+        ws_summary["B4"] = summary["average_score"]
+
+        ws_summary["A5"] = "Max Score"
+        ws_summary["B5"] = summary["max_score"]
+
+        ws_summary["A6"] = "Min Score"
+        ws_summary["B6"] = summary["min_score"]
+
+        for cell in ["A1", "A3", "A4", "A5", "A6"]:
+            ws_summary[cell].font = Font(bold=True)
+
+        # ===== Sheet 2: Results =====
+        ws_results = wb.create_sheet("Results")
+
+        headers = [
+            "Student ID",
+            "Name",
+            "Email",
+            "Exam Code",
+            "Score",
+            "Evaluation"
+        ]
+        ws_results.append(headers)
+
+        for col in range(1, len(headers) + 1):
+            ws_results.cell(row=1, column=col).font = Font(bold=True)
+
+        for r in results:
+            ws_results.append([
+                r["student_id"],
+                r["name"],
+                r["email"],
+                r["exam_code"],
+                r["score"],
+                r["evaluation"]
+            ])
+
+        for col in ws_results.columns:
+            max_len = max(len(str(cell.value)) if cell.value else 0 for cell in col)
+            ws_results.column_dimensions[col[0].column_letter].width = max_len + 2
+
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"exam_summary_{exam_code}_{timestamp}.xlsx"
+
+        output_dir = Config.PROJECT_ROOT / "exports"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        file_path = output_dir / filename
+        wb.save(file_path)
+
+        return str(file_path)
 
 
 
