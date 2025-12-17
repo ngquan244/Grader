@@ -12,6 +12,13 @@ from .config import Config
 from .logger import logger
 import pyodbc
 
+def check_role(role_required: str) -> bool:
+    actual_role = getattr(Config, "ROLE", None)
+    if (actual_role or "").lower() != role_required.lower():
+        logger.warning(f"Access denied. Required role: {role_required}, actual role: {actual_role}")
+        return False
+    return True
+
 
 SQL_SERVER_CONN_STR = (
     "Driver={ODBC Driver 17 for SQL Server};"
@@ -70,16 +77,23 @@ class NotebookExecutorTool(BaseTool):
     
     def _run(self, notebook_name: str = "grading-timing-mark.ipynb") -> str:
         """Execute notebook and return results"""
+        
         try:
+            if not check_role("teacher"):
+                actual_role = getattr(Config, "ROLE", None)
+                return json.dumps({
+                    "error": "Chỉ giáo viên mới có quyền yêu cầu chấm điểm",
+                    "required_role": "teacher",
+                    "your_role": actual_role,
+                    "message": f"Bạn không có quyền thực hiện chức năng này. Yêu cầu quyền: teacher. Quyền hiện tại: {actual_role if actual_role else 'Không xác định'}"
+                }, ensure_ascii=False, indent=2)
+
             logger.info(f" NotebookExecutorTool._run() called with notebook: {notebook_name}")
-            
             kaggle_dir = Config.PROJECT_ROOT / "kaggle"
             notebook_path = kaggle_dir / notebook_name
-            
             logger.info(f" Kaggle directory: {kaggle_dir}")
             logger.info(f" Notebook path: {notebook_path}")
             logger.info(f" Notebook exists: {notebook_path.exists()}")
-            
             if not notebook_path.exists():
                 error_msg = f"Notebook không tồn tại: {notebook_name}"
                 logger.error(f" {error_msg}")
@@ -87,26 +101,20 @@ class NotebookExecutorTool(BaseTool):
                     "error": error_msg,
                     "available_notebooks": [f.name for f in kaggle_dir.glob("*.ipynb")]
                 }, ensure_ascii=False, indent=2)
-            
             # Execute notebook using papermill or jupyter nbconvert
             output_path = kaggle_dir / "output.ipynb"
-            
             logger.info(f" Starting notebook execution with papermill...")
             logger.info(f" Output will be saved to: {output_path}")
-            
             # Try using papermill first (better for programmatic execution)
             try:
                 import papermill as pm
                 logger.info(f" Papermill imported successfully")
-                
                 pm.execute_notebook(
                     str(notebook_path),
                     str(output_path),
                     kernel_name='python3'
                 )
-                
                 logger.info(f" Notebook execution completed!")
-                
                 # Read results from output notebook
                 result = self._extract_results(output_path)
                 try:
@@ -114,10 +122,8 @@ class NotebookExecutorTool(BaseTool):
                         self._save_results_to_db(result["results"])
                 except Exception as db_err:
                     logger.error(f" Error saving results to DB: {str(db_err)}")
-
                 logger.info(f" Results extracted: {type(result)}")
                 logger.info(f" Result keys: {result.keys() if isinstance(result, dict) else 'N/A'}")
-                
             except ImportError:
                 # Fallback to nbconvert
                 cmd = [
@@ -127,23 +133,19 @@ class NotebookExecutorTool(BaseTool):
                     str(notebook_path),
                     "--output", str(output_path)
                 ]
-                
                 result = subprocess.run(
                     cmd,
                     capture_output=True,
                     text=True,
                     cwd=str(kaggle_dir)
                 )
-                
                 if result.returncode != 0:
                     return json.dumps({
                         "error": "Lỗi khi chạy notebook",
                         "stderr": result.stderr,
                         "hint": "Kiểm tra dependencies và data files"
                     }, ensure_ascii=False, indent=2)
-                
                 result = self._extract_results(output_path)
-            
             logger.info(f" Returning results to agent...")
             return json.dumps({
                 "success": True,
@@ -151,7 +153,6 @@ class NotebookExecutorTool(BaseTool):
                 "results": result,
                 "output_path": str(output_path)
             }, ensure_ascii=False, indent=2)
-            
         except Exception as e:
             logger.error(f" Exception in _run(): {str(e)}")
             logger.exception(e)
@@ -289,3 +290,6 @@ class NotebookExecutorTool(BaseTool):
 def get_notebook_tool():
     """Factory function to create notebook executor tool"""
     return NotebookExecutorTool()
+
+
+

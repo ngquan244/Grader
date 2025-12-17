@@ -43,6 +43,12 @@ try:
 except ImportError:
     extract_questions_from_pdf = None
 
+def check_role(role_required: str) -> bool:
+    actual_role = getattr(Config, "ROLE", None)
+    if (actual_role or "").lower() != role_required.lower():
+        logger.warning(f"Access denied. Required role: {role_required}, actual role: {actual_role}")
+        return False
+    return True
 
 # Tool Input Schema for Calculator
 class CalculatorInput(BaseModel):
@@ -124,6 +130,14 @@ class QuizGeneratorTool(BaseTool):
     def _run(self, num_questions: int = 10) -> str:
         """Execute quiz generator"""
         try:
+            if not check_role("teacher"):
+                actual_role = getattr(Config, "ROLE", None)
+                return json.dumps({
+                    "error": "Chỉ giáo viên mới có quyền yêu cầu tạo quiz",
+                    "required_role": "teacher",
+                    "your_role": actual_role,
+                    "message": f"Bạn không có quyền thực hiện chức năng này. Yêu cầu quyền: teacher. Quyền hiện tại: {actual_role if actual_role else 'Không xác định'}"
+                }, ensure_ascii=False, indent=2)
             if extract_questions_from_pdf is None:
                 return json.dumps({
                     "error": "Module quiz-gen chưa được cài đặt",
@@ -493,6 +507,14 @@ class ExamResultSummaryTool(BaseTool):
 
     def _run(self, exam_code: str) -> str:
         try:
+            if not check_role("teacher"):
+                actual_role = getattr(Config, "ROLE", None)
+                return json.dumps({
+                    "error": "Chỉ giáo viên mới có quyền yêu cầu tổng hợp kết quả",
+                    "required_role": "teacher",
+                    "your_role": actual_role,
+                    "message": f"Bạn không có quyền thực hiện chức năng này. Yêu cầu quyền: teacher. Quyền hiện tại: {actual_role if actual_role else 'Không xác định'}"
+                }, ensure_ascii=False, indent=2)
             logger.info(f" Summarizing results for exam_code={exam_code}")
 
             conn = pyodbc.connect(SQL_SERVER_CONN_STR)

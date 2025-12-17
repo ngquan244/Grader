@@ -154,6 +154,21 @@ def create_ui():
                     label="Max Iterations",
                     info="Số bước suy luận tối đa"
                 )
+            with gr.Column(scale=1):
+                role_display = gr.Markdown(f"**Vai trò hiện tại:** {Config.get_role()}", elem_id="role-display")
+                switch_role_btn = gr.Button("Chuyển vai trò (Teacher/Student)", elem_id="switch-role-btn", variant="primary")
+
+        def switch_role_click():
+            current = Config.get_role()
+            new_role = "TEACHER" if current == "STUDENT" else "STUDENT"
+            Config.set_role(new_role)
+            return f"**Vai trò hiện tại:** {new_role}"
+
+        switch_role_btn.click(
+            fn=switch_role_click,
+            inputs=[],
+            outputs=[role_display]
+        )
         
         # Tabs for different functions
         with gr.Tabs():
@@ -166,7 +181,7 @@ def create_ui():
                         chatbox = gr.Chatbot(
                             height=400,
                             label="Hội Thoại",
-                            avatar_images=(None, "🤖"),
+                            avatar_images=(None, "https://t4.ftcdn.net/jpg/09/43/48/93/360_F_943489384_zq3u5kkefFjPY3liE6t81KrX8W3lvxSz.jpg"),
                             show_label=True,
                             elem_classes="chatbot"
                         )
@@ -258,7 +273,7 @@ def create_ui():
                      **Không warp được**: Ảnh nghiêng quá nhiều
                      **Cells không đủ**: Chất lượng ảnh không đạt
                     
-                    → **Giải pháp**: Chụp lại ảnh với điều kiện tốt hơn
+                    --> **Giải pháp**: Chụp lại ảnh với điều kiện tốt hơn
                     """)
             
             # Tab 2: Quiz Generator
