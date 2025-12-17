@@ -1,7 +1,3 @@
-"""
-LangGraph ReAct Agent Implementation
-AI Agent mạnh mẽ với khả năng reasoning, planning và tool calling
-"""
 import json
 from typing import TypedDict, Annotated, Sequence, Literal
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage
@@ -12,36 +8,30 @@ from langgraph.graph.message import add_messages
 from .tools import get_all_tools
 
 
-# Define Agent State
 class AgentState(TypedDict):
     """State của agent trong graph"""
     messages: Annotated[Sequence[BaseMessage], add_messages]
-    next_action: str  # "continue", "end", "error"
-    iteration_count: int  # Đếm số lần lặp để tránh infinite loop
-    max_iterations: int  # Giới hạn số lần lặp
+    next_action: str
+    iteration_count: int
+    max_iterations: int
 
 
 class ReActAgent:
     """
-    ReAct Agent implementation using LangGraph
-    
-    Features:
-    - Multi-step reasoning
-    - Tool calling with validation
-    - Error handling & retry logic
-    - Memory management
-    - Self-reflection
+    ReAct Agent implementation using LangGraph - FIXED VERSION v2
     """
     
     def __init__(
         self,
         model_name: str = "llama3.1:latest",
         max_iterations: int = 10,
-        temperature: float = 0.7
+        temperature: float = 0.3,  #  Giảm temperature để ổn định hơn
+        max_history: int = 5  # Số message gần nhất giữ lại
     ):
         self.model_name = model_name
         self.max_iterations = max_iterations
         self.temperature = temperature
+        self.MAX_HISTORY = max_history
         
         # Initialize LLM
         self.llm = ChatOllama(
@@ -59,93 +49,93 @@ class ReActAgent:
         self.graph = self._build_graph()
     
     def _create_system_prompt(self) -> str:
-        """Tạo system prompt cho agent"""
+        """
+         System prompt NGẮN GỌN, RÕ RÀNG, TRÁNH CONFUSION
+        """
         tool_descriptions = "\n".join([
             f"- {tool.name}: {tool.description}"
             for tool in self.tools
         ])
         
-        return f"""Bạn là một AI Agent thông minh sử dụng ReAct pattern (Reasoning + Acting).
+        return f"""You are a helpful AI assistant. Answer user questions naturally and accurately.
 
-**Available Tools:**
+Available tools:
 {tool_descriptions}
 
-**Your Capabilities:**
-1. Phân tích yêu cầu người dùng một cách sâu sắc
-2. Lập kế hoạch nhiều bước để giải quyết vấn đề phức tạp
-3. Sử dụng tools khi cần thiết
-4. Tự đánh giá và điều chỉnh hành động
-5. Xử lý lỗi và thử lại khi cần
+Tool usage rules:
+- execute_notebook → only when user explicitly asks to "grade exam", "check answers", "chấm bài"
+- quiz_generator → only when user explicitly asks to "create quiz", "tạo quiz"
+- calculator → only for explicit numeric calculations (e.g., 123 * 456 + 789)
+- web_search → only for current events or up-to-date information
 
-**Instructions:**
-- Suy nghĩ từng bước một (step-by-step reasoning)
-- Giải thích lý do tại sao bạn chọn tool cụ thể
-- Nếu tool trả về lỗi, hãy phân tích và thử cách khác
-- Khi hoàn thành, đưa ra câu trả lời rõ ràng và hữu ích
-- Luôn lịch sự, chính xác và súc tích
+Important:
+- Always answer greetings, casual chat, compliments naturally, without using tools or apologizing.
+- Always answer general knowledge questions (animal sizes, common facts, definitions) directly, without apologizing.
+- Only apologize if you truly cannot answer or the data is missing.
+- Only use tools when explicitly requested or clearly needed.
+- Do not make up numbers or facts. If unsure, say "I don't know".
+- For subjective questions, clarify it is opinion-based.
 
-**QUAN TRỌNG - Khi nào sử dụng tools:**
-- CHỈ sử dụng execute_notebook tool KHI người dùng YÊU CẦU RÕ RÀNG:
-  + "Chấm bài", "chấm điểm", "kiểm tra bài thi"
-  + "Xem kết quả", "tính điểm"
-  + "Grade the exam", "check the answers"
-- KHÔNG tự động chạy notebook khi:
-  + Người dùng chỉ chào hỏi: "xin chào", "hello", "hi"
-  + Hỏi thông tin chung
-  + Chat thông thường
-- Với câu hỏi thông thường, trả lời trực tiếp KHÔNG cần tool
+When using tools:
+- Extract and display full information from results
+- Format output clearly
+- Handle errors with helpful explanations
 
-**Khi tạo quiz (quiz_generator tool):**
-- CHỈ sử dụng KHI được yêu cầu: "tạo quiz", "gen quiz", "tạo đề thi"
-- Tool sẽ tự động đọc PDF từ data/quiz/ và tạo file HTML
-- Kết quả trả về có field "file_url" với đường dẫn file:///
-- HÃY HIỂN THỊ RÕ RÀNG:
-  + Link quiz (file_url) để sinh viên có thể copy-paste vào browser
-  + Hướng dẫn: "Copy link này và dán vào trình duyệt để mở quiz"
-  + Số câu hỏi đã tạo và file HTML path
-- Định dạng output dễ đọc, BẮT BUỘC hiển thị URL đầy đủ
-
-**Khi chấm điểm bài thi:**
-- Sử dụng tool execute_notebook để chạy notebook
-- Tool sẽ trả về JSON với thông tin đầy đủ
-- HÃY TRÍCH XUẤT VÀ HIỂN THỊ ĐẦY ĐỦ:
-  + Thông tin sinh viên: student_id, name, email
-  + Kết quả: total_questions, correct, wrong, blank, score
-  + Exam code và student code
-- Định dạng câu trả lời dễ đọc, rõ ràng
-
-**Khi có lỗi xử lý ảnh:**
-- Notebook sẽ trả về error với suggestion
-- HÃY GIẢI THÍCH RÕ RÀNG cho user:
-  + Lỗi gì đã xảy ra (timing marks không đủ, warp thất bại, cells không đủ...)
-  + Nguyên nhân có thể: ảnh mờ, nghiêng, ánh sáng kém
-  + Hướng dẫn: chụp lại ảnh rõ nét, ánh sáng đủ, không bị lóa
-- KHÔNG chỉ copy error message, hãy dịch sang tiếng Việt dễ hiểu
-
-**ReAct Pattern:**
-1. Thought: Suy nghĩ về vấn đề
-2. Action: Chọn tool và thực thi
-3. Observation: Quan sát kết quả
-4. Reflection: Đánh giá và quyết định bước tiếp theo
 """
     
+
+
+    def _summarize_history(self, history_messages: list[BaseMessage]) -> AIMessage:
+        """
+        Tóm tắt history dài thành 1 message ngắn để giữ context.
+        """
+        if not history_messages:
+            return None
+
+        summary_text = "Tóm tắt lịch sử chat trước đó:\n"
+        for msg in history_messages:
+            role = "User" if isinstance(msg, HumanMessage) else "AI"
+            summary_text += f"{role}: {msg.content}\n"
+
+        # Trả về 1 AIMessage tóm tắt
+        return AIMessage(content=summary_text)
+
+    # def _should_continue(self, state: AgentState) -> Literal["tools", "end"]:
+    #     """Quyết định xem agent nên tiếp tục hay kết thúc"""
+    #     messages = state["messages"]
+    #     last_message = messages[-1]
+        
+    #     # Kiểm tra giới hạn iteration
+    #     if state["iteration_count"] >= state["max_iterations"]:
+    #         return "end"
+        
+    #     # Nếu message cuối có tool calls, tiếp tục
+    #     if hasattr(last_message, "tool_calls") and len(last_message.tool_calls) > 0:
+    #         return "tools"
+        
+    #     # Nếu không, kết thúc
+    #     return "end"
     def _should_continue(self, state: AgentState) -> Literal["tools", "end"]:
-        """
-        Quyết định xem agent nên tiếp tục hay kết thúc
-        """
         messages = state["messages"]
         last_message = messages[-1]
         
-        # Kiểm tra giới hạn iteration
+        # Nếu là greetings → kết thúc luôn
+        greetings = ["hello", "xin chào", "hi"]
+        if isinstance(last_message, AIMessage):
+            content_lower = last_message.content.lower()
+            if any(greet in content_lower for greet in greetings):
+                return "end"
+        
+        # Giới hạn iteration
         if state["iteration_count"] >= state["max_iterations"]:
             return "end"
         
-        # Nếu message cuối có tool calls, tiếp tục
+        # Nếu có tool_calls → tools
         if hasattr(last_message, "tool_calls") and len(last_message.tool_calls) > 0:
             return "tools"
         
-        # Nếu không, kết thúc
         return "end"
+
     
     def _call_model(self, state: AgentState) -> dict:
         """
@@ -153,8 +143,10 @@ class ReActAgent:
         """
         messages = state["messages"]
         
-        # Thêm system message nếu chưa có
-        if not messages or not isinstance(messages[0], SystemMessage):
+        # Kiểm tra và chỉ thêm system message một lần
+        has_system = any(isinstance(msg, SystemMessage) for msg in messages)
+        
+        if not has_system:
             system_msg = SystemMessage(content=self._create_system_prompt())
             messages = [system_msg] + list(messages)
         
@@ -168,14 +160,7 @@ class ReActAgent:
         }
     
     def _build_graph(self) -> StateGraph:
-        """
-        Xây dựng StateGraph cho agent
-        
-        Flow:
-        START -> agent -> [tools | END]
-        tools -> agent (loop back for reflection)
-        """
-        # Create graph
+        """Xây dựng StateGraph cho agent"""
         workflow = StateGraph(AgentState)
         
         # Add nodes
@@ -195,37 +180,110 @@ class ReActAgent:
             }
         )
         
-        # Add edge from tools back to agent for reflection
+        # Add edge from tools back to agent
         workflow.add_edge("tools", "agent")
         
         # Compile
         return workflow.compile()
     
+    def _extract_text_from_content(self, content) -> str:
+        """
+        Extract plain text from dict/list/JSON string recursively,
+        ưu tiên 'text' hoặc 'content' nếu có, vẫn giữ logic file:/// HTML.
+        """
+        import os
+        import re
+        import json
+
+        def html_link_from_path(path):
+            if path.startswith("file://"):
+                return path
+            abs_path = os.path.abspath(path)
+            abs_path = abs_path.replace("\\", "/")
+            if not abs_path.startswith("/"):
+                abs_path = "/" + abs_path
+            return f"file://{abs_path}"
+
+        def extract_all_html_files(obj):
+            html_files = set()
+            if isinstance(obj, dict):
+                for v in obj.values():
+                    html_files.update(extract_all_html_files(v))
+            elif isinstance(obj, list):
+                for item in obj:
+                    html_files.update(extract_all_html_files(item))
+            elif isinstance(obj, str) and ".html" in obj:
+                matches = re.findall(r"([\w\-./\\]+\.html)", obj)
+                for m in matches:
+                    html_files.add(m.strip())
+            return html_files
+
+        def extract_text_recursive(obj):
+            # dict
+            if isinstance(obj, dict):
+                # Ưu tiên key 'text', sau đó 'content', nếu không thì lặp qua các value
+                for key in ["text", "content"]:
+                    if key in obj and isinstance(obj[key], str):
+                        return obj[key]
+                # fallback: check nested dicts
+                for v in obj.values():
+                    txt = extract_text_recursive(v)
+                    if txt:
+                        return txt
+                return str(obj)
+
+            # list
+            elif isinstance(obj, list):
+                texts = [extract_text_recursive(x) for x in obj if x]
+                return " ".join(texts)
+
+            # string (có thể là JSON string)
+            elif isinstance(obj, str):
+                try:
+                    parsed = json.loads(obj)
+                    return extract_text_recursive(parsed)
+                except (json.JSONDecodeError, TypeError):
+                    return obj
+
+            # fallback
+            return str(obj)
+
+        # Lấy text thuần
+        result_text = extract_text_recursive(content)
+        # Lấy file HTML nếu có
+        html_files = extract_all_html_files(content)
+        html_file = max(html_files, key=lambda x: len(x), default=None)
+        if html_file:
+            return f"{result_text}\n[Link quiz: {html_link_from_path(html_file)}]"
+        return result_text
+
+    
     def invoke(self, user_input: str, history: list[dict] = None) -> dict:
-        """
-        Thực thi agent với user input
-        
-        Args:
-            user_input: Câu hỏi/yêu cầu của user
-            history: Lịch sử chat (optional)
-        
-        Returns:
-            dict với response và metadata
-        """
-        # Prepare messages
-        messages = []
-        
-        # Add history if provided
+        messages = [SystemMessage(content=self._create_system_prompt())]
+
+        # Build messages from history
+        history_messages = []
         if history:
             for msg in history:
                 if msg["role"] == "user":
-                    messages.append(HumanMessage(content=msg["content"]))
+                    history_messages.append(HumanMessage(content=msg["content"]))
                 elif msg["role"] == "assistant":
-                    messages.append(AIMessage(content=msg["content"]))
+                    history_messages.append(AIMessage(content=msg["content"]))
         
+        # Nếu history dài hơn MAX_HISTORY, summarize phần cũ
+        if len(history_messages) > self.MAX_HISTORY:
+            # Tóm tắt các message cũ
+            old_messages = history_messages[:-self.MAX_HISTORY]
+            summary_msg = self._summarize_history(old_messages)
+            messages.append(summary_msg)
+            # Giữ n message cuối
+            messages.extend(history_messages[-self.MAX_HISTORY:])
+        else:
+            messages.extend(history_messages)
+
         # Add current user input
         messages.append(HumanMessage(content=user_input))
-        
+
         # Create initial state
         initial_state = {
             "messages": messages,
@@ -233,52 +291,44 @@ class ReActAgent:
             "iteration_count": 0,
             "max_iterations": self.max_iterations
         }
-        
+
         # Run graph
         try:
             result = self.graph.invoke(initial_state)
-            
+
             # Extract response
             last_message = result["messages"][-1]
-            
             if isinstance(last_message, AIMessage):
-                response_content = last_message.content
+                response_content = self._extract_text_from_content(last_message.content)
             else:
-                response_content = str(last_message)
-            
-            # Extract tool calls info for debugging
+                response_content = self._extract_text_from_content(str(last_message))
+
+            # Extract tool calls info
             tool_calls_info = []
             for msg in result["messages"]:
-                if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls"):
-                    if msg.tool_calls:
-                        tool_calls_info.extend([
-                            {
-                                "tool": tc["name"],
-                                "args": tc.get("args", {})
-                            }
-                            for tc in msg.tool_calls
-                        ])
-            
+                if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls") and msg.tool_calls:
+                    tool_calls_info.extend([
+                        {"tool": tc["name"], "args": tc.get("args", {})} for tc in msg.tool_calls
+                    ])
+
             return {
                 "response": response_content,
                 "iterations": result["iteration_count"],
                 "tools_used": tool_calls_info,
                 "success": True
             }
-        
+
         except Exception as e:
             return {
-                "response": f"❌ Lỗi: {str(e)}",
+                "response": f" Lỗi: {str(e)}",
                 "error": str(e),
                 "success": False
             }
+
     
     def stream(self, user_input: str, history: list[dict] = None):
-        """
-        Stream agent execution (for real-time UI updates)
-        """
-        # Prepare messages
-        messages = []
+        """Stream agent execution"""
+        messages = [SystemMessage(content=self._create_system_prompt())]
         
         if history:
             for msg in history:
@@ -302,29 +352,28 @@ class ReActAgent:
             yield output
 
 
-# Factory function
 def create_agent(model: str = "llama3.1:latest", max_iterations: int = 10) -> ReActAgent:
     """Factory function để tạo agent"""
     return ReActAgent(model_name=model, max_iterations=max_iterations)
 
 
-# Test function
 if __name__ == "__main__":
-    # Test agent
     agent = create_agent()
     
     test_queries = [
         "Xin chào!",
-        "Cho tôi điểm Kaggle",
-        "Tính 25 * 4 + 10",
-        "Giải thích machine learning là gì?"
+        "Hello, how are you?",
+        "Bạn là ai?",
+        "What's 2+2?",
+        "Tính 123 * 456 + 789",
+        "Chấm bài thi cho tôi",
     ]
     
-    print("🚀 Testing ReAct Agent\n")
+    print(" Testing Fixed ReAct Agent v2\n")
     
     for query in test_queries:
         print(f"\n{'='*60}")
-        print(f"User: {query}")
+        print(f" User: {query}")
         print(f"{'='*60}")
         
         result = agent.invoke(query)

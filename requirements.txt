@@ -31,3 +31,9 @@ pytest-cov
 black
 flake8
 mypy
+
+# SQL Server connection
+pyodbc
+
+openpyxl
+yagmail
