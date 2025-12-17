@@ -196,13 +196,28 @@ When using tools:
         import json
 
         def html_link_from_path(path):
+            import os
+            # Nếu path đã là file:// → trả về luôn
             if path.startswith("file://"):
                 return path
-            abs_path = os.path.abspath(path)
+
+            # Nếu path là absolute → dùng trực tiếp
+            if os.path.isabs(path):
+                abs_path = path
+            else:
+                # Nếu path là relative → nối với folder gốc Grader
+                base_dir = "E:/WorkSpace/Agent/Teaching Assistant/Grader/"
+                abs_path = os.path.abspath(os.path.join(base_dir, path))
+
+            # Chuẩn hóa dấu \ thành /
             abs_path = abs_path.replace("\\", "/")
             if not abs_path.startswith("/"):
                 abs_path = "/" + abs_path
             return f"file://{abs_path}"
+
+
+
+
 
         def extract_all_html_files(obj):
             html_files = set()
