@@ -85,6 +85,7 @@ When using tools:
     
 
 
+
     def _summarize_history(self, history_messages: list[BaseMessage]) -> AIMessage:
         """
         Tóm tắt history dài thành 1 message ngắn để giữ context.
@@ -136,6 +137,19 @@ When using tools:
         
         return "end"
 
+    def _after_tool(self, state: AgentState) -> Literal["agent", "end"]:
+        last_msg = state["messages"][-1]
+
+        if isinstance(last_msg, ToolMessage):
+            try:
+                data = json.loads(last_msg.content)
+                if data.get("fatal") is True or "error" in data:
+                    return "end"
+            except Exception:
+                pass
+
+        return "agent"
+
     
     def _call_model(self, state: AgentState) -> dict:
         """
@@ -181,8 +195,15 @@ When using tools:
         )
         
         # Add edge from tools back to agent
-        workflow.add_edge("tools", "agent")
-        
+        workflow.add_conditional_edges(
+            "tools",
+            self._after_tool,
+            {
+                "agent": "agent",
+                "end": END
+            }
+        )
+
         # Compile
         return workflow.compile()
     
@@ -313,10 +334,33 @@ When using tools:
 
             # Extract response
             last_message = result["messages"][-1]
+            # Extract response
+            last_message = result["messages"][-1]
+
+            # ---- CASE 1: TOOL ERROR / FATAL ----
+            if isinstance(last_message, ToolMessage):
+                try:
+                    data = json.loads(last_message.content)
+                    response_content = data.get(
+                        "message",
+                        "Bạn không có quyền thực hiện yêu cầu này."
+                    )
+                except Exception:
+                    response_content = "Bạn không có quyền thực hiện yêu cầu này."
+
+                return {
+                    "response": response_content,
+                    "iterations": result["iteration_count"],
+                    "tools_used": [],
+                    "success": False
+                }
+
+            # ---- CASE 2: AI NORMAL RESPONSE ----
             if isinstance(last_message, AIMessage):
                 response_content = self._extract_text_from_content(last_message.content)
             else:
                 response_content = self._extract_text_from_content(str(last_message))
+
 
             # Extract tool calls info
             tool_calls_info = []

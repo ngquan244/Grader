@@ -134,6 +134,7 @@ class QuizGeneratorTool(BaseTool):
                 actual_role = getattr(Config, "ROLE", None)
                 return json.dumps({
                     "error": "Chỉ giáo viên mới có quyền yêu cầu tạo quiz",
+                    "fatal": True,
                     "required_role": "teacher",
                     "your_role": actual_role,
                     "message": f"Bạn không có quyền thực hiện chức năng này. Yêu cầu quyền: teacher. Quyền hiện tại: {actual_role if actual_role else 'Không xác định'}"
@@ -511,6 +512,7 @@ class ExamResultSummaryTool(BaseTool):
                 actual_role = getattr(Config, "ROLE", None)
                 return json.dumps({
                     "error": "Chỉ giáo viên mới có quyền yêu cầu tổng hợp kết quả",
+                    "fatal": True,
                     "required_role": "teacher",
                     "your_role": actual_role,
                     "message": f"Bạn không có quyền thực hiện chức năng này. Yêu cầu quyền: teacher. Quyền hiện tại: {actual_role if actual_role else 'Không xác định'}"

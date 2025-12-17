@@ -66,3 +66,5 @@ Thumbs.db
 # Output
 test_output/
 output/
+src/config.py
+src/config.py
