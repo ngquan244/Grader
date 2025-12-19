@@ -1,6 +1,3 @@
-"""
-Notebook execution tool for running Kaggle notebooks locally
-"""
 import json
 import subprocess
 import os
@@ -11,6 +8,7 @@ from pydantic import BaseModel, Field
 from .config import Config
 from .logger import logger
 import pyodbc
+
 
 def check_role(role_required: str) -> bool:
     actual_role = getattr(Config, "ROLE", None)
@@ -23,7 +21,7 @@ def check_role(role_required: str) -> bool:
 SQL_SERVER_CONN_STR = (
     "Driver={ODBC Driver 17 for SQL Server};"
     "Server=244-NGUYEN-QUAN\\SQL2022;"
-    "Database=Agent;"
+    "Database=AI_Agent;"
     "Trusted_Connection=yes;"
     "Encrypt=no;"
 )
@@ -77,7 +75,6 @@ class NotebookExecutorTool(BaseTool):
     
     def _run(self, notebook_name: str = "grading-timing-mark.ipynb") -> str:
         """Execute notebook and return results"""
-        
         try:
             if not check_role("teacher"):
                 actual_role = getattr(Config, "ROLE", None)
@@ -87,6 +84,15 @@ class NotebookExecutorTool(BaseTool):
                     "required_role": "teacher",
                     "your_role": actual_role,
                     "message": f"Bạn không có quyền thực hiện chức năng này. Yêu cầu quyền: teacher. Quyền hiện tại: {actual_role if actual_role else 'Không xác định'}"
+                }, ensure_ascii=False, indent=2)
+
+            try:
+                self._update_json_from_db()
+            except Exception as dbjson_err:
+                logger.error(f"Lỗi khi cập nhật answer.json/student_coords.json từ DB: {str(dbjson_err)}")
+                return json.dumps({
+                    "error": "Lỗi khi cập nhật answer.json/student_coords.json từ DB",
+                    "detail": str(dbjson_err)
                 }, ensure_ascii=False, indent=2)
 
             logger.info(f" NotebookExecutorTool._run() called with notebook: {notebook_name}")
@@ -102,11 +108,11 @@ class NotebookExecutorTool(BaseTool):
                     "error": error_msg,
                     "available_notebooks": [f.name for f in kaggle_dir.glob("*.ipynb")]
                 }, ensure_ascii=False, indent=2)
-            # Execute notebook using papermill or jupyter nbconvert
+    
             output_path = kaggle_dir / "output.ipynb"
             logger.info(f" Starting notebook execution with papermill...")
             logger.info(f" Output will be saved to: {output_path}")
-            # Try using papermill first (better for programmatic execution)
+
             try:
                 import papermill as pm
                 logger.info(f" Papermill imported successfully")
@@ -116,7 +122,6 @@ class NotebookExecutorTool(BaseTool):
                     kernel_name='python3'
                 )
                 logger.info(f" Notebook execution completed!")
-                # Read results from output notebook
                 result = self._extract_results(output_path)
                 try:
                     if isinstance(result, dict) and "results" in result:
@@ -126,7 +131,6 @@ class NotebookExecutorTool(BaseTool):
                 logger.info(f" Results extracted: {type(result)}")
                 logger.info(f" Result keys: {result.keys() if isinstance(result, dict) else 'N/A'}")
             except ImportError:
-                # Fallback to nbconvert
                 cmd = [
                     "jupyter", "nbconvert",
                     "--to", "notebook",
@@ -163,12 +167,87 @@ class NotebookExecutorTool(BaseTool):
                 "hint": "Kiểm tra notebook syntax và dependencies"
             }, ensure_ascii=False, indent=2)
     
+    def _update_json_from_db(self):
+        """
+        Lấy dữ liệu từ DB và ghi đè:
+        - answer.json
+        - student_coords.json
+        """
+
+        conn = pyodbc.connect(SQL_SERVER_CONN_STR)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT id, exam_code, question_count
+            FROM exams
+        """)
+        exams = cursor.fetchall()
+
+        answer_json = []
+
+        for exam in exams:
+            exam_id = exam.id
+            exam_code = exam.exam_code
+            question_count = exam.question_count
+
+            cursor.execute("""
+                SELECT question_number, correct_answer
+                FROM exam_answers
+                WHERE exam_id = ?
+                ORDER BY question_number ASC
+            """, exam_id)
+
+            answers = [
+                {
+                    "question": row.question_number,
+                    "answer": row.correct_answer
+                }
+                for row in cursor.fetchall()
+            ]
+
+            answer_json.append({
+                "exam_code": exam_code,
+                "question_count": question_count,
+                "answers": answers
+            })
+
+        cursor.execute("""
+            SELECT student_id, email, full_name, student_code
+            FROM students
+        """)
+        students = cursor.fetchall()
+
+        student_coords_json = [
+            {
+                "student_id": stu.student_id,
+                "name": stu.full_name,
+                "email": stu.email,
+                "coords": stu.student_code
+            }
+            for stu in students
+        ]
+
+        cursor.close()
+        conn.close()
+
+        kaggle_input_dir = Config.PROJECT_ROOT / "kaggle" / "Input Materials"
+        kaggle_input_dir.mkdir(parents=True, exist_ok=True)
+
+        answer_path = kaggle_input_dir / "answer.json"
+        student_coords_path = kaggle_input_dir / "student_coords.json"
+
+        with open(answer_path, "w", encoding="utf-8") as f:
+            json.dump(answer_json, f, ensure_ascii=False, indent=2)
+
+        with open(student_coords_path, "w", encoding="utf-8") as f:
+            json.dump(student_coords_json, f, ensure_ascii=False, indent=2)
+
+
     def _extract_results(self, output_path: Path) -> Dict[str, Any]:
         """Extract results from executed notebook"""
         try:
             logger.info(f" Extracting results from: {output_path}")
             
-            # Try to find final_result.json in project root directory
             result_file = Config.PROJECT_ROOT / "final_result.json"
             logger.info(f" Looking for result file: {result_file}")
             logger.info(f" Result file exists: {result_file.exists()}")
@@ -184,11 +263,9 @@ class NotebookExecutorTool(BaseTool):
             
             logger.warning(f" Result file not found, parsing notebook outputs...")
             
-            # If not found, parse notebook output cells to find JSON output
             with open(output_path, 'r', encoding='utf-8') as f:
                 notebook_data = json.load(f)
             
-            # Look for the last cell that outputs JSON with final_result
             for cell in reversed(notebook_data.get('cells', [])):
                 if cell.get('cell_type') == 'code':
                     outputs = cell.get('outputs', [])
@@ -223,33 +300,35 @@ class NotebookExecutorTool(BaseTool):
         """Execute tool asynchronously"""
         return self._run(notebook_name)
 
-    def _save_results_to_db(self, results: List[Dict[str, Any]]):
-        """
-        Lưu danh sách kết quả chấm điểm vào SQL Server
-        KHÔNG ảnh hưởng logic chính
-        """
+    def _save_results_to_db(self, results):
         if not results:
             return
 
         conn = pyodbc.connect(SQL_SERVER_CONN_STR)
         cursor = conn.cursor()
 
-        sql = """
-        MERGE dbo.FinalExamResult AS target
+        sql_check_student = """
+        SELECT 1 FROM students WHERE student_id = ?
+        """
+
+        sql_result = """
+        MERGE dbo.final_results AS target
         USING (
-            SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            SELECT ?, ?, ?, ?, ?, ?, ?
         ) AS source (
-            student_id, name, email, student_code, exam_code,
-            total_questions, correct, wrong, blank, score
+            student_id,
+            exam_code,
+            total_questions,
+            correct,
+            wrong,
+            blank,
+            score
         )
         ON target.student_id = source.student_id
         AND target.exam_code = source.exam_code
 
         WHEN MATCHED THEN
             UPDATE SET
-                name = source.name,
-                email = source.email,
-                student_code = source.student_code,
                 total_questions = source.total_questions,
                 correct = source.correct,
                 wrong = source.wrong,
@@ -258,33 +337,50 @@ class NotebookExecutorTool(BaseTool):
 
         WHEN NOT MATCHED THEN
             INSERT (
-                student_id, name, email, student_code, exam_code,
-                total_questions, correct, wrong, blank, score
+                student_id,
+                exam_code,
+                total_questions,
+                correct,
+                wrong,
+                blank,
+                score
             )
             VALUES (
-                source.student_id, source.name, source.email, source.student_code, source.exam_code,
-                source.total_questions, source.correct, source.wrong, source.blank, source.score
+                source.student_id,
+                source.exam_code,
+                source.total_questions,
+                source.correct,
+                source.wrong,
+                source.blank,
+                source.score
             );
         """
 
         for r in results:
+
+            cursor.execute(sql_check_student, r["student_id"])
+            if cursor.fetchone() is None:
+                logger.error(
+                    f"Skip result: student_id NOT FOUND → {r['student_id']}"
+                )
+                continue
+
             cursor.execute(
-                sql,
-                r.get("student_id"),
-                r.get("name"),
-                r.get("email"),
-                r.get("student_code"),
-                r.get("exam_code"),
-                int(r.get("total_questions", 0)),
-                int(r.get("correct", 0)),
-                int(r.get("wrong", 0)),
-                int(r.get("blank", 0)),
-                float(r.get("score", 0))
+                sql_result,
+                r["student_id"],
+                r["exam_code"],
+                int(r["total_questions"]),
+                int(r["correct"]),
+                int(r["wrong"]),
+                int(r["blank"]),
+                float(r["score"])
             )
 
         conn.commit()
         cursor.close()
         conn.close()
+
+
 
 
 # Add to tools registry

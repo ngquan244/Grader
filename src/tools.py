@@ -1,29 +1,25 @@
-"""
-Tools definition for LangGraph Agent
-Định nghĩa các tools theo format của LangChain
-"""
 import json
 import sys
 import datetime
 import random
 from pathlib import Path
-from typing import Optional, Type
+from typing import Optional, Type, List, Dict, Any
 from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
 from .notebook_tool import get_notebook_tool
 from .config import Config
-from .config import Config
+import pyodbc
+from openpyxl import Workbook
+from openpyxl.styles import Font
+import yagmail
+import logging
+from .logger import logger
+
 
 receiver = Config.EMAIL_RECEIVER
 user = Config.EMAIL_USER
 password = Config.EMAIL_PASSWORD
-import pyodbc
-from typing import List, Dict, Any
-from openpyxl import Workbook
-from openpyxl.styles import Font
-import datetime
-import yagmail
-import logging
+
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +27,11 @@ logger = logging.getLogger(__name__)
 SQL_SERVER_CONN_STR = (
     "Driver={ODBC Driver 17 for SQL Server};"
     "Server=244-NGUYEN-QUAN\\SQL2022;"
-    "Database=Agent;"
+    "Database=AI_Agent;"
     "Trusted_Connection=yes;"
     "Encrypt=no;"
 )
 
-# Import quiz-gen utilities
 sys.path.append(str(Path(__file__).parent.parent / "quiz-gen"))
 try:
     from utils import extract_questions_from_pdf
@@ -50,7 +45,6 @@ def check_role(role_required: str) -> bool:
         return False
     return True
 
-# Tool Input Schema for Calculator
 class CalculatorInput(BaseModel):
     """Input schema for calculator tool"""
     expression: str = Field(description="Biểu thức toán học cần tính, ví dụ: '2 + 2' hoặc '10 * 5'")
@@ -71,7 +65,6 @@ class CalculatorTool(BaseTool):
     def _run(self, expression: str) -> str:
         """Execute calculator"""
         try:
-            # Chỉ cho phép các ký tự an toàn
             allowed_chars = set("0123456789+-*/().% ")
             if not all(c in allowed_chars for c in expression):
                 return json.dumps({
@@ -95,7 +88,6 @@ class CalculatorTool(BaseTool):
         return self._run(expression)
 
 
-# Tool Input Schema for Quiz Generator
 class QuizGeneratorInput(BaseModel):
     """Input schema for quiz generator tool"""
     num_questions: int = Field(
@@ -455,28 +447,10 @@ class QuizGeneratorTool(BaseTool):
         """Execute tool asynchronously"""
         return self._run(num_questions)
 
-from typing import Type, List, Dict, Any
-from langchain.tools import BaseTool
-from pydantic import BaseModel, Field
-import pyodbc
-import json
-from .logger import logger
-
-SQL_SERVER_CONN_STR = (
-    "Driver={ODBC Driver 17 for SQL Server};"
-    "Server=244-NGUYEN-QUAN\\SQL2022;"
-    "Database=Agent;"
-    "Trusted_Connection=yes;"
-    "Encrypt=no;"
-)
-
-
 class ExamSummaryInput(BaseModel):
     exam_code: str = Field(
         description="Mã đề thi cần tổng hợp (ví dụ: 000)"
     )
-
-
 
 class ExamResultSummaryTool(BaseTool):
     """
@@ -524,14 +498,16 @@ class ExamResultSummaryTool(BaseTool):
 
             sql = """
             SELECT
-                student_id,
-                name,
-                email,
-                exam_code,
-                score
-            FROM dbo.FinalExamResult
-            WHERE exam_code = ?
-            ORDER BY score DESC
+                s.student_id AS student_id,
+                s.full_name,
+                s.email,
+                fr.exam_code,
+                fr.score
+            FROM dbo.final_results fr
+            JOIN dbo.students s
+                ON s.student_id = fr.student_id
+            WHERE fr.exam_code = ?
+            ORDER BY fr.score DESC
             """
 
             cursor.execute(sql, exam_code)
@@ -552,7 +528,7 @@ class ExamResultSummaryTool(BaseTool):
 
                 results.append({
                     "student_id": r.student_id,
-                    "name": r.name,
+                    "full_name": r.full_name,
                     "email": r.email,
                     "exam_code": r.exam_code,
                     "score": score,
@@ -636,7 +612,6 @@ class ExamResultSummaryTool(BaseTool):
         Gửi file Excel qua email
         """
         try:
-            # Config tài khoản gửi email (có thể lưu ở Config)
             yag = yagmail.SMTP(user=Config.EMAIL_USER, password=Config.EMAIL_PASSWORD)
             yag.send(
                 to=to_email,
@@ -658,7 +633,6 @@ class ExamResultSummaryTool(BaseTool):
     ) -> str:
         wb = Workbook()
 
-        # ===== Sheet 1: Summary =====
         ws_summary = wb.active
         ws_summary.title = "Summary"
 
@@ -680,7 +654,6 @@ class ExamResultSummaryTool(BaseTool):
         for cell in ["A1", "A3", "A4", "A5", "A6"]:
             ws_summary[cell].font = Font(bold=True)
 
-        # ===== Sheet 2: Results =====
         ws_results = wb.create_sheet("Results")
 
         headers = [
@@ -699,7 +672,7 @@ class ExamResultSummaryTool(BaseTool):
         for r in results:
             ws_results.append([
                 r["student_id"],
-                r["name"],
+                r["full_name"],
                 r["email"],
                 r["exam_code"],
                 r["score"],
@@ -723,7 +696,6 @@ class ExamResultSummaryTool(BaseTool):
 
 
 
-# Registry of all available tools
 def get_all_tools() -> list[BaseTool]:
     """Trả về danh sách tất cả các tools có sẵn"""
     return [

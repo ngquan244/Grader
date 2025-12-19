@@ -30,7 +30,6 @@ def create_ui():
             agent = create_agent(model=model, max_iterations=max_iterations)
         return agent
 
-    # Custom CSS - Monochrome Black Theme
     custom_css = """
     /* Global theme */
     .gradio-container {
@@ -170,13 +169,11 @@ def create_ui():
             outputs=[role_display]
         )
         
-        # Tabs for different functions
         with gr.Tabs():
             # Tab 1: Grading System
             with gr.Tab("Chấm Điểm Tự Động"):
                 # Main content: Chat bên trái, Upload bên phải (image & PDF side by side, reduced width)
                 with gr.Row():
-                    # Chat Section - bên trái (nhỏ hơn)
                     with gr.Column(scale=3):
                         chatbox = gr.Chatbot(
                             height=400,
@@ -185,7 +182,6 @@ def create_ui():
                             show_label=True,
                             elem_classes="chatbot"
                         )
-                    # Upload Section - bên phải (image & PDF side by side, both compact)
                     with gr.Column(scale=2):
                         with gr.Row():
                             with gr.Column(scale=1, min_width=120, elem_id="image-upload-col"):
@@ -231,7 +227,6 @@ def create_ui():
                         submit_btn = gr.Button(" Gửi", variant="primary", elem_classes="primary-btn")
                         clear_btn = gr.Button(" Xóa", elem_classes="primary-btn")
 
-                # Stats Display
                 with gr.Row():
                     iterations_display = gr.Textbox(
                         label=" Số bước thực thi",
@@ -284,7 +279,6 @@ def create_ui():
                 """)
                 
                 with gr.Row():
-                    # Left column: PDF Upload
                     with gr.Column(scale=2):
                         gr.Markdown("####  Upload PDF Đề Thi")
                         pdf_input = gr.File(
@@ -319,7 +313,6 @@ def create_ui():
                             - Câu trả lời đúng phải được ghi rõ
                             """)
                     
-                    # Right column: Quiz Display
                     with gr.Column(scale=3):
                         gr.Markdown("####  Tạo Quiz Ngẫu Nhiên")
                         num_questions_slider = gr.Slider(
@@ -337,11 +330,6 @@ def create_ui():
                             placeholder="File quiz sẽ được tạo sau khi bạn nhấn nút trên",
                             interactive=False
                         )
-                        
-                        # quiz_output = gr.HTML(
-                        #     label=" Xem Trước Quiz",
-                        #     value="<div style='padding:40px; text-align:center; color:#666;'>Chưa có quiz. Hãy upload PDF và tạo quiz.</div>"
-                        # )
                         
                         gr.Markdown("---")
                         gr.Markdown("###  Quiz Link")
@@ -375,7 +363,6 @@ def create_ui():
                         </div>
                         """)
 
-        # Instructions (moved outside tabs, applies to both)
 
         def handle_image_upload(files):
             """Handle image upload and save to kaggle/Filled-temp/"""
@@ -392,7 +379,6 @@ def create_ui():
                     if existing_file.is_file():
                         existing_file.unlink()
                 
-                # Copy uploaded images
                 uploaded_count = 0
                 uploaded_files = []
                 
@@ -415,16 +401,13 @@ def create_ui():
                 return error_msg
         
         def user_submit(user_message: str, history: List, model: str, max_iter: int):
-            """Handle user message submission"""
             if not user_message.strip():
                 return "", history, history, "0", "None"
 
             ui_logger.info(f"User query: {user_message[:100]}")
             
-            # Get or create agent with current settings
             current_agent = get_or_create_agent(model, max_iter)
             
-            # Convert Gradio history to agent format
             agent_history = []
             for msg in history:
                 agent_history.append({
@@ -442,20 +425,18 @@ def create_ui():
             # Format tools used
             tools_used = result.get("tools_used", [])
             if tools_used:
-                tools_str = ", ".join([f"🔧 {t['tool']}" for t in tools_used])
+                tools_str = ", ".join([f" {t['tool']}" for t in tools_used])
             else:
                 tools_str = "Không sử dụng công cụ nào"
             
             return "", history, history, str(result.get("iterations", 0)), tools_str
 
         def reset_chat():
-            """Reset chat history"""
             return [], [], "0", "Chưa có"
         
         # Quiz HTML Generator
         def start_quiz_server_for_latest():
             """Generate standalone HTML quiz file and return local path"""
-            # Get latest quiz
             quiz_folder = Config.PROJECT_ROOT / "quiz-gen" / "generated_quizzes"
             if not quiz_folder.exists():
                 return " Chưa có quiz nào được tạo!", ""
@@ -468,13 +449,11 @@ def create_ui():
             latest_quiz_id = latest_quiz_file.stem
             
             try:
-                # Load quiz data
                 with open(latest_quiz_file, 'r', encoding='utf-8') as f:
                     quiz_data = json.load(f)
                 
                 questions = quiz_data['questions']
                 
-                # Generate standalone HTML
                 html_path = quiz_folder / f"{latest_quiz_id}.html"
                 
                 with open(html_path, 'w', encoding='utf-8') as f:
@@ -482,11 +461,9 @@ def create_ui():
                 
                 ui_logger.info(f"Đã tạo file HTML: {html_path}")
                 
-                # Return both status and file path
                 status = f" Quiz HTML đã sẵn sàng!\n\n Quiz: {latest_quiz_id}\n Số câu: {len(questions)}\n\n Mở link bằng trình duyệt để làm bài"
                 file_url = f"file:///{str(html_path).replace(chr(92), '/')}"
-                
-                # Create clickable HTML link
+
                 link_html = f"""
                 <div style="padding: 32px 24px; background: linear-gradient(120deg, #6a82fb 0%, #fc5c7d 100%); border-radius: 18px; text-align: center; box-shadow: 0 8px 32px rgba(102,126,234,0.18); position: relative; overflow: hidden;">
                     <div style='position:absolute;top:-30px;right:-30px;opacity:0.12;font-size:120px;pointer-events:none;'></div>
@@ -599,8 +576,6 @@ def create_ui():
             except Exception as e:
                 return f" Lỗi khi đọc PDF: {str(e)}", 0, []
         
-        # Student Quiz Functions
-        # Quiz Generator Functions (for teachers)
         def handle_pdf_upload_quiz(file, cache):
             """Handle PDF upload for quiz generation"""
             if file is None:
@@ -728,7 +703,7 @@ def create_ui():
             
             # Add JavaScript and closing tags
             full_html += """
-            <button class="submit-btn" onclick="submitQuiz()">📤 Nộp Bài</button>
+            <button class="submit-btn" onclick="submitQuiz()"> Nộp Bài</button>
             <div class="score-display" id="scoreDisplay"></div>
         </div>
     </div>

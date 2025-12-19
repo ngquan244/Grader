@@ -18,15 +18,15 @@ class AgentState(TypedDict):
 
 class ReActAgent:
     """
-    ReAct Agent implementation using LangGraph - FIXED VERSION v2
+    ReAct Agent implementation using LangGraph 
     """
     
     def __init__(
         self,
         model_name: str = "llama3.1:latest",
         max_iterations: int = 10,
-        temperature: float = 0.3,  #  Giảm temperature để ổn định hơn
-        max_history: int = 5  # Số message gần nhất giữ lại
+        temperature: float = 0.3,  
+        max_history: int = 5 
     ):
         self.model_name = model_name
         self.max_iterations = max_iterations
@@ -98,40 +98,21 @@ When using tools:
             role = "User" if isinstance(msg, HumanMessage) else "AI"
             summary_text += f"{role}: {msg.content}\n"
 
-        # Trả về 1 AIMessage tóm tắt
         return AIMessage(content=summary_text)
 
-    # def _should_continue(self, state: AgentState) -> Literal["tools", "end"]:
-    #     """Quyết định xem agent nên tiếp tục hay kết thúc"""
-    #     messages = state["messages"]
-    #     last_message = messages[-1]
-        
-    #     # Kiểm tra giới hạn iteration
-    #     if state["iteration_count"] >= state["max_iterations"]:
-    #         return "end"
-        
-    #     # Nếu message cuối có tool calls, tiếp tục
-    #     if hasattr(last_message, "tool_calls") and len(last_message.tool_calls) > 0:
-    #         return "tools"
-        
-    #     # Nếu không, kết thúc
-    #     return "end"
     def _should_continue(self, state: AgentState) -> Literal["tools", "end"]:
         messages = state["messages"]
         last_message = messages[-1]
         
-        # Nếu là greetings → kết thúc luôn
         greetings = ["hello", "xin chào", "hi"]
         if isinstance(last_message, AIMessage):
             content_lower = last_message.content.lower()
             if any(greet in content_lower for greet in greetings):
                 return "end"
         
-        # Giới hạn iteration
         if state["iteration_count"] >= state["max_iterations"]:
             return "end"
         
-        # Nếu có tool_calls → tools
         if hasattr(last_message, "tool_calls") and len(last_message.tool_calls) > 0:
             return "tools"
         
@@ -157,7 +138,6 @@ When using tools:
         """
         messages = state["messages"]
         
-        # Kiểm tra và chỉ thêm system message một lần
         has_system = any(isinstance(msg, SystemMessage) for msg in messages)
         
         if not has_system:
@@ -167,7 +147,6 @@ When using tools:
         # Call LLM
         response = self.llm_with_tools.invoke(messages)
         
-        # Tăng iteration count
         return {
             "messages": [response],
             "iteration_count": state["iteration_count"] + 1
@@ -204,7 +183,6 @@ When using tools:
             }
         )
 
-        # Compile
         return workflow.compile()
     
     def _extract_text_from_content(self, content) -> str:
@@ -218,27 +196,19 @@ When using tools:
 
         def html_link_from_path(path):
             import os
-            # Nếu path đã là file:// → trả về luôn
             if path.startswith("file://"):
                 return path
 
-            # Nếu path là absolute → dùng trực tiếp
             if os.path.isabs(path):
                 abs_path = path
             else:
-                # Nếu path là relative → nối với folder gốc Grader
                 base_dir = "E:/WorkSpace/Agent/Teaching Assistant/Grader/"
                 abs_path = os.path.abspath(os.path.join(base_dir, path))
 
-            # Chuẩn hóa dấu \ thành /
             abs_path = abs_path.replace("\\", "/")
             if not abs_path.startswith("/"):
                 abs_path = "/" + abs_path
             return f"file://{abs_path}"
-
-
-
-
 
         def extract_all_html_files(obj):
             html_files = set()
@@ -255,7 +225,6 @@ When using tools:
             return html_files
 
         def extract_text_recursive(obj):
-            # dict
             if isinstance(obj, dict):
                 # Ưu tiên key 'text', sau đó 'content', nếu không thì lặp qua các value
                 for key in ["text", "content"]:
@@ -268,12 +237,10 @@ When using tools:
                         return txt
                 return str(obj)
 
-            # list
             elif isinstance(obj, list):
                 texts = [extract_text_recursive(x) for x in obj if x]
                 return " ".join(texts)
 
-            # string (có thể là JSON string)
             elif isinstance(obj, str):
                 try:
                     parsed = json.loads(obj)
@@ -281,12 +248,9 @@ When using tools:
                 except (json.JSONDecodeError, TypeError):
                     return obj
 
-            # fallback
             return str(obj)
 
-        # Lấy text thuần
         result_text = extract_text_recursive(content)
-        # Lấy file HTML nếu có
         html_files = extract_all_html_files(content)
         html_file = max(html_files, key=lambda x: len(x), default=None)
         if html_file:
@@ -297,7 +261,6 @@ When using tools:
     def invoke(self, user_input: str, history: list[dict] = None) -> dict:
         messages = [SystemMessage(content=self._create_system_prompt())]
 
-        # Build messages from history
         history_messages = []
         if history:
             for msg in history:
@@ -334,10 +297,7 @@ When using tools:
 
             # Extract response
             last_message = result["messages"][-1]
-            # Extract response
-            last_message = result["messages"][-1]
 
-            # ---- CASE 1: TOOL ERROR / FATAL ----
             if isinstance(last_message, ToolMessage):
                 try:
                     data = json.loads(last_message.content)
@@ -355,7 +315,6 @@ When using tools:
                     "success": False
                 }
 
-            # ---- CASE 2: AI NORMAL RESPONSE ----
             if isinstance(last_message, AIMessage):
                 response_content = self._extract_text_from_content(last_message.content)
             else:
