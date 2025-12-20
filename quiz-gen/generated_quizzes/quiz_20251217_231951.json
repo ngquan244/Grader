@@ -1,0 +1,148 @@
+{
+  "id": "quiz_20251217_231951",
+  "timestamp": "20251217_231951",
+  "source_pdf": "Đề thi Xử lý ảnh kỳ 2 năm học 2022-2023 - UET.pdf",
+  "questions": [
+    {
+      "question_number": 12,
+      "question": "TailieuVNU.com\nMô hình màu (Red, Green, Blue) thường được sử dụng trong trường hợp nào (chọn đáp án đúng nhất)?",
+      "options": {
+        "A": "Trong các thiết bị thu nhận và hiển thị hình ảnh",
+        "B": "Trong các ứng dụng soạn thảo và chính sửa ảnh",
+        "C": "Trong các kỹ thuật nén ảnh và video",
+        "D": "Trong các hệ thống in ảnh màu"
+      },
+      "correct": {
+        "letter": "A",
+        "text": "Trong các thiết bị thu nhận và hiển thị hình ảnh"
+      }
+    },
+    {
+      "question_number": 41,
+      "question": "Chọn nhận định sai về bộ lọc thông thấp",
+      "options": {
+        "A": "Bộ lọc thông thấp được áp dụng trên miền tần số của ảnh",
+        "B": "Bộ lọc thông thấp chỉ giữ lại các tần số thấp",
+        "C": "Bộ lọc thông thấp làm mờ ảnh",
+        "D": "Bộ lọc thông thấp được sử dụng để tách cạnh"
+      },
+      "correct": {
+        "letter": "D",
+        "text": "Bộ lọc thông thấp được sử dụng để tách cạnh"
+      }
+    },
+    {
+      "question_number": 5,
+      "question": "Ảnh kỹ thuật số là gì?",
+      "options": {
+        "A": "Là hàm rời rạc f(x, y) trên không gian hai chiều có miền xác định x, y hữu hạn",
+        "B": "Không có câu trả lời đúng",
+        "C": "Là thể hiện của các bước sóng trong miền nhìn thấy được của mắt người",
+        "D": "Là hàm liên tục f(x, y) trên không gian hai chiều có miền xác định x, y hữu hạn"
+      },
+      "correct": {
+        "letter": "A",
+        "text": "Là hàm rời rạc f(x, y) trên không gian hai chiều có miền xác định x, y hữu hạn"
+      }
+    },
+    {
+      "question_number": 6,
+      "question": "TailieuVNU.com\nẢnh nén có thể được khôi phục lại bằng kỹ thuật",
+      "options": {
+        "A": "Biến đổi ảnh",
+        "B": "Giải nén ảnh",
+        "C": "Tăng cường chất lượng ảnh",
+        "D": "Tăng cường độ tương phải"
+      },
+      "correct": {
+        "letter": "B",
+        "text": "Giải nén ảnh"
+      }
+    },
+    {
+      "question_number": 27,
+      "question": "TailieuVNU.com\nMô hình màu YCbCr và YUV thường được sử dụng trong trường hợp nào (chọn đáp án đúng nhất)",
+      "options": {
+        "A": "Trong các thiết bị thu nhận và hiển thị hình ảnh",
+        "B": "Trong các hệ thống in ảnh màu",
+        "C": "Trong các ứng dụng soạn thảo và chính sửa ảnh",
+        "D": "Trong các kỹ thuật nén ảnh và video"
+      },
+      "correct": {
+        "letter": "D",
+        "text": "Trong các kỹ thuật nén ảnh và video"
+      }
+    },
+    {
+      "question_number": 36,
+      "question": "Trong các chức năng sau đây chức năng nào có thể được thực hiện bởi xử lí ảnh khỹ thuật số?",
+      "options": {
+        "A": "Lưu trữ và trích xuất ảnh nhanh",
+        "B": "Thu lấy dữ liệu ảnh số trong các điều kiện khác nhau",
+        "C": "Định dạng lại ảnh",
+        "D": "Các câu trả lời trên đều đúng"
+      },
+      "correct": {
+        "letter": "D",
+        "text": "Các câu trả lời trên đều đúng"
+      }
+    },
+    {
+      "question_number": 38,
+      "question": "TailieuVNU.com\nChuyển đổi Fourier được sử dụng để làm gì?",
+      "options": {
+        "A": "Xây dựng các kỹ thuật lọc ảnh trên miền tần số",
+        "B": "Chuyển đổi ảnh sang miền tần số",
+        "C": "Chuyển đổi ảnh sang miền thời gian",
+        "D": "Giúp phát hiện mức độ chi tiết của ảnh"
+      },
+      "correct": {
+        "letter": "C",
+        "text": "Chuyển đổi ảnh sang miền thời gian"
+      }
+    },
+    {
+      "question_number": 45,
+      "question": "Cho phép biến đổi trên kênh màu xám y = r𝛾 với r là giá trị cấp độ xám đầu vào nhận giá trị trong\nkhoảng [0..1], y là giá trị cấp độ xám đầu ra. Tìm giá trị của 𝛾 để tăng độ tương phản các vùng sáng và\ngiảm độ tương phản các vùng tối",
+      "options": {
+        "A": "𝛾 = 0.2",
+        "B": "𝛾 = 1",
+        "C": "𝛾 = 5",
+        "D": "Không có đáp án đúng"
+      },
+      "correct": {
+        "letter": "C",
+        "text": "𝛾 = 5"
+      }
+    },
+    {
+      "question_number": 17,
+      "question": "Mục đích chính của việc làm sắc nét ảnh là gì?",
+      "options": {
+        "A": "Làm mờ ảnh",
+        "B": "Tăng độ sáng của ảnh",
+        "C": "Giảm độ sáng của ảnh",
+        "D": "Tăng chất lượng chi tiết của ảnh"
+      },
+      "correct": {
+        "letter": "D",
+        "text": "Tăng chất lượng chi tiết của ảnh"
+      }
+    },
+    {
+      "question_number": 16,
+      "question": "Ảnh màu sắc đầy đủ có ít nhất",
+      "options": {
+        "A": "3 thành phần",
+        "B": "4 components",
+        "C": "5 components",
+        "D": "2 thành phần"
+      },
+      "correct": {
+        "letter": "B",
+        "text": "4 components"
+      }
+    }
+  ],
+  "num_questions": 10
+}

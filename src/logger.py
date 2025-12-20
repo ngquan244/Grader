@@ -1,6 +1,3 @@
-"""
-Logging utilities for the application
-"""
 import logging
 import sys
 from pathlib import Path

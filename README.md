@@ -1,5 +1,6 @@
 ---
-title: Teaching Assistant Grader - LangGraph AI Agent
+title: Teaching Assistant Grader
+short_description: AI assistant for grading and teaching support
 emoji: 🤖
 colorFrom: blue
 colorTo: purple
@@ -8,5 +9,4 @@ sdk_version: 5.49.1
 app_file: main.py
 pinned: false
 license: mit
-short_description: Production-ready AI Agent for automated grading with LangGraph
 ---

@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title> quiz_20251217_172214</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; 
+               background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+               padding: 20px; min-height: 100vh; }
+        .container { max-width: 900px; margin: 0 auto; background: white; 
+                     border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                  color: white; padding: 40px; text-align: center; border-radius: 20px 20px 0 0; }
+        .header h1 { font-size: 36px; margin-bottom: 10px; }
+        .content { padding: 40px; }
+        .student-form { background: #f8f9fa; padding: 30px; border-radius: 15px; margin-bottom: 30px; }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; font-weight: bold; margin-bottom: 8px; 
+                            color: #333; font-size: 16px; }
+        .form-group input { width: 100%; padding: 14px; border: 2px solid #ddd; 
+                            border-radius: 10px; font-size: 16px; transition: all 0.3s; }
+        .form-group input:focus { border-color: #667eea; outline: none; box-shadow: 0 0 0 3px rgba(102,126,234,0.1); }
+        .question-card { background: #fff; border: 2px solid #e0e0e0; border-radius: 15px; 
+                         padding: 30px; margin-bottom: 25px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .question-text { font-size: 20px; font-weight: bold; color: #333; margin-bottom: 20px; }
+        .option-label { display: block; padding: 15px 20px; margin-bottom: 12px; 
+                        border: 2px solid #ddd; border-radius: 10px; cursor: pointer; 
+                        transition: all 0.3s; font-size: 16px; }
+        .option-label:hover { background: #f0f0f0; border-color: #667eea; transform: translateX(5px); }
+        .option-label input { margin-right: 12px; cursor: pointer; }
+        .result { margin-top: 20px; padding: 15px; border-radius: 10px; font-weight: bold; 
+                  font-size: 16px; display: none; }
+        .score-panel { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                       color: white; padding: 30px; border-radius: 15px; text-align: center; 
+                       margin: 30px 0; display: none; }
+        .score-panel h2 { font-size: 48px; margin: 20px 0; }
+        .submit-btn { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                      color: white; padding: 18px 50px; font-size: 20px; border: none; 
+                      border-radius: 12px; cursor: pointer; display: block; margin: 40px auto; 
+                      font-weight: bold; transition: all 0.3s; box-shadow: 0 4px 15px rgba(102,126,234,0.4); }
+        .submit-btn:hover { transform: scale(1.05); box-shadow: 0 6px 20px rgba(102,126,234,0.6); }
+        .info-display { background: #e3f2fd; padding: 20px; border-radius: 10px; 
+                        margin-bottom: 30px; display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1> Bài Kiểm Tra Trực Tuyến</h1>
+            <p style="font-size: 18px; margin-top: 10px;">Quiz ID: quiz_20251217_172214</p>
+        </div>
+        <div class="content">
+            <div class="student-form" id="studentForm">
+                <h3 style="margin-bottom: 25px; color: #667eea; font-size: 24px;">Thông Tin Sinh Viên</h3>
+                <div class="form-group">
+                    <label>Họ và Tên *</label>
+                    <input type="text" id="studentName" placeholder="Nhập họ tên đầy đủ" required>
+                </div>
+                <div class="form-group">
+                    <label>Mã Sinh Viên *</label>
+                    <input type="text" id="studentId" placeholder="Nhập mã sinh viên" required>
+                </div>
+                <div class="form-group">
+                    <label>Email *</label>
+                    <input type="email" id="studentEmail" placeholder="example@email.com" required>
+                </div>
+                <button onclick="startQuiz()" class="submit-btn">Bắt Đầu Làm Bài</button>
+            </div>
+            <div class="info-display" id="infoDisplay"></div>
+            <div id="quizContent" style="display: none;">
+                <h3 style="color: #667eea; margin-bottom: 30px; font-size: 24px;"> Câu Hỏi (15 câu)</h3>
+
+                <div class="question-card">
+                    <div class="question-text">Câu 1: TailieuVNU.com
+A. Dịch ảnh sang trái 1 đơn vị
+B. Khử nhiễu
+C.
+Dịch ảnh sang phải 1 đơn vị
+D.
+Làm sắc nét ảnh
+Câu trả lời của bạn đúng
+Câu trả lời đúng là:
+Làm sắc nét ảnh
+Câu Hỏi 3 Đúng
+TailieuVNU.com
+Nén ảnh được sử dụng để làm gì (chọn đáp án sai)</div>
+
+                    <label class="option-label">
+                        <input type="radio" name="q1" value="A" 
+                               data-correct="A" 
+                               onclick="checkAnswer(this, 1)">
+                        A. Để tăng cường chất lượng ảnh
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q1" value="B" 
+                               data-correct="A" 
+                               onclick="checkAnswer(this, 1)">
+                        B. Truyền ảnh qua mạng dễ dàng hơn
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q1" value="C" 
+                               data-correct="A" 
+                               onclick="checkAnswer(this, 1)">
+                        C. Để giảm kích thước ảnh
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q1" value="D" 
+                               data-correct="A" 
+                               onclick="checkAnswer(this, 1)">
+                        D. Lưu trữ ảnh dễ dàng hơn
+                    </label>
+
+                    <div id="result1" class="result"></div>
+                </div>
+
+                <div class="question-card">
+                    <div class="question-text">Câu 2: TailieuVNU.com
+Các bước nào trong qui trình nén JPEG không làm mất mát thông tin</div>
+
+                    <label class="option-label">
+                        <input type="radio" name="q2" value="A" 
+                               data-correct="A" 
+                               onclick="checkAnswer(this, 2)">
+                        A. Sử dụng biến đổi cosine rời rạc
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q2" value="B" 
+                               data-correct="A" 
+                               onclick="checkAnswer(this, 2)">
+                        B. Lấy mẫu theo từng kênh màu tỉ lệ 4:1:1
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q2" value="C" 
+                               data-correct="A" 
+                               onclick="checkAnswer(this, 2)">
+                        C. Không có câu trả lời đúng
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q2" value="D" 
+                               data-correct="A" 
+                               onclick="checkAnswer(this, 2)">
+                        D. Lượng tử hóa
+                    </label>
+
+                    <div id="result2" class="result"></div>
+                </div>
+
+                <div class="question-card">
+                    <div class="question-text">Câu 3: Mục đích chính của việc làm sắc nét ảnh là gì?</div>
+
+                    <label class="option-label">
+                        <input type="radio" name="q3" value="A" 
+                               data-correct="D" 
+                               onclick="checkAnswer(this, 3)">
+                        A. Làm mờ ảnh
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q3" value="B" 
+                               data-correct="D" 
+                               onclick="checkAnswer(this, 3)">
+                        B. Tăng độ sáng của ảnh
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q3" value="C" 
+                               data-correct="D" 
+                               onclick="checkAnswer(this, 3)">
+                        C. Giảm độ sáng của ảnh
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q3" value="D" 
+                               data-correct="D" 
+                               onclick="checkAnswer(this, 3)">
+                        D. Tăng chất lượng chi tiết của ảnh
+                    </label>
+
+                    <div id="result3" class="result"></div>
+                </div>
+
+                <div class="question-card">
+                    <div class="question-text">Câu 4: Cho phép biến đổi trên kênh màu xám y = r𝛾 với r là giá trị cấp độ xám đầu vào nhận giá trị trong
+khoảng [0..1], y là giá trị cấp độ xám đầu ra. Tìm giá trị của 𝛾 để tăng độ tương phản các vùng tối và
+giảm độ tương phản các vùng sáng</div>
+
+                    <label class="option-label">
+                        <input type="radio" name="q4" value="A" 
+                               data-correct="B" 
+                               onclick="checkAnswer(this, 4)">
+                        A. 𝛾 = 1
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q4" value="B" 
+                               data-correct="B" 
+                               onclick="checkAnswer(this, 4)">
+                        B. 𝛾 = 0.2
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q4" value="C" 
+                               data-correct="B" 
+                               onclick="checkAnswer(this, 4)">
+                        C. Không có đáp án đúng
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q4" value="D" 
+                               data-correct="B" 
+                               onclick="checkAnswer(this, 4)">
+                        D. 𝛾 = 5
+                    </label>
+
+                    <div id="result4" class="result"></div>
+                </div>
+
+                <div class="question-card">
+                    <div class="question-text">Câu 5: Cho ảnh 2 chiều cấp độ sáng đầu vào là hàm phân bố Gauss. Biến đổi Fourier rời rạc của ảnh này là:</div>
+
+                    <label class="option-label">
+                        <input type="radio" name="q5" value="A" 
+                               data-correct="C" 
+                               onclick="checkAnswer(this, 5)">
+                        A. Là các sọc ngang xen kẽ nhau
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q5" value="B" 
+                               data-correct="C" 
+                               onclick="checkAnswer(this, 5)">
+                        B. Là hằng số
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q5" value="C" 
+                               data-correct="C" 
+                               onclick="checkAnswer(this, 5)">
+                        C. Là một hàm phân bố Gauss khác
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q5" value="D" 
+                               data-correct="C" 
+                               onclick="checkAnswer(this, 5)">
+                        D. Là các sọc dọc xen kẽ nhau
+                    </label>
+
+                    <div id="result5" class="result"></div>
+                </div>
+
+                <div class="question-card">
+                    <div class="question-text">Câu 6: TailieuVNU.com
+Chuyển đổi Fourier được sử dụng để làm gì?</div>
+
+                    <label class="option-label">
+                        <input type="radio" name="q6" value="A" 
+                               data-correct="C" 
+                               onclick="checkAnswer(this, 6)">
+                        A. Xây dựng các kỹ thuật lọc ảnh trên miền tần số
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q6" value="B" 
+                               data-correct="C" 
+                               onclick="checkAnswer(this, 6)">
+                        B. Chuyển đổi ảnh sang miền tần số
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q6" value="C" 
+                               data-correct="C" 
+                               onclick="checkAnswer(this, 6)">
+                        C. Chuyển đổi ảnh sang miền thời gian
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q6" value="D" 
+                               data-correct="C" 
+                               onclick="checkAnswer(this, 6)">
+                        D. Giúp phát hiện mức độ chi tiết của ảnh
+                    </label>
+
+                    <div id="result6" class="result"></div>
+                </div>
+
+                <div class="question-card">
+                    <div class="question-text">Câu 7: Quá trình nào gây mất mát thông tin khi nén ảnh?</div>
+
+                    <label class="option-label">
+                        <input type="radio" name="q7" value="A" 
+                               data-correct="A" 
+                               onclick="checkAnswer(this, 7)">
+                        A. Lượng tử hóa
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q7" value="B" 
+                               data-correct="A" 
+                               onclick="checkAnswer(this, 7)">
+                        B. Chuyển đổi sang miền DCT
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q7" value="C" 
+                               data-correct="A" 
+                               onclick="checkAnswer(this, 7)">
+                        C. Nén Entropy
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q7" value="D" 
+                               data-correct="A" 
+                               onclick="checkAnswer(this, 7)">
+                        D. Cả 3 quá trình
+                    </label>
+
+                    <div id="result7" class="result"></div>
+                </div>
+
+                <div class="question-card">
+                    <div class="question-text">Câu 8: Ảnh kỹ thuật số là gì?</div>
+
+                    <label class="option-label">
+                        <input type="radio" name="q8" value="A" 
+                               data-correct="A" 
+                               onclick="checkAnswer(this, 8)">
+                        A. Là hàm rời rạc f(x, y) trên không gian hai chiều có miền xác định x, y hữu hạn
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q8" value="B" 
+                               data-correct="A" 
+                               onclick="checkAnswer(this, 8)">
+                        B. Không có câu trả lời đúng
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q8" value="C" 
+                               data-correct="A" 
+                               onclick="checkAnswer(this, 8)">
+                        C. Là thể hiện của các bước sóng trong miền nhìn thấy được của mắt người
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q8" value="D" 
+                               data-correct="A" 
+                               onclick="checkAnswer(this, 8)">
+                        D. Là hàm liên tục f(x, y) trên không gian hai chiều có miền xác định x, y hữu hạn
+                    </label>
+
+                    <div id="result8" class="result"></div>
+                </div>
+
+                <div class="question-card">
+                    <div class="question-text">Câu 9: Những phần nào của ảnh sau đây có thể được loại bỏ bằng các bộ lọc làm mịn ảnh?</div>
+
+                    <label class="option-label">
+                        <input type="radio" name="q9" value="A" 
+                               data-correct="B" 
+                               onclick="checkAnswer(this, 9)">
+                        A. Các đoạn chuyển giao liên tục miền sắc xám
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q9" value="B" 
+                               data-correct="B" 
+                               onclick="checkAnswer(this, 9)">
+                        B. Các đoạn chuyển giao sắc nét ở miền sắc xám
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q9" value="C" 
+                               data-correct="B" 
+                               onclick="checkAnswer(this, 9)">
+                        C. Các đoạn chuyển giao sắc nét ở miền có độ sáng lớn
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q9" value="D" 
+                               data-correct="B" 
+                               onclick="checkAnswer(this, 9)">
+                        D. Các đoạn chuyển giao liên tục ở miền có độ sáng lớn
+                    </label>
+
+                    <div id="result9" class="result"></div>
+                </div>
+
+                <div class="question-card">
+                    <div class="question-text">Câu 10: Bộ lọc max (max filters) có thể được sử dụng để loại bỏ nhiễu</div>
+
+                    <label class="option-label">
+                        <input type="radio" name="q10" value="A" 
+                               data-correct="B" 
+                               onclick="checkAnswer(this, 10)">
+                        A. Nhiễu tiêu đen (pepper noise)
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q10" value="B" 
+                               data-correct="B" 
+                               onclick="checkAnswer(this, 10)">
+                        B. Nhiễu muối trắng (Salt noise)
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q10" value="C" 
+                               data-correct="B" 
+                               onclick="checkAnswer(this, 10)">
+                        C. Nhiễu Gaussian
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q10" value="D" 
+                               data-correct="B" 
+                               onclick="checkAnswer(this, 10)">
+                        D. Cả 3 loại nhiễu
+                    </label>
+
+                    <div id="result10" class="result"></div>
+                </div>
+
+                <div class="question-card">
+                    <div class="question-text">Câu 11: Trong các chức năng sau đây chức năng nào có thể được thực hiện bởi xử lí ảnh khỹ thuật số?</div>
+
+                    <label class="option-label">
+                        <input type="radio" name="q11" value="A" 
+                               data-correct="D" 
+                               onclick="checkAnswer(this, 11)">
+                        A. Lưu trữ và trích xuất ảnh nhanh
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q11" value="B" 
+                               data-correct="D" 
+                               onclick="checkAnswer(this, 11)">
+                        B. Thu lấy dữ liệu ảnh số trong các điều kiện khác nhau
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q11" value="C" 
+                               data-correct="D" 
+                               onclick="checkAnswer(this, 11)">
+                        C. Định dạng lại ảnh
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q11" value="D" 
+                               data-correct="D" 
+                               onclick="checkAnswer(this, 11)">
+                        D. Các câu trả lời trên đều đúng
+                    </label>
+
+                    <div id="result11" class="result"></div>
+                </div>
+
+                <div class="question-card">
+                    <div class="question-text">Câu 12: Phát biểu nào về bộ lọc không gian (Spatial filter) là sai?</div>
+
+                    <label class="option-label">
+                        <input type="radio" name="q12" value="A" 
+                               data-correct="D" 
+                               onclick="checkAnswer(this, 12)">
+                        A. Bộ lọc không gian được thực hiện trên miền điểm ảnh
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q12" value="B" 
+                               data-correct="D" 
+                               onclick="checkAnswer(this, 12)">
+                        B. Bộ lọc trung bình là một loại lọc không gian
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q12" value="C" 
+                               data-correct="D" 
+                               onclick="checkAnswer(this, 12)">
+                        C. Bộ lọc không gian có thể được sử dụng để làm mượt ảnh
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q12" value="D" 
+                               data-correct="D" 
+                               onclick="checkAnswer(this, 12)">
+                        D. Bộ lọc không gian chỉ được sử dụng để làm mượt ảnh
+                    </label>
+
+                    <div id="result12" class="result"></div>
+                </div>
+
+                <div class="question-card">
+                    <div class="question-text">Câu 13: Bộ lọc trung vị có thể lọc được những loại nhiễu nào</div>
+
+                    <label class="option-label">
+                        <input type="radio" name="q13" value="A" 
+                               data-correct="A" 
+                               onclick="checkAnswer(this, 13)">
+                        A. Nhiễu xung
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q13" value="B" 
+                               data-correct="A" 
+                               onclick="checkAnswer(this, 13)">
+                        B. Nhiễu gaussian
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q13" value="C" 
+                               data-correct="A" 
+                               onclick="checkAnswer(this, 13)">
+                        C. Tất cả các loại nhiễu
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q13" value="D" 
+                               data-correct="A" 
+                               onclick="checkAnswer(this, 13)">
+                        D. Nhiễu sóng có chu kỳ
+                    </label>
+
+                    <div id="result13" class="result"></div>
+                </div>
+
+                <div class="question-card">
+                    <div class="question-text">Câu 14: Từ khoá nào không phải là tên gọi một không gian màu</div>
+
+                    <label class="option-label">
+                        <input type="radio" name="q14" value="A" 
+                               data-correct="D" 
+                               onclick="checkAnswer(this, 14)">
+                        A. HSI
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q14" value="B" 
+                               data-correct="D" 
+                               onclick="checkAnswer(this, 14)">
+                        B. RGB
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q14" value="C" 
+                               data-correct="D" 
+                               onclick="checkAnswer(this, 14)">
+                        C. CMYK
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q14" value="D" 
+                               data-correct="D" 
+                               onclick="checkAnswer(this, 14)">
+                        D. RCB
+                    </label>
+
+                    <div id="result14" class="result"></div>
+                </div>
+
+                <div class="question-card">
+                    <div class="question-text">Câu 15: TailieuVNU.com
+Mô hình màu YCbCr và YUV thường được sử dụng trong trường hợp nào (chọn đáp án đúng nhất)</div>
+
+                    <label class="option-label">
+                        <input type="radio" name="q15" value="A" 
+                               data-correct="D" 
+                               onclick="checkAnswer(this, 15)">
+                        A. Trong các thiết bị thu nhận và hiển thị hình ảnh
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q15" value="B" 
+                               data-correct="D" 
+                               onclick="checkAnswer(this, 15)">
+                        B. Trong các hệ thống in ảnh màu
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q15" value="C" 
+                               data-correct="D" 
+                               onclick="checkAnswer(this, 15)">
+                        C. Trong các ứng dụng soạn thảo và chính sửa ảnh
+                    </label>
+
+                    <label class="option-label">
+                        <input type="radio" name="q15" value="D" 
+                               data-correct="D" 
+                               onclick="checkAnswer(this, 15)">
+                        D. Trong các kỹ thuật nén ảnh và video
+                    </label>
+
+                    <div id="result15" class="result"></div>
+                </div>
+
+                <button onclick="submitQuiz()" class="submit-btn"> Nộp Bài</button>
+                <div class="score-panel" id="scorePanel">
+                    <h3> KẾT QUẢ</h3>
+                    <h2 id="scoreText"></h2>
+                    <p id="scoreDetail" style="font-size: 18px; margin-top: 10px;"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        let studentInfo = {};
+        let answers = {};
+        const totalQuestions = 15;
+        function startQuiz() {
+            const name = document.getElementById('studentName').value.trim();
+            const id = document.getElementById('studentId').value.trim();
+            const email = document.getElementById('studentEmail').value.trim();
+            if (!name || !id || !email) {
+                alert(' Vui lòng điền đầy đủ thông tin!');
+                return;
+            }
+            studentInfo = { name, id, email };
+            document.getElementById('studentForm').style.display = 'none';
+            document.getElementById('infoDisplay').style.display = 'block';
+            document.getElementById('infoDisplay').innerHTML = `
+                <h4 style="margin-bottom: 15px; color: #667eea;">Thông tin của bạn:</h4>
+                <p><strong>Họ tên:</strong> ${name}</p>
+                <p><strong>MSSV:</strong> ${id}</p>
+                <p><strong>Email:</strong> ${email}</p>
+            `;
+            document.getElementById('quizContent').style.display = 'block';
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        function checkAnswer(radio, questionNum) {
+            const correct = radio.getAttribute('data-correct');
+            const result = document.getElementById('result' + questionNum);
+            const labels = radio.parentNode.parentNode.querySelectorAll('.option-label');
+            labels.forEach(l => {
+                l.style.background = '';
+                l.style.borderColor = '#ddd';
+            });
+            // Không hiển thị kết quả đúng/sai cho học sinh
+            result.style.display = 'none';
+            if(radio.value === correct) {
+                radio.parentNode.style.background = '#d4edda';
+                radio.parentNode.style.borderColor = '#28a745';
+                answers[questionNum] = true;
+            } else {
+                radio.parentNode.style.background = '#f8d7da';
+                radio.parentNode.style.borderColor = '#dc3545';
+                answers[questionNum] = false;
+            }
+        }
+        function submitQuiz() {
+            let correctCount = 0;
+            let answeredCount = 0;
+            // Duyệt qua tất cả các câu hỏi
+            for (let i = 1; i <= totalQuestions; i++) {
+                const radios = document.getElementsByName('q' + i);
+                let selected = null;
+                let correct = null;
+                for (let r of radios) {
+                    if (r.checked) selected = r.value;
+                    correct = r.getAttribute('data-correct');
+                }
+                if (selected !== null) {
+                    answeredCount++;
+                    if (selected === correct) correctCount++;
+                }
+            }
+            if (answeredCount < totalQuestions) {
+                if (!confirm(`Bạn mới trả lời ${answeredCount}/${totalQuestions} câu. Bạn có chắc muốn nộp bài?`)) {
+                    return;
+                }
+            }
+            // Tính điểm trên thang 10
+            const score = ((correctCount / totalQuestions) * 10).toFixed(1);
+            document.getElementById('scoreText').textContent = score + ' điểm';
+            document.getElementById('scoreDetail').textContent = 
+                `Đúng ${correctCount}/${totalQuestions} câu`;
+            document.getElementById('scorePanel').style.display = 'block';
+            window.scrollTo({ top: document.getElementById('scorePanel').offsetTop - 100, behavior: 'smooth' });
+            console.log('Kết quả:', {
+                ...studentInfo,
+                score: score,
+                correct: correctCount,
+                total: totalQuestions,
+                quizId: 'quiz_20251217_172214'
+            });
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,218 @@
+{
+  "id": "quiz_20251217_172214",
+  "timestamp": "20251217_172214",
+  "source_pdf": "Đề thi Xử lý ảnh kỳ 2 năm học 2022-2023 - UET.pdf",
+  "questions": [
+    {
+      "question_number": 2,
+      "question": "TailieuVNU.com\nA. Dịch ảnh sang trái 1 đơn vị\nB. Khử nhiễu\nC.\nDịch ảnh sang phải 1 đơn vị\nD.\nLàm sắc nét ảnh\nCâu trả lời của bạn đúng\nCâu trả lời đúng là:\nLàm sắc nét ảnh\nCâu Hỏi 3 Đúng\nTailieuVNU.com\nNén ảnh được sử dụng để làm gì (chọn đáp án sai)",
+      "options": {
+        "A": "Để tăng cường chất lượng ảnh",
+        "B": "Truyền ảnh qua mạng dễ dàng hơn",
+        "C": "Để giảm kích thước ảnh",
+        "D": "Lưu trữ ảnh dễ dàng hơn"
+      },
+      "correct": {
+        "letter": "A",
+        "text": "Để tăng cường chất lượng ảnh"
+      }
+    },
+    {
+      "question_number": 21,
+      "question": "TailieuVNU.com\nCác bước nào trong qui trình nén JPEG không làm mất mát thông tin",
+      "options": {
+        "A": "Sử dụng biến đổi cosine rời rạc",
+        "B": "Lấy mẫu theo từng kênh màu tỉ lệ 4:1:1",
+        "C": "Không có câu trả lời đúng",
+        "D": "Lượng tử hóa"
+      },
+      "correct": {
+        "letter": "A",
+        "text": "Sử dụng biến đổi cosine rời rạc"
+      }
+    },
+    {
+      "question_number": 17,
+      "question": "Mục đích chính của việc làm sắc nét ảnh là gì?",
+      "options": {
+        "A": "Làm mờ ảnh",
+        "B": "Tăng độ sáng của ảnh",
+        "C": "Giảm độ sáng của ảnh",
+        "D": "Tăng chất lượng chi tiết của ảnh"
+      },
+      "correct": {
+        "letter": "D",
+        "text": "Tăng chất lượng chi tiết của ảnh"
+      }
+    },
+    {
+      "question_number": 14,
+      "question": "Cho phép biến đổi trên kênh màu xám y = r𝛾 với r là giá trị cấp độ xám đầu vào nhận giá trị trong\nkhoảng [0..1], y là giá trị cấp độ xám đầu ra. Tìm giá trị của 𝛾 để tăng độ tương phản các vùng tối và\ngiảm độ tương phản các vùng sáng",
+      "options": {
+        "A": "𝛾 = 1",
+        "B": "𝛾 = 0.2",
+        "C": "Không có đáp án đúng",
+        "D": "𝛾 = 5"
+      },
+      "correct": {
+        "letter": "B",
+        "text": "𝛾 = 0.2"
+      }
+    },
+    {
+      "question_number": 25,
+      "question": "Cho ảnh 2 chiều cấp độ sáng đầu vào là hàm phân bố Gauss. Biến đổi Fourier rời rạc của ảnh này là:",
+      "options": {
+        "A": "Là các sọc ngang xen kẽ nhau",
+        "B": "Là hằng số",
+        "C": "Là một hàm phân bố Gauss khác",
+        "D": "Là các sọc dọc xen kẽ nhau"
+      },
+      "correct": {
+        "letter": "C",
+        "text": "Là một hàm phân bố Gauss khác"
+      }
+    },
+    {
+      "question_number": 38,
+      "question": "TailieuVNU.com\nChuyển đổi Fourier được sử dụng để làm gì?",
+      "options": {
+        "A": "Xây dựng các kỹ thuật lọc ảnh trên miền tần số",
+        "B": "Chuyển đổi ảnh sang miền tần số",
+        "C": "Chuyển đổi ảnh sang miền thời gian",
+        "D": "Giúp phát hiện mức độ chi tiết của ảnh"
+      },
+      "correct": {
+        "letter": "C",
+        "text": "Chuyển đổi ảnh sang miền thời gian"
+      }
+    },
+    {
+      "question_number": 48,
+      "question": "Quá trình nào gây mất mát thông tin khi nén ảnh?",
+      "options": {
+        "A": "Lượng tử hóa",
+        "B": "Chuyển đổi sang miền DCT",
+        "C": "Nén Entropy",
+        "D": "Cả 3 quá trình"
+      },
+      "correct": {
+        "letter": "A",
+        "text": "Lượng tử hóa"
+      }
+    },
+    {
+      "question_number": 5,
+      "question": "Ảnh kỹ thuật số là gì?",
+      "options": {
+        "A": "Là hàm rời rạc f(x, y) trên không gian hai chiều có miền xác định x, y hữu hạn",
+        "B": "Không có câu trả lời đúng",
+        "C": "Là thể hiện của các bước sóng trong miền nhìn thấy được của mắt người",
+        "D": "Là hàm liên tục f(x, y) trên không gian hai chiều có miền xác định x, y hữu hạn"
+      },
+      "correct": {
+        "letter": "A",
+        "text": "Là hàm rời rạc f(x, y) trên không gian hai chiều có miền xác định x, y hữu hạn"
+      }
+    },
+    {
+      "question_number": 26,
+      "question": "Những phần nào của ảnh sau đây có thể được loại bỏ bằng các bộ lọc làm mịn ảnh?",
+      "options": {
+        "A": "Các đoạn chuyển giao liên tục miền sắc xám",
+        "B": "Các đoạn chuyển giao sắc nét ở miền sắc xám",
+        "C": "Các đoạn chuyển giao sắc nét ở miền có độ sáng lớn",
+        "D": "Các đoạn chuyển giao liên tục ở miền có độ sáng lớn"
+      },
+      "correct": {
+        "letter": "B",
+        "text": "Các đoạn chuyển giao sắc nét ở miền sắc xám"
+      }
+    },
+    {
+      "question_number": 19,
+      "question": "Bộ lọc max (max filters) có thể được sử dụng để loại bỏ nhiễu",
+      "options": {
+        "A": "Nhiễu tiêu đen (pepper noise)",
+        "B": "Nhiễu muối trắng (Salt noise)",
+        "C": "Nhiễu Gaussian",
+        "D": "Cả 3 loại nhiễu"
+      },
+      "correct": {
+        "letter": "B",
+        "text": "Nhiễu muối trắng (Salt noise)"
+      }
+    },
+    {
+      "question_number": 36,
+      "question": "Trong các chức năng sau đây chức năng nào có thể được thực hiện bởi xử lí ảnh khỹ thuật số?",
+      "options": {
+        "A": "Lưu trữ và trích xuất ảnh nhanh",
+        "B": "Thu lấy dữ liệu ảnh số trong các điều kiện khác nhau",
+        "C": "Định dạng lại ảnh",
+        "D": "Các câu trả lời trên đều đúng"
+      },
+      "correct": {
+        "letter": "D",
+        "text": "Các câu trả lời trên đều đúng"
+      }
+    },
+    {
+      "question_number": 31,
+      "question": "Phát biểu nào về bộ lọc không gian (Spatial filter) là sai?",
+      "options": {
+        "A": "Bộ lọc không gian được thực hiện trên miền điểm ảnh",
+        "B": "Bộ lọc trung bình là một loại lọc không gian",
+        "C": "Bộ lọc không gian có thể được sử dụng để làm mượt ảnh",
+        "D": "Bộ lọc không gian chỉ được sử dụng để làm mượt ảnh"
+      },
+      "correct": {
+        "letter": "D",
+        "text": "Bộ lọc không gian chỉ được sử dụng để làm mượt ảnh"
+      }
+    },
+    {
+      "question_number": 10,
+      "question": "Bộ lọc trung vị có thể lọc được những loại nhiễu nào",
+      "options": {
+        "A": "Nhiễu xung",
+        "B": "Nhiễu gaussian",
+        "C": "Tất cả các loại nhiễu",
+        "D": "Nhiễu sóng có chu kỳ"
+      },
+      "correct": {
+        "letter": "A",
+        "text": "Nhiễu xung"
+      }
+    },
+    {
+      "question_number": 4,
+      "question": "Từ khoá nào không phải là tên gọi một không gian màu",
+      "options": {
+        "A": "HSI",
+        "B": "RGB",
+        "C": "CMYK",
+        "D": "RCB"
+      },
+      "correct": {
+        "letter": "D",
+        "text": "RCB"
+      }
+    },
+    {
+      "question_number": 27,
+      "question": "TailieuVNU.com\nMô hình màu YCbCr và YUV thường được sử dụng trong trường hợp nào (chọn đáp án đúng nhất)",
+      "options": {
+        "A": "Trong các thiết bị thu nhận và hiển thị hình ảnh",
+        "B": "Trong các hệ thống in ảnh màu",
+        "C": "Trong các ứng dụng soạn thảo và chính sửa ảnh",
+        "D": "Trong các kỹ thuật nén ảnh và video"
+      },
+      "correct": {
+        "letter": "D",
+        "text": "Trong các kỹ thuật nén ảnh và video"
+      }
+    }
+  ],
+  "num_questions": 15
+}

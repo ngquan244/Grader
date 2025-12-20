@@ -1,0 +1,147 @@
+{
+  "id": "quiz_20251221_003758",
+  "timestamp": "20251221_003758",
+  "questions": [
+    {
+      "question_number": 38,
+      "question": "TailieuVNU.com\nChuyển đổi Fourier được sử dụng để làm gì?",
+      "options": {
+        "A": "Xây dựng các kỹ thuật lọc ảnh trên miền tần số",
+        "B": "Chuyển đổi ảnh sang miền tần số",
+        "C": "Chuyển đổi ảnh sang miền thời gian",
+        "D": "Giúp phát hiện mức độ chi tiết của ảnh"
+      },
+      "correct": {
+        "letter": "C",
+        "text": "Chuyển đổi ảnh sang miền thời gian"
+      }
+    },
+    {
+      "question_number": 35,
+      "question": "TailieuVNU.com\nCác yếu tố để tạo thành cạnh trên ảnh có thể là",
+      "options": {
+        "A": "Sự không liên tục về chi tiết",
+        "B": "Sự không liên tục về màu sắc",
+        "C": "Sự không liên tục về độ sâu",
+        "D": "Câu trả lời a, b, c đều đúng"
+      },
+      "correct": {
+        "letter": "D",
+        "text": "Câu trả lời a, b, c đều đúng"
+      }
+    },
+    {
+      "question_number": 36,
+      "question": "Trong các chức năng sau đây chức năng nào có thể được thực hiện bởi xử lí ảnh khỹ thuật số?",
+      "options": {
+        "A": "Lưu trữ và trích xuất ảnh nhanh",
+        "B": "Thu lấy dữ liệu ảnh số trong các điều kiện khác nhau",
+        "C": "Định dạng lại ảnh",
+        "D": "Các câu trả lời trên đều đúng"
+      },
+      "correct": {
+        "letter": "D",
+        "text": "Các câu trả lời trên đều đúng"
+      }
+    },
+    {
+      "question_number": 17,
+      "question": "Mục đích chính của việc làm sắc nét ảnh là gì?",
+      "options": {
+        "A": "Làm mờ ảnh",
+        "B": "Tăng độ sáng của ảnh",
+        "C": "Giảm độ sáng của ảnh",
+        "D": "Tăng chất lượng chi tiết của ảnh"
+      },
+      "correct": {
+        "letter": "D",
+        "text": "Tăng chất lượng chi tiết của ảnh"
+      }
+    },
+    {
+      "question_number": 47,
+      "question": "Bộ lọc nào sau đây dựa trên sắp xếp giá trị của điểm ảnh?",
+      "options": {
+        "A": "Bộ lọc hình học",
+        "B": "Bộ lọc sắc cạnh",
+        "C": "Bộ lọc làm mịn tuyến tính",
+        "D": "Bộ lọc không tuyến tính"
+      },
+      "correct": {
+        "letter": "D",
+        "text": "Bộ lọc không tuyến tính"
+      }
+    },
+    {
+      "question_number": 45,
+      "question": "Cho phép biến đổi trên kênh màu xám y = r𝛾 với r là giá trị cấp độ xám đầu vào nhận giá trị trong\nkhoảng [0..1], y là giá trị cấp độ xám đầu ra. Tìm giá trị của 𝛾 để tăng độ tương phản các vùng sáng và\ngiảm độ tương phản các vùng tối",
+      "options": {
+        "A": "𝛾 = 0.2",
+        "B": "𝛾 = 1",
+        "C": "𝛾 = 5",
+        "D": "Không có đáp án đúng"
+      },
+      "correct": {
+        "letter": "C",
+        "text": "𝛾 = 5"
+      }
+    },
+    {
+      "question_number": 2,
+      "question": "TailieuVNU.com\nA. Dịch ảnh sang trái 1 đơn vị\nB. Khử nhiễu\nC.\nDịch ảnh sang phải 1 đơn vị\nD.\nLàm sắc nét ảnh\nCâu trả lời của bạn đúng\nCâu trả lời đúng là:\nLàm sắc nét ảnh\nCâu Hỏi 3 Đúng\nTailieuVNU.com\nNén ảnh được sử dụng để làm gì (chọn đáp án sai)",
+      "options": {
+        "A": "Để tăng cường chất lượng ảnh",
+        "B": "Truyền ảnh qua mạng dễ dàng hơn",
+        "C": "Để giảm kích thước ảnh",
+        "D": "Lưu trữ ảnh dễ dàng hơn"
+      },
+      "correct": {
+        "letter": "A",
+        "text": "Để tăng cường chất lượng ảnh"
+      }
+    },
+    {
+      "question_number": 10,
+      "question": "Bộ lọc trung vị có thể lọc được những loại nhiễu nào",
+      "options": {
+        "A": "Nhiễu xung",
+        "B": "Nhiễu gaussian",
+        "C": "Tất cả các loại nhiễu",
+        "D": "Nhiễu sóng có chu kỳ"
+      },
+      "correct": {
+        "letter": "A",
+        "text": "Nhiễu xung"
+      }
+    },
+    {
+      "question_number": 32,
+      "question": "TailieuVNU.com\nĐâu là tên gọi khác của bộ lọc trong bình.",
+      "options": {
+        "A": "Bộ lọc thông cao",
+        "B": "Bộ lọc dải",
+        "C": "Bộ lọc thông thấp",
+        "D": "Không có câu trả lời đúng"
+      },
+      "correct": {
+        "letter": "C",
+        "text": "Bộ lọc thông thấp"
+      }
+    },
+    {
+      "question_number": 13,
+      "question": "Mắt người có thể cảm nhận được màu sắc thông qua?",
+      "options": {
+        "A": "Tế bào thần kinh trong võng mạc",
+        "B": "Tế bào hình nón (Cones)",
+        "C": "Tế bào thần kinh trong não",
+        "D": "Tế bào hình que (Rods)"
+      },
+      "correct": {
+        "letter": "B",
+        "text": "Tế bào hình nón (Cones)"
+      }
+    }
+  ],
+  "num_questions": 10
+}

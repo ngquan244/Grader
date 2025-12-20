@@ -1,0 +1,148 @@
+{
+  "id": "quiz_20251220_021128",
+  "timestamp": "20251220_021128",
+  "source_pdf": "Đề thi Xử lý ảnh kỳ 2 năm học 2022-2023 - UET.pdf",
+  "questions": [
+    {
+      "question_number": 24,
+      "question": "TailieuVNU.com\nChọn nhận định sai về bộ lọc thông thấp",
+      "options": {
+        "A": "Bộ lọc thông thấp loại bỏ các tần số cao",
+        "B": "Bộ lọc thông thấp có thể lọc được nhiều loại nhiễu",
+        "C": "Bộ lọc thông thấp làm mờ các cạnh của ảnh",
+        "D": "Bộ lọc thông thấp loại bỏ các tần số thấp"
+      },
+      "correct": {
+        "letter": "D",
+        "text": "Bộ lọc thông thấp loại bỏ các tần số thấp"
+      }
+    },
+    {
+      "question_number": 6,
+      "question": "TailieuVNU.com\nẢnh nén có thể được khôi phục lại bằng kỹ thuật",
+      "options": {
+        "A": "Biến đổi ảnh",
+        "B": "Giải nén ảnh",
+        "C": "Tăng cường chất lượng ảnh",
+        "D": "Tăng cường độ tương phải"
+      },
+      "correct": {
+        "letter": "B",
+        "text": "Giải nén ảnh"
+      }
+    },
+    {
+      "question_number": 19,
+      "question": "Bộ lọc max (max filters) có thể được sử dụng để loại bỏ nhiễu",
+      "options": {
+        "A": "Nhiễu tiêu đen (pepper noise)",
+        "B": "Nhiễu muối trắng (Salt noise)",
+        "C": "Nhiễu Gaussian",
+        "D": "Cả 3 loại nhiễu"
+      },
+      "correct": {
+        "letter": "B",
+        "text": "Nhiễu muối trắng (Salt noise)"
+      }
+    },
+    {
+      "question_number": 17,
+      "question": "Mục đích chính của việc làm sắc nét ảnh là gì?",
+      "options": {
+        "A": "Làm mờ ảnh",
+        "B": "Tăng độ sáng của ảnh",
+        "C": "Giảm độ sáng của ảnh",
+        "D": "Tăng chất lượng chi tiết của ảnh"
+      },
+      "correct": {
+        "letter": "D",
+        "text": "Tăng chất lượng chi tiết của ảnh"
+      }
+    },
+    {
+      "question_number": 11,
+      "question": "Các yếu tố để tạo thành cạnh trên ảnh có thể là",
+      "options": {
+        "A": "Sự không liên tục về ánh sáng",
+        "B": "Do ảnh bị nhiễu gauss khi chụp trong vùng thiếu ánh sáng",
+        "C": "Câu trả lời a và b đều đúng",
+        "D": "Câu trả lời a và b đều sai"
+      },
+      "correct": {
+        "letter": "A",
+        "text": "Sự không liên tục về ánh sáng"
+      }
+    },
+    {
+      "question_number": 20,
+      "question": "Toán tử giãn độ tương phản ảnh (contrast stretching) có thể được sử dụng để",
+      "options": {
+        "A": "Làm rõ những vùng ảnh chứa các điểm ảnh có độ sáng quá gần nhau",
+        "B": "Làm rõ những vùng ảnh có quá nhiều nhiễu",
+        "C": "Làm tăng cường độ sáng những vùng ảnh tối",
+        "D": "Làm giảm cường độ sáng những vùng ảnh quá sáng"
+      },
+      "correct": {
+        "letter": "A",
+        "text": "Làm rõ những vùng ảnh chứa các điểm ảnh có độ sáng quá gần nhau"
+      }
+    },
+    {
+      "question_number": 22,
+      "question": "Lọc ảnh cửa sổ trượt là",
+      "options": {
+        "A": "Mỗi giá trị điểm ảnh đầu ra phụ thuộc vào chỉ một điểm ảnh đầu vào",
+        "B": "Mỗi giá trị điểm ảnh đầu ra phụ thuộc vào một số điểm ảnh ở vị trí lân cận với điểm ảnh đầu ra",
+        "C": "Mỗi điểm ảnh đầu ra phụ thuộc vào giá trị của toàn bộ các điểm ảnh của ảnh đầu vào",
+        "D": "cả 3 lựa chọn đều đúng"
+      },
+      "correct": {
+        "letter": "B",
+        "text": "Mỗi giá trị điểm ảnh đầu ra phụ thuộc vào một số điểm ảnh ở vị trí lân cận với điểm ảnh"
+      }
+    },
+    {
+      "question_number": 21,
+      "question": "TailieuVNU.com\nCác bước nào trong qui trình nén JPEG không làm mất mát thông tin",
+      "options": {
+        "A": "Sử dụng biến đổi cosine rời rạc",
+        "B": "Lấy mẫu theo từng kênh màu tỉ lệ 4:1:1",
+        "C": "Không có câu trả lời đúng",
+        "D": "Lượng tử hóa"
+      },
+      "correct": {
+        "letter": "A",
+        "text": "Sử dụng biến đổi cosine rời rạc"
+      }
+    },
+    {
+      "question_number": 38,
+      "question": "TailieuVNU.com\nChuyển đổi Fourier được sử dụng để làm gì?",
+      "options": {
+        "A": "Xây dựng các kỹ thuật lọc ảnh trên miền tần số",
+        "B": "Chuyển đổi ảnh sang miền tần số",
+        "C": "Chuyển đổi ảnh sang miền thời gian",
+        "D": "Giúp phát hiện mức độ chi tiết của ảnh"
+      },
+      "correct": {
+        "letter": "C",
+        "text": "Chuyển đổi ảnh sang miền thời gian"
+      }
+    },
+    {
+      "question_number": 7,
+      "question": "Ưu điểm chính của chuẩn nén ảnh JPEG là gì",
+      "options": {
+        "A": "Không có câu trả lời đúng",
+        "B": "Có thể giải nén theo tiến trình (progressive decoding)",
+        "C": "Có hiệu suất nén thông tin cao",
+        "D": "Có thể nén không mất mát thông tin"
+      },
+      "correct": {
+        "letter": "C",
+        "text": "Có hiệu suất nén thông tin cao"
+      }
+    }
+  ],
+  "num_questions": 10
+}
