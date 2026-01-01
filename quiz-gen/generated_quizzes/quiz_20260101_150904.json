@@ -1,0 +1,148 @@
+{
+  "id": "quiz_20260101_150904",
+  "timestamp": "20260101_150904",
+  "source_pdf": "Đề thi Xử lý ảnh kỳ 2 năm học 2022-2023 - UET.pdf",
+  "questions": [
+    {
+      "question_number": 18,
+      "question": "TailieuVNU.com\nỨng dụng chính của kênh màu YCbCr là",
+      "options": {
+        "A": "Tập trung thông tin của ảnh về kênh màu Cr",
+        "B": "Dùng trong nén ảnh",
+        "C": "Dễ tính toán hơn kênh màu RGB",
+        "D": "Dùng trong máy in để tiết kiệm mực"
+      },
+      "correct": {
+        "letter": "B",
+        "text": "Dùng trong nén ảnh"
+      }
+    },
+    {
+      "question_number": 2,
+      "question": "TailieuVNU.com\nA. Dịch ảnh sang trái 1 đơn vị\nB. Khử nhiễu\nC.\nDịch ảnh sang phải 1 đơn vị\nD.\nLàm sắc nét ảnh\nCâu trả lời của bạn đúng\nCâu trả lời đúng là:\nLàm sắc nét ảnh\nCâu Hỏi 3 Đúng\nTailieuVNU.com\nNén ảnh được sử dụng để làm gì (chọn đáp án sai)",
+      "options": {
+        "A": "Để tăng cường chất lượng ảnh",
+        "B": "Truyền ảnh qua mạng dễ dàng hơn",
+        "C": "Để giảm kích thước ảnh",
+        "D": "Lưu trữ ảnh dễ dàng hơn"
+      },
+      "correct": {
+        "letter": "A",
+        "text": "Để tăng cường chất lượng ảnh"
+      }
+    },
+    {
+      "question_number": 41,
+      "question": "Chọn nhận định sai về bộ lọc thông thấp",
+      "options": {
+        "A": "Bộ lọc thông thấp được áp dụng trên miền tần số của ảnh",
+        "B": "Bộ lọc thông thấp chỉ giữ lại các tần số thấp",
+        "C": "Bộ lọc thông thấp làm mờ ảnh",
+        "D": "Bộ lọc thông thấp được sử dụng để tách cạnh"
+      },
+      "correct": {
+        "letter": "D",
+        "text": "Bộ lọc thông thấp được sử dụng để tách cạnh"
+      }
+    },
+    {
+      "question_number": 9,
+      "question": "TailieuVNU.com\nCho tỉ lệ xuất hiện các kí hiệu p(a) = 0.5, p(b) = 0.25, p(c) = 0.125, p(d) = 0.125. Tính số lượng bit dùng\nđể mã hóa chuỗi thông tin S = abcadbc nếu sử dụng mã hóa Huffman",
+      "options": {
+        "A": "15",
+        "B": "10",
+        "C": "14",
+        "D": "12"
+      },
+      "correct": {
+        "letter": "A",
+        "text": "15"
+      }
+    },
+    {
+      "question_number": 10,
+      "question": "Bộ lọc trung vị có thể lọc được những loại nhiễu nào",
+      "options": {
+        "A": "Nhiễu xung",
+        "B": "Nhiễu gaussian",
+        "C": "Tất cả các loại nhiễu",
+        "D": "Nhiễu sóng có chu kỳ"
+      },
+      "correct": {
+        "letter": "A",
+        "text": "Nhiễu xung"
+      }
+    },
+    {
+      "question_number": 25,
+      "question": "Cho ảnh 2 chiều cấp độ sáng đầu vào là hàm phân bố Gauss. Biến đổi Fourier rời rạc của ảnh này là:",
+      "options": {
+        "A": "Là các sọc ngang xen kẽ nhau",
+        "B": "Là hằng số",
+        "C": "Là một hàm phân bố Gauss khác",
+        "D": "Là các sọc dọc xen kẽ nhau"
+      },
+      "correct": {
+        "letter": "C",
+        "text": "Là một hàm phân bố Gauss khác"
+      }
+    },
+    {
+      "question_number": 7,
+      "question": "Ưu điểm chính của chuẩn nén ảnh JPEG là gì",
+      "options": {
+        "A": "Không có câu trả lời đúng",
+        "B": "Có thể giải nén theo tiến trình (progressive decoding)",
+        "C": "Có hiệu suất nén thông tin cao",
+        "D": "Có thể nén không mất mát thông tin"
+      },
+      "correct": {
+        "letter": "C",
+        "text": "Có hiệu suất nén thông tin cao"
+      }
+    },
+    {
+      "question_number": 47,
+      "question": "Bộ lọc nào sau đây dựa trên sắp xếp giá trị của điểm ảnh?",
+      "options": {
+        "A": "Bộ lọc hình học",
+        "B": "Bộ lọc sắc cạnh",
+        "C": "Bộ lọc làm mịn tuyến tính",
+        "D": "Bộ lọc không tuyến tính"
+      },
+      "correct": {
+        "letter": "D",
+        "text": "Bộ lọc không tuyến tính"
+      }
+    },
+    {
+      "question_number": 21,
+      "question": "TailieuVNU.com\nCác bước nào trong qui trình nén JPEG không làm mất mát thông tin",
+      "options": {
+        "A": "Sử dụng biến đổi cosine rời rạc",
+        "B": "Lấy mẫu theo từng kênh màu tỉ lệ 4:1:1",
+        "C": "Không có câu trả lời đúng",
+        "D": "Lượng tử hóa"
+      },
+      "correct": {
+        "letter": "A",
+        "text": "Sử dụng biến đổi cosine rời rạc"
+      }
+    },
+    {
+      "question_number": 14,
+      "question": "Cho phép biến đổi trên kênh màu xám y = r𝛾 với r là giá trị cấp độ xám đầu vào nhận giá trị trong\nkhoảng [0..1], y là giá trị cấp độ xám đầu ra. Tìm giá trị của 𝛾 để tăng độ tương phản các vùng tối và\ngiảm độ tương phản các vùng sáng",
+      "options": {
+        "A": "𝛾 = 1",
+        "B": "𝛾 = 0.2",
+        "C": "Không có đáp án đúng",
+        "D": "𝛾 = 5"
+      },
+      "correct": {
+        "letter": "B",
+        "text": "𝛾 = 0.2"
+      }
+    }
+  ],
+  "num_questions": 10
+}

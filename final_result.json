@@ -10,10 +10,10 @@
             "student_code": "028171",
             "exam_code": "000",
             "total_questions": 50,
-            "correct": 50,
-            "wrong": 0,
-            "blank": 0,
-            "score": 10.0,
+            "correct": 47,
+            "wrong": 2,
+            "blank": 1,
+            "score": 9.4,
             "details": [
                 {
                     "question": 1,
@@ -293,21 +293,27 @@
                 },
                 {
                     "question": 47,
-                    "student_answer": "C",
+                    "student_answer": [
+                        "A",
+                        "B"
+                    ],
                     "correct_answer": "C",
-                    "result": "correct"
+                    "result": "multi"
                 },
                 {
                     "question": 48,
-                    "student_answer": "D",
+                    "student_answer": [
+                        "B",
+                        "C"
+                    ],
                     "correct_answer": "D",
-                    "result": "correct"
+                    "result": "multi"
                 },
                 {
                     "question": 49,
-                    "student_answer": "A",
+                    "student_answer": null,
                     "correct_answer": "A",
-                    "result": "correct"
+                    "result": "blank"
                 },
                 {
                     "question": 50,
@@ -316,7 +322,7 @@
                     "result": "correct"
                 }
             ],
-            "image_name": "test",
+            "image_name": "test2",
             "success": true
         }
     ]
