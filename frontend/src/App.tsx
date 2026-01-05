@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { Sidebar, ChatPanel, UploadPanel, QuizPanel, GradingPanel, SettingsPanel } from './components';
 import { Loader2 } from 'lucide-react';
+import { TABS, type TabType } from './types';
 import './App.css';
 
 const AppContent: React.FC = () => {
   const { loading } = useApp();
-  const [activeTab, setActiveTab] = useState('chat');
+  const [activeTab, setActiveTab] = useState<TabType>(TABS.CHAT);
 
   if (loading) {
     return (
@@ -19,15 +20,15 @@ const AppContent: React.FC = () => {
 
   const renderContent = () => {
     switch (activeTab) {
-      case 'chat':
+      case TABS.CHAT:
         return <ChatPanel />;
-      case 'upload':
+      case TABS.UPLOAD:
         return <UploadPanel />;
-      case 'quiz':
+      case TABS.QUIZ:
         return <QuizPanel />;
-      case 'grading':
+      case TABS.GRADING:
         return <GradingPanel />;
-      case 'settings':
+      case TABS.SETTINGS:
         return <SettingsPanel />;
       default:
         return <ChatPanel />;

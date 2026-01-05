@@ -1,7 +1,14 @@
-// API Types
+// ============================================================================
+// Teaching Assistant Grader - TypeScript Types
+// ============================================================================
 
+// ===== Common Types =====
+export type Role = 'STUDENT' | 'TEACHER';
+export type MessageRole = 'user' | 'assistant';
+
+// ===== Chat Types =====
 export interface ChatMessage {
-  role: 'user' | 'assistant';
+  role: MessageRole;
   content: string;
 }
 
@@ -96,4 +103,21 @@ export interface ConfigResponse {
   max_iterations: number;
 }
 
-export type Role = 'STUDENT' | 'TEACHER';
+// ===== API Response Types =====
+export interface ApiResponse<T = unknown> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  message?: string;
+}
+
+// ===== Constants =====
+export const TABS = {
+  CHAT: 'chat',
+  UPLOAD: 'upload',
+  QUIZ: 'quiz',
+  GRADING: 'grading',
+  SETTINGS: 'settings',
+} as const;
+
+export type TabType = typeof TABS[keyof typeof TABS];

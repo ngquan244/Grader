@@ -1,22 +1,30 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
 import { MessageSquare, FileUp, BookOpen, BarChart3, Settings, GraduationCap, User } from 'lucide-react';
+import { TABS, type TabType } from '../types';
 
 interface SidebarProps {
-  activeTab: string;
-  onTabChange: (tab: string) => void;
+  activeTab: TabType;
+  onTabChange: (tab: TabType) => void;
 }
+
+interface TabItem {
+  id: TabType;
+  label: string;
+  icon: typeof MessageSquare;
+  teacherOnly?: boolean;
+}
+
+const SIDEBAR_TABS: TabItem[] = [
+  { id: TABS.CHAT, label: 'Chat AI', icon: MessageSquare },
+  { id: TABS.UPLOAD, label: 'Upload', icon: FileUp },
+  { id: TABS.QUIZ, label: 'Tạo Quiz', icon: BookOpen, teacherOnly: true },
+  { id: TABS.GRADING, label: 'Chấm điểm', icon: BarChart3, teacherOnly: true },
+  { id: TABS.SETTINGS, label: 'Cài đặt', icon: Settings },
+];
 
 const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {
   const { role, switchRole } = useApp();
-
-  const tabs = [
-    { id: 'chat', label: 'Chat AI', icon: MessageSquare },
-    { id: 'upload', label: 'Upload', icon: FileUp },
-    { id: 'quiz', label: 'Tạo Quiz', icon: BookOpen, teacherOnly: true },
-    { id: 'grading', label: 'Chấm điểm', icon: BarChart3, teacherOnly: true },
-    { id: 'settings', label: 'Cài đặt', icon: Settings },
-  ];
 
   const handleRoleSwitch = async () => {
     try {
@@ -25,6 +33,10 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {
       console.error('Failed to switch role:', error);
     }
   };
+
+  const visibleTabs = SIDEBAR_TABS.filter(
+    tab => !tab.teacherOnly || role === 'TEACHER'
+  );
 
   return (
     <div className="sidebar">
@@ -40,9 +52,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {
       </div>
 
       <nav className="sidebar-nav">
-        {tabs.map((tab) => {
-          if (tab.teacherOnly && role !== 'TEACHER') return null;
-          
+        {visibleTabs.map((tab) => {
           const Icon = tab.icon;
           return (
             <button

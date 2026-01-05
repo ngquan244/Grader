@@ -1,25 +1,21 @@
 """
-Configuration API routes
-Handles role switching and app configuration
+Configuration API routes - App Settings and Role Management
 """
-import sys
-from pathlib import Path
-from fastapi import APIRouter, HTTPException
-
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+import logging
+from fastapi import APIRouter
 
 from backend.schemas import RoleUpdate, ConfigResponse, ModelConfig
 from backend.config import settings
+from backend.core import BadRequestException, Role, Messages
 from src.config import Config
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
 @router.get("/", response_model=ConfigResponse)
 async def get_config():
-    """
-    Get current application configuration
-    """
+    """Get current application configuration"""
     return ConfigResponse(
         role=Config.get_role(),
         available_models=settings.AVAILABLE_MODELS,
@@ -30,35 +26,35 @@ async def get_config():
 
 @router.get("/role")
 async def get_role():
-    """
-    Get current user role
-    """
+    """Get current user role"""
     return {"role": Config.get_role()}
 
 
 @router.post("/role")
 async def set_role(request: RoleUpdate):
-    """
-    Set user role (STUDENT or TEACHER)
-    """
-    try:
-        Config.set_role(request.role.upper())
-        return {
-            "success": True,
-            "role": Config.get_role(),
-            "message": f"Đã chuyển sang vai trò: {request.role}"
-        }
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    """Set user role (STUDENT or TEACHER)"""
+    normalized_role = request.role.upper()
+    
+    if normalized_role not in [Role.STUDENT.value, Role.TEACHER.value]:
+        raise BadRequestException(
+            f"Vai trò không hợp lệ. Chỉ chấp nhận: {Role.STUDENT.value}, {Role.TEACHER.value}"
+        )
+    
+    Config.set_role(normalized_role)
+    
+    return {
+        "success": True,
+        "role": Config.get_role(),
+        "message": f"Đã chuyển sang vai trò: {normalized_role}"
+    }
 
 
 @router.post("/switch-role")
 async def switch_role():
-    """
-    Toggle between STUDENT and TEACHER roles
-    """
+    """Toggle between STUDENT and TEACHER roles"""
     current = Config.get_role()
-    new_role = "TEACHER" if current == "STUDENT" else "STUDENT"
+    new_role = Role.TEACHER.value if current == Role.STUDENT.value else Role.STUDENT.value
+    
     Config.set_role(new_role)
     
     return {
@@ -71,9 +67,7 @@ async def switch_role():
 
 @router.get("/models")
 async def get_models():
-    """
-    Get available AI models
-    """
+    """Get available AI models"""
     return {
         "models": settings.AVAILABLE_MODELS,
         "default": settings.DEFAULT_MODEL
@@ -82,14 +76,10 @@ async def get_models():
 
 @router.post("/model")
 async def set_model(config: ModelConfig):
-    """
-    Set AI model configuration (for session)
-    Note: This is stateless, actual model selection is per-request
-    """
+    """Set AI model configuration (for session)"""
     if config.model not in settings.AVAILABLE_MODELS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Model không hợp lệ. Các model có sẵn: {', '.join(settings.AVAILABLE_MODELS)}"
+        raise BadRequestException(
+            f"Model không hợp lệ. Các model có sẵn: {', '.join(settings.AVAILABLE_MODELS)}"
         )
     
     return {

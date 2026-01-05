@@ -1,27 +1,56 @@
 """
 FastAPI Backend for Teaching Assistant Grader
-Refactored from Gradio UI to REST API
+Professional REST API with Clean Architecture
 """
-import os
+import logging
 import sys
 from pathlib import Path
+from contextlib import asynccontextmanager
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 
 from backend.routes import chat, upload, quiz, grading, config as config_routes
 from backend.config import settings
+from backend.core import BaseAPIException
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan handler for startup/shutdown events"""
+    # Startup
+    logger.info("Starting Teaching Assistant Grader API...")
+    logger.info(f"Environment: {'development' if settings.DEBUG else 'production'}")
+    
+    # Ensure directories exist
+    for directory in [settings.QUIZ_DIR, settings.EXPORTS_DIR, settings.DATA_DIR]:
+        directory.mkdir(parents=True, exist_ok=True)
+    
+    yield
+    
+    # Shutdown
+    logger.info("Shutting down Teaching Assistant Grader API...")
+
 
 app = FastAPI(
     title="Teaching Assistant Grader API",
     description="API cho hệ thống chấm điểm bài thi tự động với AI Agent",
     version="1.0.0",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan
 )
 
 # CORS configuration for React frontend
@@ -33,6 +62,35 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# Global exception handlers
+@app.exception_handler(BaseAPIException)
+async def api_exception_handler(request: Request, exc: BaseAPIException):
+    """Handle custom API exceptions"""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "success": False,
+            "error": exc.detail,
+            "error_code": exc.error_code
+        }
+    )
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """Handle unexpected exceptions"""
+    logger.error(f"Unexpected error: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "success": False,
+            "error": "Đã xảy ra lỗi không mong muốn",
+            "error_code": "INTERNAL_ERROR"
+        }
+    )
+
+
 # Include routers
 app.include_router(chat.router, prefix="/api/chat", tags=["Chat"])
 app.include_router(upload.router, prefix="/api/upload", tags=["Upload"])
@@ -41,34 +99,37 @@ app.include_router(grading.router, prefix="/api/grading", tags=["Grading"])
 app.include_router(config_routes.router, prefix="/api/config", tags=["Configuration"])
 
 # Serve static files (generated quizzes, exports)
-static_path = Path(__file__).parent.parent / "quiz-gen" / "generated_quizzes"
-static_path.mkdir(parents=True, exist_ok=True)
-app.mount("/static/quizzes", StaticFiles(directory=str(static_path)), name="quizzes")
-
-exports_path = Path(__file__).parent.parent / "exports"
-exports_path.mkdir(parents=True, exist_ok=True)
-app.mount("/static/exports", StaticFiles(directory=str(exports_path)), name="exports")
+app.mount("/static/quizzes", StaticFiles(directory=str(settings.QUIZ_DIR)), name="quizzes")
+app.mount("/static/exports", StaticFiles(directory=str(settings.EXPORTS_DIR)), name="exports")
 
 
 @app.get("/")
 async def root():
+    """API root endpoint"""
     return {
-        "message": "Teaching Assistant Grader API",
+        "name": "Teaching Assistant Grader API",
         "version": "1.0.0",
-        "docs": "/docs"
+        "status": "running",
+        "docs": "/docs",
+        "redoc": "/redoc"
     }
 
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    """Health check endpoint for monitoring"""
+    return {
+        "status": "healthy",
+        "version": "1.0.0"
+    }
 
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        "main:app",
+        "backend.main:app",
         host=settings.HOST,
         port=settings.PORT,
-        reload=True
+        reload=settings.DEBUG,
+        log_level="info"
     )
