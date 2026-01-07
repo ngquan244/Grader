@@ -1,4 +1,4 @@
-# 🤖 Teaching Assistant Grader
+#  Teaching Assistant Grader
 
 > AI-powered automated exam grading system with quiz generation capabilities
 
@@ -7,32 +7,16 @@
 [![React](https://img.shields.io/badge/React-18+-61dafb.svg)](https://react.dev)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## 📖 Overview
+##  Overview
 
 Teaching Assistant Grader is a comprehensive AI-powered system designed to assist teachers with:
 
-- **🎯 Automated Exam Grading**: Upload student answer sheets and get instant grading results
-- **📝 Quiz Generation**: Extract questions from PDF exams and generate randomized quizzes
-- **💬 AI Chat Assistant**: Interactive AI agent that can help with grading tasks
-- **📊 Result Analytics**: Summarize and export grading results to Excel
+- **Automated Exam Grading**: Upload student answer sheets and get instant grading results
+- **Quiz Generation**: Extract questions from PDF exams and generate randomized quizzes
+- **AI Chat Assistant**: Interactive AI agent that can help with grading tasks
+- **Result Analytics**: Summarize and export grading results to Excel
 
-## 🏗️ Architecture
-
-```
-┌─────────────────┐     HTTP/REST     ┌─────────────────┐
-│  React Frontend │ ◄───────────────► │  FastAPI Backend│
-│  (TypeScript)   │                   │  (Python)       │
-└─────────────────┘                   └────────┬────────┘
-                                               │
-                    ┌──────────────────────────┼──────────────────────────┐
-                    │                          │                          │
-            ┌───────▼───────┐         ┌────────▼────────┐        ┌───────▼───────┐
-            │  AI Agent     │         │  Quiz Service   │        │ Grading       │
-            │  (LangGraph)  │         │  (PDF → Quiz)   │        │ Service       │
-            └───────────────┘         └─────────────────┘        └───────────────┘
-```
-
-## 🚀 Quick Start
+##  Quick Start
 
 ### Prerequisites
 
@@ -82,7 +66,7 @@ npm run dev
 - **API Docs**: http://localhost:8000/docs
 - **ReDoc**: http://localhost:8000/redoc
 
-## 📁 Project Structure
+##  Project Structure
 
 ```
 Grader/
@@ -123,7 +107,7 @@ Grader/
 └── requirements.txt
 ```
 
-## 🔑 API Endpoints
+##  API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -136,7 +120,7 @@ Grader/
 | `/api/grading/summary` | POST | Get grading summary |
 | `/api/config/role` | POST | Set user role |
 
-## 🔧 Configuration
+##  Configuration
 
 ### Environment Variables
 
@@ -149,21 +133,13 @@ Grader/
 | `EMAIL_USER` | SMTP email | - |
 | `EMAIL_PASSWORD` | SMTP password | - |
 
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create feature branch (`git checkout -b feature/amazing`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing`)
-5. Open Pull Request
-
-## 📄 License
+##  License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 👨‍💻 Author
+##  Author
 
 **UET - VNU**
 
 ---
-*Built with ❤️ using FastAPI, React, and LangGraph*
+*Built with love using FastAPI, React, and LangGraph*
