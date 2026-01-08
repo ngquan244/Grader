@@ -129,6 +129,24 @@ class QuizService:
         with open(quiz_file, 'r', encoding='utf-8') as f:
             return json.load(f)
     
+    def delete_quiz(self, quiz_id: str) -> bool:
+        """Delete a quiz by ID"""
+        quiz_file = self.quiz_dir / f"{quiz_id}.json"
+        html_file = self.quiz_dir / f"{quiz_id}.html"
+        
+        if not quiz_file.exists():
+            raise NotFoundException("Quiz", quiz_id)
+        
+        # Delete JSON file
+        quiz_file.unlink()
+        
+        # Delete HTML file if exists
+        if html_file.exists():
+            html_file.unlink()
+        
+        logger.info(f"Quiz deleted: {quiz_id}")
+        return True
+    
     def _generate_html(self, quiz_id: str, questions: List[Dict]) -> str:
         """Generate standalone HTML quiz file"""
         return f"""<!DOCTYPE html>

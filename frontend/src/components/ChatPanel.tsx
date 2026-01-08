@@ -64,8 +64,9 @@ const ChatPanel: React.FC = () => {
     <div className="chat-panel">
       <div className="chat-header">
         <h2>Chat với AI Assistant</h2>
-        <button className="btn-icon" onClick={clearChat} title="Xóa lịch sử">
-          <Trash2 size={18} />
+        <button className="btn-secondary btn-sm" onClick={clearChat}>
+          <Trash2 size={16} />
+          <span>Xóa lịch sử</span>
         </button>
       </div>
 

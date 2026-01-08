@@ -1,3 +1,6 @@
+"""
+ReAct Agent implementation using LangGraph
+"""
 import json
 from typing import TypedDict, Annotated, Sequence, Literal
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage
@@ -83,9 +86,6 @@ When using tools:
 
 """
     
-
-
-
     def _summarize_history(self, history_messages: list[BaseMessage]) -> AIMessage:
         """
         Tóm tắt history dài thành 1 message ngắn để giữ context.
@@ -373,31 +373,3 @@ When using tools:
 def create_agent(model: str = "llama3.1:latest", max_iterations: int = 10) -> ReActAgent:
     """Factory function để tạo agent"""
     return ReActAgent(model_name=model, max_iterations=max_iterations)
-
-
-if __name__ == "__main__":
-    agent = create_agent()
-    
-    test_queries = [
-        "Xin chào!",
-        "Hello, how are you?",
-        "Bạn là ai?",
-        "What's 2+2?",
-        "Tính 123 * 456 + 789",
-        "Chấm bài thi cho tôi",
-    ]
-    
-    print(" Testing Fixed ReAct Agent v2\n")
-    
-    for query in test_queries:
-        print(f"\n{'='*60}")
-        print(f" User: {query}")
-        print(f"{'='*60}")
-        
-        result = agent.invoke(query)
-        
-        print(f"\n Agent: {result['response']}")
-        print(f"\n Metadata:")
-        print(f"  - Iterations: {result.get('iterations', 0)}")
-        print(f"  - Tools used: {result.get('tools_used', [])}")
-        print(f"  - Success: {result.get('success', False)}")

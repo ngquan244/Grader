@@ -7,9 +7,8 @@ from fastapi.responses import FileResponse
 
 from backend.schemas import QuizGenerateRequest, QuizGenerateResponse, QuizListResponse
 from backend.services import quiz_service, file_service
-from backend.config import settings
+from backend.config import settings, get_role
 from backend.core import ForbiddenException, NotFoundException, Role
-from src.config import Config
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -17,7 +16,7 @@ router = APIRouter()
 
 def require_teacher():
     """Require teacher role for protected operations"""
-    role = Config.get_role()
+    role = get_role()
     if (role or "").upper() != Role.TEACHER.value:
         raise ForbiddenException(Role.TEACHER.value.lower(), role)
 
@@ -75,6 +74,18 @@ async def get_quiz(quiz_id: str):
         "success": True,
         "quiz": quiz_data,
         "html_url": f"/static/quizzes/{quiz_id}.html"
+    }
+
+
+@router.delete("/{quiz_id}")
+async def delete_quiz(quiz_id: str):
+    """Delete a quiz by ID"""
+    require_teacher()
+    
+    quiz_service.delete_quiz(quiz_id)
+    return {
+        "success": True,
+        "message": f"Đã xóa quiz {quiz_id} thành công"
     }
 
 

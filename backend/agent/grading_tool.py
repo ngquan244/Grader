@@ -1,38 +1,59 @@
+"""
+Grading tool for the Teaching Assistant Grader.
+Handles exam grading using SIFT/OpenCV image processing.
+"""
 import json
 import os
 from typing import Optional, Type, Dict, Any, List
 from pathlib import Path
 from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
-from .config import Config
-from .logger import logger
+from ..config import settings
+from ..core.logger import logger
 import pyodbc
 
-# Import the new grader module
-from backend.grader import create_processor, ExamProcessor
+# Import the grader module
+from ..grader import create_processor, ExamProcessor
+
+
+# Role management (imported from tools.py, duplicated here for standalone use)
+ROLE_FILE = settings.PROJECT_ROOT / "role.txt"
+_ROLE = None
+
+
+def get_role():
+    """Get current role from file, fallback to default"""
+    global _ROLE
+    if _ROLE is not None:
+        return _ROLE
+    if ROLE_FILE.exists():
+        try:
+            with open(ROLE_FILE, 'r', encoding='utf-8') as f:
+                role = f.read().strip().upper()
+                if role in ("STUDENT", "TEACHER"):
+                    _ROLE = role
+                    return role
+        except Exception:
+            pass
+    _ROLE = "STUDENT"
+    return _ROLE
 
 
 def check_role(role_required: str) -> bool:
-    actual_role = getattr(Config, "ROLE", None)
+    actual_role = get_role()
     if (actual_role or "").lower() != role_required.lower():
         logger.warning(f"Access denied. Required role: {role_required}, actual role: {actual_role}")
         return False
     return True
 
 
-SQL_SERVER_CONN_STR = (
-    "Driver={ODBC Driver 17 for SQL Server};"
-    "Server=244-NGUYEN-QUAN\\SQL2022;"
-    "Database=AI_Agent;"
-    "Trusted_Connection=yes;"
-    "Encrypt=no;"
-)
+SQL_SERVER_CONN_STR = settings.SQL_SERVER_CONN_STR
 
 
-class NotebookExecutorInput(BaseModel):
-    """Input schema for notebook executor"""
+class GradingInput(BaseModel):
+    """Input schema for grading tool"""
     notebook_name: str = Field(
-        description="Tên file notebook cần chạy (ví dụ: 'grading-timing-mark.ipynb') - không còn sử dụng, giữ để tương thích",
+        description="Tên file notebook cần chạy (không còn sử dụng, giữ để tương thích)",
         default="grading-timing-mark.ipynb"
     )
 
@@ -45,17 +66,17 @@ def get_grader_processor() -> ExamProcessor:
     """Get or create the exam processor singleton"""
     global _processor
     if _processor is None:
-        kaggle_dir = Config.PROJECT_ROOT / "kaggle"
+        kaggle_dir = settings.PROJECT_ROOT / "kaggle"
         _processor = create_processor(
             template_path=str(kaggle_dir / "Template" / "temp.jpg"),
             student_json_path=str(kaggle_dir / "Input Materials" / "student_coords.json"),
             answer_json_path=str(kaggle_dir / "Input Materials" / "answer.json"),
-            output_path=str(Config.PROJECT_ROOT / "final_result.json")
+            output_path=str(settings.PROJECT_ROOT / "final_result.json")
         )
     return _processor
 
 
-class NotebookExecutorTool(BaseTool):
+class GradingTool(BaseTool):
     """Tool để chấm điểm bài thi trắc nghiệm"""
     
     name: str = "execute_notebook"
@@ -83,13 +104,13 @@ class NotebookExecutorTool(BaseTool):
     4. KHÔNG hướng dẫn cách đọc JSON
     5. KHÔNG giải thích cách tính điểm
     """
-    args_schema: Type[BaseModel] = NotebookExecutorInput
+    args_schema: Type[BaseModel] = GradingInput
     
     def _run(self, notebook_name: str = "grading-timing-mark.ipynb") -> str:
         """Execute grading using the refactored Python module"""
         try:
             if not check_role("teacher"):
-                actual_role = getattr(Config, "ROLE", None)
+                actual_role = get_role()
                 return json.dumps({
                     "error": "Chỉ giáo viên mới có quyền yêu cầu chấm điểm",
                     "fatal": True,
@@ -110,9 +131,9 @@ class NotebookExecutorTool(BaseTool):
 
             logger.info("Starting grading using Python module (no notebook)")
             
-            kaggle_dir = Config.PROJECT_ROOT / "kaggle"
+            kaggle_dir = settings.PROJECT_ROOT / "kaggle"
             filled_dir = kaggle_dir / "Filled-temp"
-            output_path = Config.PROJECT_ROOT / "final_result.json"
+            output_path = settings.PROJECT_ROOT / "final_result.json"
             
             # Check if images exist
             if not filled_dir.exists():
@@ -266,7 +287,7 @@ class NotebookExecutorTool(BaseTool):
         cursor.close()
         conn.close()
 
-        kaggle_input_dir = Config.PROJECT_ROOT / "kaggle" / "Input Materials"
+        kaggle_input_dir = settings.PROJECT_ROOT / "kaggle" / "Input Materials"
         kaggle_input_dir.mkdir(parents=True, exist_ok=True)
 
         answer_path = kaggle_input_dir / "answer.json"
@@ -339,7 +360,6 @@ class NotebookExecutorTool(BaseTool):
         """
 
         for r in results:
-
             cursor.execute(sql_check_student, r["student_id"])
             if cursor.fetchone() is None:
                 logger.error(
@@ -363,12 +383,12 @@ class NotebookExecutorTool(BaseTool):
         conn.close()
 
 
+def get_grading_tool() -> GradingTool:
+    """Factory function to create grading tool"""
+    return GradingTool()
 
 
-# Add to tools registry
-def get_notebook_tool():
-    """Factory function to create notebook executor tool"""
-    return NotebookExecutorTool()
-
-
-
+# Alias for backward compatibility
+def get_notebook_tool() -> GradingTool:
+    """Alias for get_grading_tool for backward compatibility"""
+    return get_grading_tool()

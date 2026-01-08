@@ -1,3 +1,6 @@
+"""
+LangChain tools for the Teaching Assistant Grader agent.
+"""
 import json
 import sys
 import datetime
@@ -6,44 +9,74 @@ from pathlib import Path
 from typing import Optional, Type, List, Dict, Any
 from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
-from .notebook_tool import get_notebook_tool
-from .config import Config
+from .grading_tool import get_grading_tool
+from ..config import settings
 import pyodbc
 from openpyxl import Workbook
 from openpyxl.styles import Font
 import yagmail
 import logging
-from .logger import logger
+from ..core.logger import logger
 
 
-receiver = Config.EMAIL_RECEIVER
-user = Config.EMAIL_USER
-password = Config.EMAIL_PASSWORD
+receiver = settings.EMAIL_RECEIVER
+user = settings.EMAIL_USER
+password = settings.EMAIL_PASSWORD
 
 
 logger = logging.getLogger(__name__)
 
 
-SQL_SERVER_CONN_STR = (
-    "Driver={ODBC Driver 17 for SQL Server};"
-    "Server=244-NGUYEN-QUAN\\SQL2022;"
-    "Database=AI_Agent;"
-    "Trusted_Connection=yes;"
-    "Encrypt=no;"
-)
+SQL_SERVER_CONN_STR = settings.SQL_SERVER_CONN_STR
 
-sys.path.append(str(Path(__file__).parent.parent / "quiz-gen"))
+sys.path.append(str(Path(__file__).parent.parent.parent / "quiz-gen"))
 try:
     from utils import extract_questions_from_pdf
 except ImportError:
     extract_questions_from_pdf = None
 
+
+# Role management functions
+ROLE_FILE = settings.PROJECT_ROOT / "role.txt"
+_ROLE = None
+
+
+def get_role():
+    """Get current role from file, fallback to default"""
+    global _ROLE
+    if _ROLE is not None:
+        return _ROLE
+    if ROLE_FILE.exists():
+        try:
+            with open(ROLE_FILE, 'r', encoding='utf-8') as f:
+                role = f.read().strip().upper()
+                if role in ("STUDENT", "TEACHER"):
+                    _ROLE = role
+                    return role
+        except Exception:
+            pass
+    _ROLE = "STUDENT"
+    return _ROLE
+
+
+def set_role(role: str):
+    """Set current role and persist to file"""
+    global _ROLE
+    role = role.upper()
+    if role not in ("STUDENT", "TEACHER"):
+        raise ValueError("Role must be 'STUDENT' or 'TEACHER'")
+    with open(ROLE_FILE, 'w', encoding='utf-8') as f:
+        f.write(role)
+    _ROLE = role
+
+
 def check_role(role_required: str) -> bool:
-    actual_role = getattr(Config, "ROLE", None)
+    actual_role = get_role()
     if (actual_role or "").lower() != role_required.lower():
         logger.warning(f"Access denied. Required role: {role_required}, actual role: {actual_role}")
         return False
     return True
+
 
 class CalculatorInput(BaseModel):
     """Input schema for calculator tool"""
@@ -123,7 +156,7 @@ class QuizGeneratorTool(BaseTool):
         """Execute quiz generator"""
         try:
             if not check_role("teacher"):
-                actual_role = getattr(Config, "ROLE", None)
+                actual_role = get_role()
                 return json.dumps({
                     "error": "Chỉ giáo viên mới có quyền yêu cầu tạo quiz",
                     "fatal": True,
@@ -138,7 +171,7 @@ class QuizGeneratorTool(BaseTool):
                 }, ensure_ascii=False)
             
             # Find PDF file in data/quiz/
-            quiz_folder = Config.PROJECT_ROOT / "data" / "quiz"
+            quiz_folder = settings.PROJECT_ROOT / "data" / "quiz"
             if not quiz_folder.exists():
                 return json.dumps({
                     "error": "Thư mục data/quiz/ không tồn tại",
@@ -180,7 +213,7 @@ class QuizGeneratorTool(BaseTool):
             }
             
             # Save quiz JSON
-            output_folder = Config.PROJECT_ROOT / "quiz-gen" / "generated_quizzes"
+            output_folder = settings.PROJECT_ROOT / "quiz-gen" / "generated_quizzes"
             output_folder.mkdir(parents=True, exist_ok=True)
             
             quiz_json_file = output_folder / f"{quiz_id}.json"
@@ -447,10 +480,12 @@ class QuizGeneratorTool(BaseTool):
         """Execute tool asynchronously"""
         return self._run(num_questions)
 
+
 class ExamSummaryInput(BaseModel):
     exam_code: str = Field(
         description="Mã đề thi cần tổng hợp (ví dụ: 000)"
     )
+
 
 class ExamResultSummaryTool(BaseTool):
     """
@@ -479,11 +514,10 @@ class ExamResultSummaryTool(BaseTool):
 
     args_schema: Type[BaseModel] = ExamSummaryInput
 
-
     def _run(self, exam_code: str) -> str:
         try:
             if not check_role("teacher"):
-                actual_role = getattr(Config, "ROLE", None)
+                actual_role = get_role()
                 return json.dumps({
                     "error": "Chỉ giáo viên mới có quyền yêu cầu tổng hợp kết quả",
                     "fatal": True,
@@ -555,16 +589,15 @@ class ExamResultSummaryTool(BaseTool):
             body = f"Đính kèm file Excel tổng hợp kết quả bài thi mã đề {exam_code}."
             sent = self._send_excel_email(
                 file_path=excel_file,
-                to_email=Config.EMAIL_RECEIVER,
+                to_email=settings.EMAIL_RECEIVER,
                 subject=subject,
                 body=body
             )
             if sent:
-                logger.info(f"File Excel đã được gửi đến {Config.EMAIL_RECEIVER}")
+                logger.info(f"File Excel đã được gửi đến {settings.EMAIL_RECEIVER}")
             else:
-                logger.warning(f"Không thể gửi file Excel đến {Config.EMAIL_RECEIVER}")
+                logger.warning(f"Không thể gửi file Excel đến {settings.EMAIL_RECEIVER}")
 
-            
             cursor.close()
             conn.close()
 
@@ -612,7 +645,7 @@ class ExamResultSummaryTool(BaseTool):
         Gửi file Excel qua email
         """
         try:
-            yag = yagmail.SMTP(user=Config.EMAIL_USER, password=Config.EMAIL_PASSWORD)
+            yag = yagmail.SMTP(user=settings.EMAIL_USER, password=settings.EMAIL_PASSWORD)
             yag.send(
                 to=to_email,
                 subject=subject,
@@ -686,7 +719,7 @@ class ExamResultSummaryTool(BaseTool):
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"exam_summary_{exam_code}_{timestamp}.xlsx"
 
-        output_dir = Config.PROJECT_ROOT / "exports"
+        output_dir = settings.PROJECT_ROOT / "exports"
         output_dir.mkdir(parents=True, exist_ok=True)
 
         file_path = output_dir / filename
@@ -695,11 +728,10 @@ class ExamResultSummaryTool(BaseTool):
         return str(file_path)
 
 
-
 def get_all_tools() -> list[BaseTool]:
     """Trả về danh sách tất cả các tools có sẵn"""
     return [
-        get_notebook_tool(),
+        get_grading_tool(),
         CalculatorTool(),
         QuizGeneratorTool(),
         ExamResultSummaryTool()
