@@ -1,5 +1,4 @@
 import json
-import subprocess
 import os
 from typing import Optional, Type, Dict, Any, List
 from pathlib import Path
@@ -8,6 +7,9 @@ from pydantic import BaseModel, Field
 from .config import Config
 from .logger import logger
 import pyodbc
+
+# Import the new grader module
+from backend.grader import create_processor, ExamProcessor
 
 
 def check_role(role_required: str) -> bool:
@@ -30,51 +32,61 @@ SQL_SERVER_CONN_STR = (
 class NotebookExecutorInput(BaseModel):
     """Input schema for notebook executor"""
     notebook_name: str = Field(
-        description="Tên file notebook cần chạy (ví dụ: 'grading-timing-mark.ipynb')",
+        description="Tên file notebook cần chạy (ví dụ: 'grading-timing-mark.ipynb') - không còn sử dụng, giữ để tương thích",
         default="grading-timing-mark.ipynb"
     )
 
 
+# Global processor instance
+_processor: Optional[ExamProcessor] = None
+
+
+def get_grader_processor() -> ExamProcessor:
+    """Get or create the exam processor singleton"""
+    global _processor
+    if _processor is None:
+        kaggle_dir = Config.PROJECT_ROOT / "kaggle"
+        _processor = create_processor(
+            template_path=str(kaggle_dir / "Template" / "temp.jpg"),
+            student_json_path=str(kaggle_dir / "Input Materials" / "student_coords.json"),
+            answer_json_path=str(kaggle_dir / "Input Materials" / "answer.json"),
+            output_path=str(Config.PROJECT_ROOT / "final_result.json")
+        )
+    return _processor
+
+
 class NotebookExecutorTool(BaseTool):
-    """Tool để execute Jupyter notebook và lấy kết quả"""
+    """Tool để chấm điểm bài thi trắc nghiệm"""
     
     name: str = "execute_notebook"
     description: str = """
-    Thực thi Jupyter notebook để chấm điểm bài thi trắc nghiệm.
-    Sử dụng khi người dùng yêu cầu:
-    - Chấm điểm bài thi
-    - Chạy notebook grading
-    - Xem kết quả chấm điểm
-    - Execute grading notebook
+    Chấm điểm bài thi trắc nghiệm từ ảnh đã upload.
     
-    Tool này sẽ:
-    1. Chạy notebook grading-timing-mark.ipynb
-    2. Xử lý ảnh bài thi trong thư mục Filled-temp/
-    3. Trả về kết quả chấm điểm dạng JSON với cấu trúc:
+    Sử dụng khi người dùng yêu cầu chấm điểm bài thi.
     
-    {
-        "student_id": "Mã số sinh viên (ví dụ: 22028171)",
-        "name": "Họ và tên sinh viên",
-        "email": "Email sinh viên",
-        "student_code": "Mã sinh viên ngắn",
-        "exam_code": "Mã đề thi",
-        "total_questions": "Tổng số câu hỏi",
-        "correct": "Số câu đúng",
-        "wrong": "Số câu sai",
-        "blank": "Số câu bỏ trống",
-        "score": "Điểm số (thang 10)",
-        "details": [{"question": 1, "student_answer": "A", "correct_answer": "A", "result": "correct"}, ...]
-    }
+    CÁCH TRẢ LỜI (BẮT BUỘC):
     
-    KHI TRẢ LỜI USER: Hãy trích xuất và hiển thị ĐẦY ĐỦ thông tin sinh viên (student_id, name, email) 
-    cùng với kết quả chấm điểm (score, correct, wrong, blank).
+    1. Nói ngắn gọn: "Đã chấm xong X bài thi"
     
-    Input: Tên notebook (mặc định: grading-timing-mark.ipynb)
+    2. Hiển thị kết quả mỗi sinh viên theo format:
+    
+     **Kết quả chấm điểm**
+    
+    **Sinh viên: [Họ tên]**
+    - Mã SV: [student_id]
+    - Email: [email]
+    - Mã đề: [exam_code]
+    - **Điểm: [score]/10**
+    - Đúng: [correct] | Sai: [wrong] | Bỏ trống: [blank]
+    
+    3. KHÔNG viết code Python
+    4. KHÔNG hướng dẫn cách đọc JSON
+    5. KHÔNG giải thích cách tính điểm
     """
     args_schema: Type[BaseModel] = NotebookExecutorInput
     
     def _run(self, notebook_name: str = "grading-timing-mark.ipynb") -> str:
-        """Execute notebook and return results"""
+        """Execute grading using the refactored Python module"""
         try:
             if not check_role("teacher"):
                 actual_role = getattr(Config, "ROLE", None)
@@ -86,6 +98,7 @@ class NotebookExecutorTool(BaseTool):
                     "message": f"Bạn không có quyền thực hiện chức năng này. Yêu cầu quyền: teacher. Quyền hiện tại: {actual_role if actual_role else 'Không xác định'}"
                 }, ensure_ascii=False, indent=2)
 
+            # Update JSON from database
             try:
                 self._update_json_from_db()
             except Exception as dbjson_err:
@@ -95,77 +108,100 @@ class NotebookExecutorTool(BaseTool):
                     "detail": str(dbjson_err)
                 }, ensure_ascii=False, indent=2)
 
-            logger.info(f" NotebookExecutorTool._run() called with notebook: {notebook_name}")
+            logger.info("Starting grading using Python module (no notebook)")
+            
             kaggle_dir = Config.PROJECT_ROOT / "kaggle"
-            notebook_path = kaggle_dir / notebook_name
-            logger.info(f" Kaggle directory: {kaggle_dir}")
-            logger.info(f" Notebook path: {notebook_path}")
-            logger.info(f" Notebook exists: {notebook_path.exists()}")
-            if not notebook_path.exists():
-                error_msg = f"Notebook không tồn tại: {notebook_name}"
-                logger.error(f" {error_msg}")
+            filled_dir = kaggle_dir / "Filled-temp"
+            output_path = Config.PROJECT_ROOT / "final_result.json"
+            
+            # Check if images exist
+            if not filled_dir.exists():
                 return json.dumps({
-                    "error": error_msg,
-                    "available_notebooks": [f.name for f in kaggle_dir.glob("*.ipynb")]
+                    "error": f"Thư mục Filled-temp không tồn tại: {filled_dir}",
+                    "hint": "Vui lòng upload ảnh bài thi vào thư mục Filled-temp/"
                 }, ensure_ascii=False, indent=2)
-    
-            output_path = kaggle_dir / "output.ipynb"
-            logger.info(f" Starting notebook execution with papermill...")
-            logger.info(f" Output will be saved to: {output_path}")
-
+            
+            # Get or create processor
             try:
-                import papermill as pm
-                logger.info(f" Papermill imported successfully")
-                pm.execute_notebook(
-                    str(notebook_path),
-                    str(output_path),
-                    kernel_name='python3'
-                )
-                logger.info(f" Notebook execution completed!")
-                result = self._extract_results(output_path)
-                try:
-                    if isinstance(result, dict) and "results" in result:
-                        self._save_results_to_db(result["results"])
-                except Exception as db_err:
-                    logger.error(f" Error saving results to DB: {str(db_err)}")
-                logger.info(f" Results extracted: {type(result)}")
-                logger.info(f" Result keys: {result.keys() if isinstance(result, dict) else 'N/A'}")
-            except ImportError:
-                cmd = [
-                    "jupyter", "nbconvert",
-                    "--to", "notebook",
-                    "--execute",
-                    str(notebook_path),
-                    "--output", str(output_path)
-                ]
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    cwd=str(kaggle_dir)
-                )
-                if result.returncode != 0:
-                    return json.dumps({
-                        "error": "Lỗi khi chạy notebook",
-                        "stderr": result.stderr,
-                        "hint": "Kiểm tra dependencies và data files"
-                    }, ensure_ascii=False, indent=2)
-                result = self._extract_results(output_path)
-            logger.info(f" Returning results to agent...")
-            return json.dumps({
+                processor = get_grader_processor()
+            except FileNotFoundError as e:
+                return json.dumps({
+                    "error": f"Không thể khởi tạo processor: {str(e)}",
+                    "hint": "Kiểm tra template image và JSON files"
+                }, ensure_ascii=False, indent=2)
+            
+            # Process all images
+            logger.info(f"Processing images in: {filled_dir}")
+            summary = processor.process_and_save(filled_dir, str(output_path))
+            
+            logger.info(f"Grading completed: {summary['successful']}/{summary['total_images']} successful")
+            
+            # Read results from output file
+            result_data = self._read_results(output_path)
+            
+            # Save to database
+            try:
+                if isinstance(result_data, dict) and "results" in result_data:
+                    self._save_results_to_db(result_data["results"])
+            except Exception as db_err:
+                logger.error(f"Error saving results to DB: {str(db_err)}")
+            
+            # Format output for agent - flatten and simplify
+            graded_results = result_data.get("results", []) if isinstance(result_data, dict) else []
+            
+            # Build simple response for agent
+            response = {
                 "success": True,
-                "notebook": notebook_name,
-                "results": result,
-                "output_path": str(output_path)
-            }, ensure_ascii=False, indent=2)
+                "message": f"Đã chấm điểm {summary['successful']}/{summary['total_images']} bài thi thành công",
+                "total_images": summary["total_images"],
+                "successful": summary["successful"],
+                "failed": summary["failed"],
+            }
+            
+            # Add individual results with simplified format
+            students_results = []
+            for r in graded_results:
+                if r.get("success", False):
+                    students_results.append({
+                        "student_id": r.get("student_id"),
+                        "name": r.get("name"),
+                        "email": r.get("email"),
+                        "exam_code": r.get("exam_code"),
+                        "score": r.get("score"),
+                        "correct": r.get("correct"),
+                        "wrong": r.get("wrong"),
+                        "blank": r.get("blank"),
+                        "total_questions": r.get("total_questions")
+                    })
+                else:
+                    students_results.append({
+                        "image_name": r.get("image_name"),
+                        "error": r.get("error"),
+                        "suggestion": r.get("suggestion")
+                    })
+            
+            response["students"] = students_results
+            
+            return json.dumps(response, ensure_ascii=False, indent=2)
+            
         except Exception as e:
-            logger.error(f" Exception in _run(): {str(e)}")
+            logger.error(f"Exception in _run(): {str(e)}")
             logger.exception(e)
             return json.dumps({
                 "error": str(e),
                 "type": type(e).__name__,
-                "hint": "Kiểm tra notebook syntax và dependencies"
+                "hint": "Kiểm tra ảnh và dependencies"
             }, ensure_ascii=False, indent=2)
+    
+    def _read_results(self, result_path: Path) -> Dict[str, Any]:
+        """Read results from JSON file"""
+        try:
+            if result_path.exists():
+                with open(result_path, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            return {"error": "Không tìm thấy file kết quả"}
+        except Exception as e:
+            return {"error": f"Không thể đọc kết quả: {str(e)}"}
     
     def _update_json_from_db(self):
         """
@@ -242,60 +278,6 @@ class NotebookExecutorTool(BaseTool):
         with open(student_coords_path, "w", encoding="utf-8") as f:
             json.dump(student_coords_json, f, ensure_ascii=False, indent=2)
 
-
-    def _extract_results(self, output_path: Path) -> Dict[str, Any]:
-        """Extract results from executed notebook"""
-        try:
-            logger.info(f" Extracting results from: {output_path}")
-            
-            result_file = Config.PROJECT_ROOT / "final_result.json"
-            logger.info(f" Looking for result file: {result_file}")
-            logger.info(f" Result file exists: {result_file.exists()}")
-            
-            if result_file.exists():
-                logger.info(f" Reading result file...")
-                with open(result_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                logger.info(f" Successfully loaded JSON from file")
-                logger.info(f" Data keys: {data.keys()}")
-                logger.info(f" Score: {data.get('score')}, Correct: {data.get('correct')}/{data.get('total_questions')}")
-                return data
-            
-            logger.warning(f" Result file not found, parsing notebook outputs...")
-            
-            with open(output_path, 'r', encoding='utf-8') as f:
-                notebook_data = json.load(f)
-            
-            for cell in reversed(notebook_data.get('cells', [])):
-                if cell.get('cell_type') == 'code':
-                    outputs = cell.get('outputs', [])
-                    for output in outputs:
-                        if output.get('output_type') == 'stream' and 'text' in output:
-                            text = ''.join(output['text'])
-                            # Try to parse JSON from output
-                            if '{' in text and 'student_code' in text:
-                                try:
-                                    # Find JSON object in text
-                                    start = text.find('{')
-                                    end = text.rfind('}') + 1
-                                    json_str = text[start:end]
-                                    return json.loads(json_str)
-                                except:
-                                    pass
-            
-            return {
-                "error": "Không tìm thấy kết quả chấm điểm",
-                "note": "Notebook đã chạy nhưng không tìm thấy output JSON",
-                "hint": "Kiểm tra xem notebook có xuất final_result.json không"
-            }
-            
-        except Exception as e:
-            logger.error(f" Error extracting results: {str(e)}")
-            logger.exception(e)
-            return {
-                "error": f"Không thể đọc kết quả: {str(e)}"
-            }
-    
     async def _arun(self, notebook_name: str = "grading-timing-mark.ipynb") -> str:
         """Execute tool asynchronously"""
         return self._run(notebook_name)

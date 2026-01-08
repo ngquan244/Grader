@@ -30,6 +30,9 @@ venv/
 ENV/
 env/
 
+# === Custom Virtual Environment ===
+venv-grader/
+
 # === IDE ===
 .idea/
 .vscode/
