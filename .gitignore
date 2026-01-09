@@ -62,8 +62,8 @@ logs/
 # === Data & Uploads ===
 kaggle/Filled-temp/
 kaggle/Template/
-exports/*.xlsx
-exports/*.pdf
+exports/
+quiz-gen/generated_quizzes/
 
 # === Testing ===
 .coverage

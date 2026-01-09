@@ -178,10 +178,17 @@ class QuizService:
                         border: 2px solid #ddd; border-radius: 10px; cursor: pointer; transition: all 0.3s; }}
         .option-label:hover {{ background: #f0f0f0; border-color: #667eea; }}
         .option-label input {{ margin-right: 12px; }}
+        .option-label.correct {{ background: #d4edda; border-color: #28a745; }}
+        .option-label.incorrect {{ background: #f8d7da; border-color: #dc3545; }}
+        .answer-explanation {{ margin-top: 15px; padding: 15px; background: #e7f3ff; 
+                              border-left: 4px solid #2196F3; border-radius: 5px; display: none; }}
+        .answer-explanation.show {{ display: block; }}
+        .answer-explanation strong {{ color: #2196F3; }}
         .submit-btn {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                       color: white; padding: 18px 50px; font-size: 20px; border: none; 
                       border-radius: 12px; cursor: pointer; display: block; margin: 40px auto; font-weight: bold; }}
         .submit-btn:hover {{ transform: scale(1.05); }}
+        .submit-btn:disabled {{ opacity: 0.6; cursor: not-allowed; transform: none; }}
         .score-panel {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                        color: white; padding: 30px; border-radius: 15px; text-align: center; 
                        margin: 30px 0; display: none; }}
@@ -245,11 +252,42 @@ class QuizService:
                 if (selected !== null) {{ answered++; if (selected === correctAns) correct++; }}
             }}
             if (answered < totalQuestions && !confirm('Bạn mới trả lời ' + answered + '/' + totalQuestions + ' câu. Tiếp tục?')) return;
+            
+            // Show correct answers
+            for (let i = 1; i <= totalQuestions; i++) {{
+                const radios = document.getElementsByName('q' + i);
+                let correctAns = null;
+                for (let r of radios) {{
+                    correctAns = r.getAttribute('data-correct');
+                    r.disabled = true; // Disable all radios
+                    const label = r.parentElement;
+                    // Highlight correct answer
+                    if (r.value === correctAns) {{
+                        label.classList.add('correct');
+                    }}
+                    // Highlight user's incorrect answer
+                    if (r.checked && r.value !== correctAns) {{
+                        label.classList.add('incorrect');
+                    }}
+                }}
+                // Show answer explanation
+                const explanation = document.getElementById('answer-' + i);
+                if (explanation) explanation.classList.add('show');
+            }}
+            
             const score = ((correct / totalQuestions) * 10).toFixed(1);
             document.getElementById('scoreText').textContent = score + ' điểm';
             document.getElementById('scoreDetail').textContent = 'Đúng ' + correct + '/' + totalQuestions + ' câu';
             document.getElementById('scorePanel').style.display = 'block';
-            window.scrollTo({{ top: document.getElementById('scorePanel').offsetTop - 100, behavior: 'smooth' }});
+            
+            // Disable submit button
+            const submitBtn = document.querySelector('button[onclick="submitQuiz()"]');
+            if (submitBtn) {{
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Đã Nộp Bài';
+            }}
+            
+            window.scrollTo({{ top: 0, behavior: 'smooth' }});
         }}
     </script>
 </body>
@@ -265,10 +303,22 @@ class QuizService:
                     {letter}. {text}
                 </label>"""
         
+        # Get correct answer text
+        correct_letter = question['correct']['letter']
+        correct_text = question['options'].get(correct_letter, '')
+        correct_explanation = question['correct'].get('explanation', '')
+        
+        answer_html = f"""
+            <div class="answer-explanation" id="answer-{num}">
+                <strong>✓ Đáp án đúng: {correct_letter}. {correct_text}</strong>
+                {f'<br><br>{correct_explanation}' if correct_explanation else ''}
+            </div>"""
+        
         return f"""
             <div class="question-card">
                 <div class="question-text">Câu {num}: {question['question']}</div>
                 {options_html}
+                {answer_html}
             </div>"""
 
 

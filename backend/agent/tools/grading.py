@@ -1,53 +1,21 @@
 """
-Grading tool for the Teaching Assistant Grader.
+Grading Tool
 Handles exam grading using SIFT/OpenCV image processing.
 """
+
 import json
-import os
 from typing import Optional, Type, Dict, Any, List
 from pathlib import Path
+
 from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
-from ..config import settings
-from ..core.logger import logger
 import pyodbc
 
-# Import the grader module
-from ..grader import create_processor, ExamProcessor
+from .base import check_role, get_role, format_permission_error, logger
+from ...config import settings
+from ...grader import create_processor, ExamProcessor
 
-
-# Role management (imported from tools.py, duplicated here for standalone use)
-ROLE_FILE = settings.PROJECT_ROOT / "role.txt"
-_ROLE = None
-
-
-def get_role():
-    """Get current role from file, fallback to default"""
-    global _ROLE
-    if _ROLE is not None:
-        return _ROLE
-    if ROLE_FILE.exists():
-        try:
-            with open(ROLE_FILE, 'r', encoding='utf-8') as f:
-                role = f.read().strip().upper()
-                if role in ("STUDENT", "TEACHER"):
-                    _ROLE = role
-                    return role
-        except Exception:
-            pass
-    _ROLE = "STUDENT"
-    return _ROLE
-
-
-def check_role(role_required: str) -> bool:
-    actual_role = get_role()
-    if (actual_role or "").lower() != role_required.lower():
-        logger.warning(f"Access denied. Required role: {role_required}, actual role: {actual_role}")
-        return False
-    return True
-
-
-SQL_SERVER_CONN_STR = settings.SQL_SERVER_CONN_STR
+__all__ = ["GradingTool", "GradingInput", "get_grading_tool"]
 
 
 class GradingInput(BaseModel):
@@ -58,12 +26,17 @@ class GradingInput(BaseModel):
     )
 
 
-# Global processor instance
+# Global processor instance for singleton pattern
 _processor: Optional[ExamProcessor] = None
 
 
 def get_grader_processor() -> ExamProcessor:
-    """Get or create the exam processor singleton"""
+    """
+    Get or create the exam processor singleton.
+    
+    Returns:
+        ExamProcessor instance
+    """
     global _processor
     if _processor is None:
         kaggle_dir = settings.PROJECT_ROOT / "kaggle"
@@ -77,7 +50,15 @@ def get_grader_processor() -> ExamProcessor:
 
 
 class GradingTool(BaseTool):
-    """Tool để chấm điểm bài thi trắc nghiệm"""
+    """
+    Tool để chấm điểm bài thi trắc nghiệm.
+    
+    This tool:
+    - Processes exam images using SIFT/OpenCV
+    - Detects student answers
+    - Calculates scores
+    - Saves results to database
+    """
     
     name: str = "execute_notebook"
     description: str = """
@@ -107,29 +88,35 @@ class GradingTool(BaseTool):
     args_schema: Type[BaseModel] = GradingInput
     
     def _run(self, notebook_name: str = "grading-timing-mark.ipynb") -> str:
-        """Execute grading using the refactored Python module"""
+        """
+        Execute grading using the Python module.
+        
+        Args:
+            notebook_name: Legacy parameter for compatibility
+            
+        Returns:
+            JSON string with grading results or error
+        """
         try:
+            # Check permission
             if not check_role("teacher"):
-                actual_role = get_role()
-                return json.dumps({
-                    "error": "Chỉ giáo viên mới có quyền yêu cầu chấm điểm",
-                    "fatal": True,
-                    "required_role": "teacher",
-                    "your_role": actual_role,
-                    "message": f"Bạn không có quyền thực hiện chức năng này. Yêu cầu quyền: teacher. Quyền hiện tại: {actual_role if actual_role else 'Không xác định'}"
-                }, ensure_ascii=False, indent=2)
+                return json.dumps(
+                    format_permission_error("teacher"),
+                    ensure_ascii=False, 
+                    indent=2
+                )
 
             # Update JSON from database
             try:
                 self._update_json_from_db()
             except Exception as dbjson_err:
-                logger.error(f"Lỗi khi cập nhật answer.json/student_coords.json từ DB: {str(dbjson_err)}")
+                logger.error(f"Error updating JSON from DB: {str(dbjson_err)}")
                 return json.dumps({
                     "error": "Lỗi khi cập nhật answer.json/student_coords.json từ DB",
                     "detail": str(dbjson_err)
                 }, ensure_ascii=False, indent=2)
 
-            logger.info("Starting grading using Python module (no notebook)")
+            logger.info("Starting grading using Python module")
             
             kaggle_dir = settings.PROJECT_ROOT / "kaggle"
             filled_dir = kaggle_dir / "Filled-temp"
@@ -167,10 +154,9 @@ class GradingTool(BaseTool):
             except Exception as db_err:
                 logger.error(f"Error saving results to DB: {str(db_err)}")
             
-            # Format output for agent - flatten and simplify
+            # Format output for agent
             graded_results = result_data.get("results", []) if isinstance(result_data, dict) else []
             
-            # Build simple response for agent
             response = {
                 "success": True,
                 "message": f"Đã chấm điểm {summary['successful']}/{summary['total_images']} bài thi thành công",
@@ -179,7 +165,7 @@ class GradingTool(BaseTool):
                 "failed": summary["failed"],
             }
             
-            # Add individual results with simplified format
+            # Add individual results
             students_results = []
             for r in graded_results:
                 if r.get("success", False):
@@ -215,7 +201,15 @@ class GradingTool(BaseTool):
             }, ensure_ascii=False, indent=2)
     
     def _read_results(self, result_path: Path) -> Dict[str, Any]:
-        """Read results from JSON file"""
+        """
+        Read results from JSON file.
+        
+        Args:
+            result_path: Path to result JSON file
+            
+        Returns:
+            Dictionary with results or error
+        """
         try:
             if result_path.exists():
                 with open(result_path, 'r', encoding='utf-8') as f:
@@ -224,16 +218,16 @@ class GradingTool(BaseTool):
         except Exception as e:
             return {"error": f"Không thể đọc kết quả: {str(e)}"}
     
-    def _update_json_from_db(self):
+    def _update_json_from_db(self) -> None:
         """
-        Lấy dữ liệu từ DB và ghi đè:
+        Fetch data from DB and update JSON files:
         - answer.json
         - student_coords.json
         """
-
-        conn = pyodbc.connect(SQL_SERVER_CONN_STR)
+        conn = pyodbc.connect(settings.SQL_SERVER_CONN_STR)
         cursor = conn.cursor()
 
+        # Fetch exams and answers
         cursor.execute("""
             SELECT id, exam_code, question_count
             FROM exams
@@ -268,6 +262,7 @@ class GradingTool(BaseTool):
                 "answers": answers
             })
 
+        # Fetch students
         cursor.execute("""
             SELECT student_id, email, full_name, student_code
             FROM students
@@ -287,6 +282,7 @@ class GradingTool(BaseTool):
         cursor.close()
         conn.close()
 
+        # Save JSON files
         kaggle_input_dir = settings.PROJECT_ROOT / "kaggle" / "Input Materials"
         kaggle_input_dir.mkdir(parents=True, exist_ok=True)
 
@@ -303,11 +299,17 @@ class GradingTool(BaseTool):
         """Execute tool asynchronously"""
         return self._run(notebook_name)
 
-    def _save_results_to_db(self, results):
+    def _save_results_to_db(self, results: List[Dict[str, Any]]) -> None:
+        """
+        Save grading results to database.
+        
+        Args:
+            results: List of grading results
+        """
         if not results:
             return
 
-        conn = pyodbc.connect(SQL_SERVER_CONN_STR)
+        conn = pyodbc.connect(settings.SQL_SERVER_CONN_STR)
         cursor = conn.cursor()
 
         sql_check_student = """
@@ -384,7 +386,12 @@ class GradingTool(BaseTool):
 
 
 def get_grading_tool() -> GradingTool:
-    """Factory function to create grading tool"""
+    """
+    Factory function to create grading tool.
+    
+    Returns:
+        GradingTool instance
+    """
     return GradingTool()
 
 
