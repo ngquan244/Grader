@@ -26,7 +26,7 @@ class AgentService:
         
         if cache_key not in self._agent_cache:
             logger.info(f"Creating new agent: {cache_key}")
-            from src.agent_graph import create_agent
+            from backend.agent.agent_graph import create_agent
             self._agent_cache[cache_key] = create_agent(
                 model=model,
                 max_iterations=max_iterations

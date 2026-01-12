@@ -124,8 +124,9 @@ const QuizPanel: React.FC = () => {
       <div className="quiz-list">
         <div className="quiz-list-header">
           <h3>Danh sách Quiz đã tạo</h3>
-          <button className="btn-icon" onClick={loadQuizzes} disabled={loadingList}>
-            <RefreshCw size={18} className={loadingList ? 'spin' : ''} />
+          <button className="btn-secondary btn-sm" onClick={loadQuizzes} disabled={loadingList}>
+            <RefreshCw size={16} className={loadingList ? 'spin' : ''} />
+            <span>Làm mới</span>
           </button>
         </div>
 
@@ -154,20 +155,22 @@ const QuizPanel: React.FC = () => {
                   <td>{quiz.num_questions}</td>
                   <td>{quiz.source_pdf || '-'}</td>
                   <td>
-                    <button
-                      className="btn-icon"
-                      onClick={() => openQuiz(`/static/quizzes/${quiz.id}.html`)}
-                      title="Mở quiz"
-                    >
-                      <ExternalLink size={16} />
-                    </button>
-                    <button
-                      className="btn-icon danger"
-                      onClick={() => deleteQuiz(quiz.id)}
-                      title="Xóa quiz"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    <div className="action-buttons">
+                      <button
+                        className="btn-action btn-open"
+                        onClick={() => openQuiz(`/static/quizzes/${quiz.id}.html`)}
+                      >
+                        <ExternalLink size={14} />
+                        <span>Mở</span>
+                      </button>
+                      <button
+                        className="btn-action btn-delete"
+                        onClick={() => deleteQuiz(quiz.id)}
+                      >
+                        <Trash2 size={14} />
+                        <span>Xóa</span>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

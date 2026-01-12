@@ -11,6 +11,7 @@ from .exceptions import (
     DatabaseException,
     AIModelException
 )
+from .logger import logger, setup_logger, agent_logger, tools_logger, grading_logger
 
 __all__ = [
     # Constants
@@ -29,4 +30,10 @@ __all__ = [
     "FileProcessingException",
     "DatabaseException",
     "AIModelException",
+    # Logging
+    "logger",
+    "setup_logger",
+    "agent_logger",
+    "tools_logger",
+    "grading_logger",
 ]

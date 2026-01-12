@@ -30,6 +30,9 @@ venv/
 ENV/
 env/
 
+# === Custom Virtual Environment ===
+venv-grader/
+
 # === IDE ===
 .idea/
 .vscode/
@@ -59,8 +62,8 @@ logs/
 # === Data & Uploads ===
 kaggle/Filled-temp/
 kaggle/Template/
-exports/*.xlsx
-exports/*.pdf
+exports/
+quiz-gen/generated_quizzes/
 
 # === Testing ===
 .coverage

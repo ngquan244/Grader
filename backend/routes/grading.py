@@ -3,37 +3,97 @@ Grading API routes - Exam Grading and Results
 """
 import json
 import logging
-from fastapi import APIRouter
+from pathlib import Path
+from typing import Optional
+
+import cv2
+import numpy as np
+from fastapi import APIRouter, UploadFile, File, HTTPException
 
 from backend.schemas import GradingRequest, GradingResponse, GradingResult, GradingSummary
 from backend.services import grading_service
-from backend.config import settings
+from backend.config import settings, get_role
 from backend.core import ForbiddenException, Role
-from src.config import Config
+from backend.grader import create_processor, ExamProcessor
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# Global processor instance (initialized lazily)
+_processor: Optional[ExamProcessor] = None
+
+
+def get_processor() -> ExamProcessor:
+    """Get or create the exam processor singleton"""
+    global _processor
+    if _processor is None:
+        kaggle_dir = settings.PROJECT_ROOT / "kaggle"
+        _processor = create_processor(
+            template_path=str(kaggle_dir / "Template" / "temp.jpg"),
+            student_json_path=str(kaggle_dir / "Input Materials" / "student_coords.json"),
+            answer_json_path=str(kaggle_dir / "Input Materials" / "answer.json"),
+            output_path=str(settings.PROJECT_ROOT / "final_result.json")
+        )
+    return _processor
+
 
 def require_teacher():
     """Require teacher role for protected operations"""
-    role = Config.get_role()
+    role = get_role()
     if (role or "").upper() != Role.TEACHER.value:
         raise ForbiddenException(Role.TEACHER.value.lower(), role)
 
 
 @router.post("/execute")
 async def execute_grading():
-    """Execute the grading notebook to process uploaded exam images"""
-    from src.notebook_tool import get_notebook_tool
-    
-    notebook_tool = get_notebook_tool()
-    result = notebook_tool._run()
-    
-    return {
-        "success": True,
-        "result": json.loads(result) if isinstance(result, str) else result
-    }
+    """Execute grading on all images in Filled-temp folder"""
+    try:
+        processor = get_processor()
+        kaggle_dir = settings.PROJECT_ROOT / "kaggle"
+        filled_dir = kaggle_dir / "Filled-temp"
+        
+        summary = processor.process_and_save(
+            filled_dir, 
+            str(settings.PROJECT_ROOT / "final_result.json")
+        )
+        
+        return {
+            "success": True,
+            "total_images": summary["total_images"],
+            "successful": summary["successful"],
+            "failed": summary["failed"],
+            "output_path": summary["output_path"]
+        }
+    except Exception as e:
+        logger.exception("Grading execution failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/grade-single")
+async def grade_single_image(file: UploadFile = File(...)):
+    """Grade a single uploaded exam image"""
+    try:
+        # Read image
+        contents = await file.read()
+        nparr = np.frombuffer(contents, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
+        
+        if img is None:
+            raise HTTPException(status_code=400, detail="Invalid image file")
+        
+        # Process
+        processor = get_processor()
+        result = processor.process_image(img, file.filename or "uploaded")
+        
+        return {
+            "success": result.success,
+            "result": result.to_dict()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Single image grading failed")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/summary", response_model=GradingResponse)

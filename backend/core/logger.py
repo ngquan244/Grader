@@ -1,8 +1,11 @@
+"""
+Logging utilities for the Teaching Assistant Grader.
+"""
 import logging
 import sys
 from pathlib import Path
 from datetime import datetime
-from .config import Config
+from ..config import settings
 
 
 def setup_logger(name: str, log_file: str = None, level=logging.INFO) -> logging.Logger:
@@ -38,7 +41,7 @@ def setup_logger(name: str, log_file: str = None, level=logging.INFO) -> logging
     
     # File handler (if log_file specified)
     if log_file:
-        log_path = Config.LOGS_DIR / log_file
+        log_path = settings.LOGS_DIR / log_file
         file_handler = logging.FileHandler(log_path, encoding='utf-8')
         file_handler.setLevel(level)
         file_handler.setFormatter(formatter)
@@ -58,9 +61,9 @@ tools_logger = setup_logger(
     f'tools_{datetime.now().strftime("%Y%m%d")}.log'
 )
 
-ui_logger = setup_logger(
-    'ui',
-    f'ui_{datetime.now().strftime("%Y%m%d")}.log'
+grading_logger = setup_logger(
+    'grading',
+    f'grading_{datetime.now().strftime("%Y%m%d")}.log'
 )
 
 # Default logger for general use
