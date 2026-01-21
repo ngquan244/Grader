@@ -3,7 +3,6 @@
 // ============================================================================
 
 // ===== Common Types =====
-export type Role = 'STUDENT' | 'TEACHER';
 export type MessageRole = 'user' | 'assistant';
 
 // ===== Chat Types =====
@@ -97,7 +96,6 @@ export interface GradingResponse {
 }
 
 export interface ConfigResponse {
-  role: string;
   available_models: string[];
   default_model: string;
   max_iterations: number;

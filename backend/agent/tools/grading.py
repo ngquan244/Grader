@@ -11,7 +11,7 @@ from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
 import pyodbc
 
-from .base import check_role, get_role, format_permission_error, logger
+from .base import logger
 from ...config import settings
 from ...grader import create_processor, ExamProcessor
 
@@ -98,14 +98,6 @@ class GradingTool(BaseTool):
             JSON string with grading results or error
         """
         try:
-            # Check permission
-            if not check_role("teacher"):
-                return json.dumps(
-                    format_permission_error("teacher"),
-                    ensure_ascii=False, 
-                    indent=2
-                )
-
             # Update JSON from database
             try:
                 self._update_json_from_db()

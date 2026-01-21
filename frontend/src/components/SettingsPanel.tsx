@@ -1,17 +1,9 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
-import { Settings, Bot, Cpu, RotateCcw } from 'lucide-react';
+import { Settings, Cpu } from 'lucide-react';
 
 const SettingsPanel: React.FC = () => {
-  const { config, model, setModel, maxIterations, setMaxIterations, role, switchRole } = useApp();
-
-  const handleSwitchRole = async () => {
-    try {
-      await switchRole();
-    } catch (error) {
-      console.error('Failed to switch role:', error);
-    }
-  };
+  const { config, model, setModel, maxIterations, setMaxIterations } = useApp();
 
   return (
     <div className="settings-panel">
@@ -19,29 +11,6 @@ const SettingsPanel: React.FC = () => {
         <Settings size={24} />
         Cài đặt
       </h2>
-
-      <div className="settings-section">
-        <h3>
-          <Bot size={20} />
-          Vai trò người dùng
-        </h3>
-        <div className="role-selector">
-          <div className={`role-option ${role === 'STUDENT' ? 'active' : ''}`}>
-            <span>Sinh viên</span>
-          </div>
-          <button className="btn-switch" onClick={handleSwitchRole}>
-            <RotateCcw size={16} />
-          </button>
-          <div className={`role-option ${role === 'TEACHER' ? 'active' : ''}`}>
-            <span>Giáo viên</span>
-          </div>
-        </div>
-        <p className="hint">
-          {role === 'TEACHER'
-            ? 'Bạn có quyền truy cập tất cả tính năng'
-            : 'Một số tính năng bị giới hạn cho sinh viên'}
-        </p>
-      </div>
 
       <div className="settings-section">
         <h3>

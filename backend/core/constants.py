@@ -4,12 +4,6 @@ Application constants
 from enum import Enum
 
 
-class Role(str, Enum):
-    """User roles"""
-    STUDENT = "STUDENT"
-    TEACHER = "TEACHER"
-
-
 class MessageRole(str, Enum):
     """Chat message roles"""
     USER = "user"
@@ -54,10 +48,6 @@ class Messages:
     QUIZ_GEN_NOT_INSTALLED = "Module quiz-gen chưa được cài đặt"
     NO_GRADING_RESULTS = "Chưa có kết quả chấm điểm"
     DATABASE_CONNECTION_ERROR = "Lỗi kết nối cơ sở dữ liệu"
-    
-    # Role messages
-    TEACHER_ONLY = "Chỉ giáo viên mới có quyền thực hiện thao tác này"
-    STUDENT_ONLY = "Chỉ sinh viên mới có quyền thực hiện thao tác này"
 
 
 # File size limits (in bytes)

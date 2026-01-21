@@ -207,7 +207,7 @@ You have access to the following tools:
 
 Tool usage rules:
 - execute_notebook → ONLY when user explicitly asks to "grade exam", "check answers", "chấm bài", "chấm điểm"
-- quiz_generator → ONLY when user explicitly asks to "create quiz", "tạo quiz", "tạo đề"
+- quiz_generator → ONLY when user explicitly asks to "create quiz", "tạo quiz", "tạo đề" (from exam PDFs)
 - calculator → ONLY for explicit numeric calculations (e.g., 123 * 456 + 789)
 - web_search → ONLY for current events, news, or up-to-date information
 

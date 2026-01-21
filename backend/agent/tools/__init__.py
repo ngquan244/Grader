@@ -5,13 +5,7 @@ Contains all tools for the Teaching Assistant Grader agent.
 Each tool is in its own module for better maintainability and extensibility.
 """
 
-from .base import (
-    get_role,
-    set_role,
-    check_role,
-    require_role,
-    ROLE_FILE,
-)
+from .base import logger
 from .calculator import CalculatorTool
 from .quiz_generator import QuizGeneratorTool
 from .exam_summary import ExamResultSummaryTool
@@ -41,12 +35,6 @@ def get_tool_by_name(tool_name: str) -> Optional[BaseTool]:
 
 
 __all__ = [
-    # Role management
-    "get_role",
-    "set_role", 
-    "check_role",
-    "require_role",
-    "ROLE_FILE",
     # Tools
     "CalculatorTool",
     "QuizGeneratorTool",
@@ -56,4 +44,5 @@ __all__ = [
     # Utility functions
     "get_all_tools",
     "get_tool_by_name",
+    "logger",
 ]

@@ -75,35 +75,6 @@ body {
   font-weight: 700;
 }
 
-.role-badge {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem 1rem;
-  margin: 1rem 0;
-  background: var(--bg-card);
-  border-radius: var(--radius);
-  cursor: pointer;
-  transition: all 0.2s;
-  position: relative;
-}
-
-.role-badge:hover {
-  background: var(--bg-hover);
-}
-
-.role-badge .role-switch-hint {
-  display: none;
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  position: absolute;
-  right: 0.75rem;
-}
-
-.role-badge:hover .role-switch-hint {
-  display: block;
-}
-
 .sidebar-nav {
   flex: 1;
   display: flex;
@@ -861,44 +832,6 @@ body {
   margin-bottom: 1rem;
 }
 
-.role-selector {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 0.75rem;
-}
-
-.role-option {
-  flex: 1;
-  padding: 1rem;
-  background: var(--bg-card);
-  border-radius: var(--radius);
-  text-align: center;
-  opacity: 0.5;
-  transition: all 0.2s;
-}
-
-.role-option.active {
-  opacity: 1;
-  border: 2px solid var(--primary);
-}
-
-.btn-switch {
-  padding: 0.5rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-switch:hover {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: white;
-}
-
 .hint {
   color: var(--text-muted);
   font-size: 0.85rem;
@@ -1006,8 +939,7 @@ body {
   }
 
   .sidebar-header,
-  .sidebar-footer,
-  .role-badge .role-switch-hint {
+  .sidebar-footer {
     display: none;
   }
 

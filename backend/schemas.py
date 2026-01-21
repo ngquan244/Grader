@@ -106,12 +106,7 @@ class GradingResponse(BaseModel):
 
 
 # ===== Config Schemas =====
-class RoleUpdate(BaseModel):
-    role: str = Field(..., pattern="^(STUDENT|TEACHER)$")
-
-
 class ConfigResponse(BaseModel):
-    role: str
     available_models: List[str]
     default_model: str
     max_iterations: int

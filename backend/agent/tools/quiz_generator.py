@@ -13,7 +13,7 @@ from typing import Type, List, Dict, Any
 from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
 
-from .base import check_role, get_role, format_permission_error, logger
+from .base import logger
 from ...config import settings
 
 __all__ = ["QuizGeneratorTool", "QuizGeneratorInput"]
@@ -79,14 +79,6 @@ class QuizGeneratorTool(BaseTool):
             JSON string with quiz info or error
         """
         try:
-            # Check permission
-            if not check_role("teacher"):
-                return json.dumps(
-                    format_permission_error("teacher"),
-                    ensure_ascii=False, 
-                    indent=2
-                )
-            
             # Check if quiz-gen module is available
             if not QUIZ_GEN_AVAILABLE:
                 return json.dumps({

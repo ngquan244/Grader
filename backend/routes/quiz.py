@@ -7,18 +7,11 @@ from fastapi.responses import FileResponse
 
 from backend.schemas import QuizGenerateRequest, QuizGenerateResponse, QuizListResponse
 from backend.services import quiz_service, file_service
-from backend.config import settings, get_role
-from backend.core import ForbiddenException, NotFoundException, Role
+from backend.config import settings
+from backend.core import NotFoundException
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-
-def require_teacher():
-    """Require teacher role for protected operations"""
-    role = get_role()
-    if (role or "").upper() != Role.TEACHER.value:
-        raise ForbiddenException(Role.TEACHER.value.lower(), role)
 
 
 @router.post("/extract")
@@ -42,8 +35,6 @@ async def extract_questions_from_uploaded_pdf(file: UploadFile = File(...)):
 @router.post("/generate", response_model=QuizGenerateResponse)
 async def generate_quiz(request: QuizGenerateRequest):
     """Generate a quiz from extracted questions"""
-    require_teacher()
-    
     result = quiz_service.generate_quiz(
         num_questions=request.num_questions,
         source_pdf=request.source_pdf

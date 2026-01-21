@@ -12,8 +12,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException
 
 from backend.schemas import GradingRequest, GradingResponse, GradingResult, GradingSummary
 from backend.services import grading_service
-from backend.config import settings, get_role
-from backend.core import ForbiddenException, Role
+from backend.config import settings
 from backend.grader import create_processor, ExamProcessor
 
 logger = logging.getLogger(__name__)
@@ -35,13 +34,6 @@ def get_processor() -> ExamProcessor:
             output_path=str(settings.PROJECT_ROOT / "final_result.json")
         )
     return _processor
-
-
-def require_teacher():
-    """Require teacher role for protected operations"""
-    role = get_role()
-    if (role or "").upper() != Role.TEACHER.value:
-        raise ForbiddenException(Role.TEACHER.value.lower(), role)
 
 
 @router.post("/execute")

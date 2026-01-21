@@ -1,11 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { configApi } from '../api/config';
-import type { Role, ConfigResponse, ChatMessage, ToolUsage } from '../types';
+import type { ConfigResponse, ChatMessage, ToolUsage } from '../types';
 
 interface AppContextType {
-  role: Role;
-  setRole: (role: Role) => Promise<void>;
-  switchRole: () => Promise<void>;
   config: ConfigResponse | null;
   loading: boolean;
   model: string;
@@ -23,7 +20,6 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [role, setRoleState] = useState<Role>('STUDENT');
   const [config, setConfig] = useState<ConfigResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [model, setModel] = useState('llama3.1:latest');
@@ -46,7 +42,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     try {
       const data = await configApi.getConfig();
       setConfig(data);
-      setRoleState(data.role as Role);
       setModel(data.default_model);
       setMaxIterations(data.max_iterations);
     } catch (error) {
@@ -56,32 +51,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  const setRole = async (newRole: Role) => {
-    try {
-      await configApi.setRole(newRole);
-      setRoleState(newRole);
-    } catch (error) {
-      console.error('Failed to set role:', error);
-      throw error;
-    }
-  };
-
-  const switchRole = async () => {
-    try {
-      const result = await configApi.switchRole();
-      setRoleState(result.current_role as Role);
-    } catch (error) {
-      console.error('Failed to switch role:', error);
-      throw error;
-    }
-  };
-
   return (
     <AppContext.Provider
       value={{
-        role,
-        setRole,
-        switchRole,
         config,
         loading,
         model,
