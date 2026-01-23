@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
-import { Sidebar, ChatPanel, UploadPanel, QuizPanel, GradingPanel, SettingsPanel } from './components';
+import { Sidebar, ChatPanel, UploadPanel, QuizPanel, GradingPanel, SettingsPanel, DocumentRAGPanel } from './components';
 import { Loader2 } from 'lucide-react';
 import { TABS, type TabType } from './types';
 import './App.css';
@@ -28,6 +28,8 @@ const AppContent: React.FC = () => {
         return <QuizPanel />;
       case TABS.GRADING:
         return <GradingPanel />;
+      case TABS.DOCUMENT_RAG:
+        return <DocumentRAGPanel />;
       case TABS.SETTINGS:
         return <SettingsPanel />;
       default:

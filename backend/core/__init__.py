@@ -1,5 +1,5 @@
 # Core package
-from .constants import Role, MessageRole, Messages, ScoreThresholds, FileLimits
+from .constants import MessageRole, Messages, ScoreThresholds, FileLimits
 from .exceptions import (
     BaseAPIException,
     NotFoundException,
@@ -15,7 +15,6 @@ from .logger import logger, setup_logger, agent_logger, tools_logger, grading_lo
 
 __all__ = [
     # Constants
-    "Role",
     "MessageRole",
     "Messages",
     "ScoreThresholds",

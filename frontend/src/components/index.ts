@@ -4,3 +4,4 @@ export { default as UploadPanel } from './UploadPanel';
 export { default as QuizPanel } from './QuizPanel';
 export { default as GradingPanel } from './GradingPanel';
 export { default as SettingsPanel } from './SettingsPanel';
+export { default as DocumentRAGPanel } from './DocumentRAGPanel';

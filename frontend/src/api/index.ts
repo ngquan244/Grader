@@ -4,3 +4,4 @@ export { quizApi } from './quiz';
 export { gradingApi } from './grading';
 export { configApi } from './config';
 export { apiClient } from './client';
+export * as documentRagApi from './documentRag';

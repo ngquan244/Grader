@@ -115,6 +115,7 @@ export const TABS = {
   UPLOAD: 'upload',
   QUIZ: 'quiz',
   GRADING: 'grading',
+  DOCUMENT_RAG: 'document_rag',
   SETTINGS: 'settings',
 } as const;
 

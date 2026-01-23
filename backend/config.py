@@ -3,7 +3,7 @@ Configuration settings for FastAPI backend
 """
 from pydantic_settings import BaseSettings
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 
 class Settings(BaseSettings):
@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     LOGS_DIR: Path = PROJECT_ROOT / "logs"
     EXPORTS_DIR: Path = PROJECT_ROOT / "exports"
     QUIZ_DIR: Path = PROJECT_ROOT / "quiz-gen" / "generated_quizzes"
+    CONFIG_DIR: Path = PROJECT_ROOT / "config"
+    MODELS_DIR: Path = PROJECT_ROOT / "models"
     
     # AI Model settings
     DEFAULT_MODEL: str = "llama3.1:latest"
@@ -47,7 +49,7 @@ class Settings(BaseSettings):
     # Email settings
     EMAIL_RECEIVER: str = "22028171@vnu.edu.vn"
     EMAIL_USER: str = "testcgvhehe@gmail.com"
-    EMAIL_PASSWORD: str = "ksxk vruc fdpc yzjz"
+    EMAIL_PASSWORD: str = "gtsv imfc umpp pvoh"
     
     # Database settings
     SQL_SERVER_CONN_STR: str = (
@@ -57,6 +59,11 @@ class Settings(BaseSettings):
         "Trusted_Connection=yes;"
         "Encrypt=no;"
     )
+    
+    # UI Configuration (for Gradio if needed in future)
+    UI_PORT: int = 7860
+    UI_HOST: str = "127.0.0.1"
+    SHARE_GRADIO: bool = True
     
     class Config:
         env_file = ".env"
@@ -70,3 +77,4 @@ settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
 settings.LOGS_DIR.mkdir(parents=True, exist_ok=True)
 settings.EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
 settings.QUIZ_DIR.mkdir(parents=True, exist_ok=True)
+

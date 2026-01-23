@@ -1,5 +1,5 @@
 import React from 'react';
-import { MessageSquare, FileUp, BookOpen, BarChart3, Settings, GraduationCap } from 'lucide-react';
+import { MessageSquare, FileUp, BookOpen, BarChart3, Settings, GraduationCap, FileText } from 'lucide-react';
 import { TABS, type TabType } from '../types';
 
 interface SidebarProps {
@@ -18,6 +18,7 @@ const SIDEBAR_TABS: TabItem[] = [
   { id: TABS.UPLOAD, label: 'Upload', icon: FileUp },
   { id: TABS.QUIZ, label: 'Tạo Quiz', icon: BookOpen },
   { id: TABS.GRADING, label: 'Chấm điểm', icon: BarChart3 },
+  { id: TABS.DOCUMENT_RAG, label: 'RAG Tài liệu', icon: FileText },
   { id: TABS.SETTINGS, label: 'Cài đặt', icon: Settings },
 ];
 

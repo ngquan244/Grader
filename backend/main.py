@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 
 from backend.routes import chat, upload, quiz, grading, config as config_routes
+from backend.routes import document_rag as document_rag_routes
 from backend.config import settings
 from backend.core import BaseAPIException
 
@@ -97,6 +98,7 @@ app.include_router(upload.router, prefix="/api/upload", tags=["Upload"])
 app.include_router(quiz.router, prefix="/api/quiz", tags=["Quiz"])
 app.include_router(grading.router, prefix="/api/grading", tags=["Grading"])
 app.include_router(config_routes.router, prefix="/api/config", tags=["Configuration"])
+app.include_router(document_rag_routes.router, prefix="/api/document-rag", tags=["Document RAG"])
 
 # Serve static files (generated quizzes, exports)
 app.mount("/static/quizzes", StaticFiles(directory=str(settings.QUIZ_DIR)), name="quizzes")
