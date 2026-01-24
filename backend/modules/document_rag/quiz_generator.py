@@ -1,20 +1,24 @@
 """
 Quiz Generator Module
 =====================
-Generate quiz questions from documents using RAG + Ollama LLM.
+Generate quiz questions from documents using RAG + configurable LLM backends.
+Supports Ollama (local) and Groq Cloud (API) with strict JSON output.
 """
 
 import logging
 import json
 import re
+import xml.etree.ElementTree as ET
+from xml.dom import minidom
 from typing import List, Dict, Any, Optional
+from datetime import datetime
 
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_ollama import ChatOllama
 from pydantic import BaseModel, Field
 
 from .config import rag_config
 from .retriever import DocumentRetriever
+from .llm_providers import BaseLLM, LLMFactory
 
 logger = logging.getLogger(__name__)
 
@@ -128,11 +132,13 @@ Return ONLY valid JSON, no additional text."""
 class QuizGenerator:
     """
     Generate quiz questions from documents using RAG.
+    Supports multiple LLM providers with strict JSON output.
     """
     
     def __init__(
         self,
         retriever: DocumentRetriever,
+        llm_provider: Optional[BaseLLM] = None,
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         base_url: Optional[str] = None
@@ -142,30 +148,231 @@ class QuizGenerator:
         
         Args:
             retriever: DocumentRetriever instance
-            model: Ollama model name
+            llm_provider: Pre-configured LLM provider (if None, uses LLMFactory)
+            model: Model name override (legacy, for backwards compatibility)
             temperature: Generation temperature (lower = more focused)
-            base_url: Ollama API base URL
+            base_url: API base URL (legacy)
         """
         self.retriever = retriever
-        self.model = model or rag_config.OLLAMA_MODEL
-        self.temperature = temperature if temperature is not None else 0.3
-        self.base_url = base_url or rag_config.OLLAMA_BASE_URL
         
-        # Initialize LLM with lower temperature for more consistent output
-        self.llm = ChatOllama(
-            model=self.model,
-            temperature=self.temperature,
-            base_url=self.base_url,
-            num_ctx=rag_config.OLLAMA_NUM_CTX,
-            format="json",  # Request JSON output
-        )
+        # Store legacy params for backwards compatibility
+        self._model_override = model
+        self._temperature_override = temperature if temperature is not None else 0.3
+        self._base_url_override = base_url
+        
+        # Initialize LLM provider
+        self._llm_provider: Optional[BaseLLM] = llm_provider
+        
+        # LLM instances (lazy initialized)
+        self._llm = None  # Regular LLM
+        self._llm_json = None  # JSON-mode LLM for quiz generation
         
         # Prompt templates
         self.prompt_vi = ChatPromptTemplate.from_template(QUIZ_GENERATION_PROMPT)
         self.prompt_en = ChatPromptTemplate.from_template(QUIZ_GENERATION_PROMPT_V2)
         
-        logger.info(f"QuizGenerator initialized with model: {self.model}")
+        # Initialize if provider not passed
+        if self._llm_provider is None:
+            self._init_llm()
+        
+        logger.info(f"QuizGenerator initialized with provider: {self._llm_provider.provider_name}")
     
+    def _init_llm(self):
+        """Initialize LLM using factory."""
+        kwargs = {"temperature": self._temperature_override}
+        if self._base_url_override:
+            kwargs["base_url"] = self._base_url_override
+        
+        self._llm_provider = LLMFactory.create(
+            model=self._model_override,
+            **kwargs
+        )
+    
+    @property
+    def llm(self):
+        """Get regular LLM instance (lazy initialization)."""
+        if self._llm is None:
+            self._llm = self._llm_provider.get_llm(json_mode=False)
+        return self._llm
+    
+    @property
+    def llm_json(self):
+        """Get JSON-mode LLM instance for quiz generation (lazy initialization)."""
+        if self._llm_json is None:
+            self._llm_json = self._llm_provider.get_llm(json_mode=True)
+        return self._llm_json
+    
+    @property
+    def model(self) -> str:
+        """Get current model name."""
+        return self._llm_provider.model if self._llm_provider else self._model_override or rag_config.OLLAMA_MODEL
+    
+    def set_llm_provider(self, provider: BaseLLM):
+        """
+        Set a new LLM provider at runtime.
+        
+        Args:
+            provider: New LLM provider instance
+        """
+        self._llm_provider = provider
+        self._llm = None  # Reset cached instances
+        self._llm_json = None
+        logger.info(f"QuizGenerator LLM provider updated: {provider.provider_name}")
+    
+    def extract_topics_from_context(
+        self,
+        context: str,
+        max_topics: int = 10
+    ) -> Dict[str, Any]:
+        """
+        Extract topics from provided context using LLM.
+        Used during document indexing to extract and cache topics.
+        
+        Args:
+            context: Document content to analyze
+            max_topics: Maximum number of topics to extract
+            
+        Returns:
+            Dictionary with topics
+        """
+        logger.info("Extracting topics from provided context...")
+        
+        try:
+            topic_prompt = ChatPromptTemplate.from_template("""Analyze the following document content and extract the main topics/concepts that could be used for quiz generation.
+
+DOCUMENT CONTENT:
+{context}
+
+Extract {max_topics} main topics from this content. Topics should be:
+- Specific enough to generate focused questions
+- Clear and concise (1-5 words each)
+- Represent key concepts, chapters, or sections in the document
+- In the same language as the document content
+
+OUTPUT FORMAT (JSON only):
+{{
+  "topics": [
+    {{"name": "Topic Name", "description": "Brief description of what this topic covers"}}
+  ]
+}}
+
+Return ONLY valid JSON, no additional text.""")
+            
+            # Use JSON-mode LLM for reliable JSON output
+            chain = topic_prompt | self.llm_json
+            
+            response = chain.invoke({
+                "context": context,
+                "max_topics": max_topics
+            })
+            
+            content = response.content if hasattr(response, 'content') else str(response)
+            logger.info(f"Topic extraction response: {content[:300]}...")
+            
+            data = self._parse_quiz_response(content)
+            
+            if data and data.get("topics"):
+                return {
+                    "success": True,
+                    "topics": data["topics"]
+                }
+            
+            return {
+                "success": False,
+                "topics": [],
+                "message": "Could not extract topics"
+            }
+            
+        except Exception as e:
+            logger.error(f"Error extracting topics from context: {e}")
+            return {
+                "success": False,
+                "topics": [],
+                "message": str(e)
+            }
+    
+    def extract_topics(self, max_topics: int = 10) -> Dict[str, Any]:
+        """
+        Extract suggested topics from indexed documents using LLM.
+        
+        Args:
+            max_topics: Maximum number of topics to suggest
+            
+        Returns:
+            Dictionary with topics and metadata
+        """
+        logger.info("Extracting topics from documents...")
+        
+        try:
+            # Get sample documents for topic extraction
+            documents = self.retriever.vector_store.get_all_document_content(max_docs=20)
+            
+            if not documents:
+                return {
+                    "success": False,
+                    "topics": [],
+                    "message": "Chưa có tài liệu nào được index"
+                }
+            
+            # Create context from documents
+            context = "\n\n---\n\n".join(documents[:15])  # Limit to avoid token overflow
+            
+            # Prompt for topic extraction - use JSON mode LLM
+            topic_prompt = ChatPromptTemplate.from_template("""Analyze the following document content and extract the main topics/concepts that could be used for quiz generation.
+
+DOCUMENT CONTENT:
+{context}
+
+Extract {max_topics} main topics from this content. Topics should be:
+- Specific enough to generate focused questions
+- Clear and concise (1-5 words each)
+- Represent key concepts, chapters, or sections in the document
+
+OUTPUT FORMAT (JSON only):
+{{
+  "topics": [
+    {{"name": "Topic Name", "description": "Brief description of what this topic covers"}}
+  ]
+}}
+
+Return ONLY valid JSON, no additional text.""")
+            
+            chain = topic_prompt | self.llm_json
+            
+            response = chain.invoke({
+                "context": context[:8000],  # Limit context size
+                "max_topics": max_topics
+            })
+            
+            content = response.content if hasattr(response, 'content') else str(response)
+            logger.info(f"Topic extraction response: {content[:300]}...")
+            
+            # Parse response
+            data = self._parse_quiz_response(content)
+            
+            if data and data.get("topics"):
+                topics = data["topics"]
+                logger.info(f"Extracted {len(topics)} topics")
+                return {
+                    "success": True,
+                    "topics": topics,
+                    "message": ""
+                }
+            
+            return {
+                "success": False,
+                "topics": [],
+                "message": "Không thể trích xuất chủ đề từ tài liệu"
+            }
+            
+        except Exception as e:
+            logger.error(f"Error extracting topics: {e}")
+            return {
+                "success": False,
+                "topics": [],
+                "message": f"Lỗi: {str(e)}"
+            }
+
     def generate_quiz(
         self,
         topic: str,
@@ -215,8 +422,8 @@ class QuizGenerator:
         # Step 3: Select prompt based on language
         prompt = self.prompt_vi if language == "vi" else self.prompt_en
         
-        # Step 4: Generate quiz
-        chain = prompt | self.llm
+        # Step 4: Generate quiz using JSON-mode LLM
+        chain = prompt | self.llm_json
         
         try:
             logger.info("Generating quiz with LLM...")
@@ -409,5 +616,129 @@ class QuizGenerator:
         
         lines.append("=" * 50)
         lines.append(f"Tổng: {len(result['quiz'])} câu hỏi")
+        
+        return "\n".join(lines)
+    
+    def export_to_qti(
+        self,
+        questions: List[Dict[str, Any]],
+        title: str = "Generated Quiz",
+        description: str = ""
+    ) -> str:
+        """
+        Export quiz questions to QTI 2.1 XML format.
+        
+        Args:
+            questions: List of formatted quiz questions
+            title: Quiz title
+            description: Quiz description
+            
+        Returns:
+            QTI XML string
+        """
+        # Create root element
+        root = ET.Element('questestinterop')
+        root.set('xmlns', 'http://www.imsglobal.org/xsd/ims_qtiasiv1p2')
+        root.set('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance')
+        root.set('xsi:schemaLocation', 'http://www.imsglobal.org/xsd/ims_qtiasiv1p2 http://www.imsglobal.org/xsd/ims_qtiasiv1p2p1.xsd')
+        
+        # Assessment
+        assessment = ET.SubElement(root, 'assessment')
+        assessment.set('ident', f'quiz_{datetime.now().strftime("%Y%m%d%H%M%S")}')
+        assessment.set('title', title)
+        
+        # Metadata
+        qtimetadata = ET.SubElement(assessment, 'qtimetadata')
+        qtimetadatafield = ET.SubElement(qtimetadata, 'qtimetadatafield')
+        ET.SubElement(qtimetadatafield, 'fieldlabel').text = 'qmd_timelimit'
+        ET.SubElement(qtimetadatafield, 'fieldentry').text = '0'
+        
+        # Section
+        section = ET.SubElement(assessment, 'section')
+        section.set('ident', 'root_section')
+        section.set('title', title)
+        
+        if description:
+            ET.SubElement(section, 'rubric').text = description
+        
+        # Add questions
+        for q in questions:
+            item = ET.SubElement(section, 'item')
+            item.set('ident', f'question_{q["question_number"]}')
+            item.set('title', f'Question {q["question_number"]}')
+            
+            # Item metadata
+            itemmetadata = ET.SubElement(item, 'itemmetadata')
+            qtimetadata_item = ET.SubElement(itemmetadata, 'qtimetadata')
+            
+            # Question type
+            field1 = ET.SubElement(qtimetadata_item, 'qtimetadatafield')
+            ET.SubElement(field1, 'fieldlabel').text = 'question_type'
+            ET.SubElement(field1, 'fieldentry').text = 'multiple_choice_question'
+            
+            # Points
+            field2 = ET.SubElement(qtimetadata_item, 'qtimetadatafield')
+            ET.SubElement(field2, 'fieldlabel').text = 'points_possible'
+            ET.SubElement(field2, 'fieldentry').text = '1.0'
+            
+            # Presentation
+            presentation = ET.SubElement(item, 'presentation')
+            material = ET.SubElement(presentation, 'material')
+            mattext = ET.SubElement(material, 'mattext')
+            mattext.set('texttype', 'text/html')
+            mattext.text = q["question"]
+            
+            # Response
+            response = ET.SubElement(presentation, 'response_lid')
+            response.set('ident', 'response1')
+            response.set('rcardinality', 'Single')
+            
+            render_choice = ET.SubElement(response, 'render_choice')
+            
+            # Options
+            for key, value in q["options"].items():
+                response_label = ET.SubElement(render_choice, 'response_label')
+                response_label.set('ident', key)
+                mat = ET.SubElement(response_label, 'material')
+                mat_text = ET.SubElement(mat, 'mattext')
+                mat_text.set('texttype', 'text/plain')
+                mat_text.text = value
+            
+            # Correct answer
+            resprocessing = ET.SubElement(item, 'resprocessing')
+            outcomes = ET.SubElement(resprocessing, 'outcomes')
+            decvar = ET.SubElement(outcomes, 'decvar')
+            decvar.set('maxvalue', '100')
+            decvar.set('minvalue', '0')
+            decvar.set('varname', 'SCORE')
+            decvar.set('vartype', 'Decimal')
+            
+            # Correct response condition
+            respcondition = ET.SubElement(resprocessing, 'respcondition')
+            respcondition.set('continue', 'No')
+            conditionvar = ET.SubElement(respcondition, 'conditionvar')
+            varequal = ET.SubElement(conditionvar, 'varequal')
+            varequal.set('respident', 'response1')
+            varequal.text = q["correct_answer"]
+            
+            setvar = ET.SubElement(respcondition, 'setvar')
+            setvar.set('action', 'Set')
+            setvar.set('varname', 'SCORE')
+            setvar.text = '100'
+            
+            # Feedback if explanation exists
+            if q.get("explanation"):
+                itemfeedback = ET.SubElement(item, 'itemfeedback')
+                itemfeedback.set('ident', 'correct_fb')
+                flow_mat = ET.SubElement(itemfeedback, 'flow_mat')
+                material_fb = ET.SubElement(flow_mat, 'material')
+                mattext_fb = ET.SubElement(material_fb, 'mattext')
+                mattext_fb.set('texttype', 'text/html')
+                mattext_fb.text = q["explanation"]
+        
+        # Convert to string with pretty print
+        xml_str = ET.tostring(root, encoding='unicode')
+        dom = minidom.parseString(xml_str)
+        return dom.toprettyxml(indent='  ')
         
         return "\n".join(lines)

@@ -18,29 +18,31 @@ const AppContent: React.FC = () => {
     );
   }
 
-  const renderContent = () => {
-    switch (activeTab) {
-      case TABS.CHAT:
-        return <ChatPanel />;
-      case TABS.UPLOAD:
-        return <UploadPanel />;
-      case TABS.QUIZ:
-        return <QuizPanel />;
-      case TABS.GRADING:
-        return <GradingPanel />;
-      case TABS.DOCUMENT_RAG:
-        return <DocumentRAGPanel />;
-      case TABS.SETTINGS:
-        return <SettingsPanel />;
-      default:
-        return <ChatPanel />;
-    }
-  };
-
+  // Render all panels but only show the active one
+  // This preserves state when switching tabs
   return (
     <div className="app">
       <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
-      <main className="main-content">{renderContent()}</main>
+      <main className="main-content">
+        <div style={{ display: activeTab === TABS.CHAT ? 'block' : 'none', height: '100%' }}>
+          <ChatPanel />
+        </div>
+        <div style={{ display: activeTab === TABS.UPLOAD ? 'block' : 'none', height: '100%' }}>
+          <UploadPanel />
+        </div>
+        <div style={{ display: activeTab === TABS.QUIZ ? 'block' : 'none', height: '100%' }}>
+          <QuizPanel />
+        </div>
+        <div style={{ display: activeTab === TABS.GRADING ? 'block' : 'none', height: '100%' }}>
+          <GradingPanel />
+        </div>
+        <div style={{ display: activeTab === TABS.DOCUMENT_RAG ? 'block' : 'none', height: '100%' }}>
+          <DocumentRAGPanel />
+        </div>
+        <div style={{ display: activeTab === TABS.SETTINGS ? 'block' : 'none', height: '100%' }}>
+          <SettingsPanel />
+        </div>
+      </main>
     </div>
   );
 };

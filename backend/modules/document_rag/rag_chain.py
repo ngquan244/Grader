@@ -1,8 +1,8 @@
 """
 RAG Chain Module
 ================
-Build and execute the RAG chain using local Ollama LLM.
-NO API KEYS required - runs completely locally.
+Build and execute the RAG chain using configurable LLM backends.
+Supports Ollama (local) and Groq Cloud (API).
 """
 
 import logging
@@ -10,10 +10,10 @@ from typing import List, Dict, Any, Optional
 
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_ollama import ChatOllama
 
 from .config import rag_config
 from .retriever import DocumentRetriever
+from .llm_providers import BaseLLM, LLMFactory
 
 logger = logging.getLogger(__name__)
 
@@ -38,17 +38,19 @@ TRẢ LỜI:"""
 
 class RAGChain:
     """
-    RAG Chain for question answering using local Ollama LLM.
+    RAG Chain for question answering using configurable LLM backends.
     
     Features:
-    - Uses Ollama for local inference (no API keys)
+    - Supports multiple LLM providers (Ollama, Groq)
     - Returns answers with source citations
     - Configurable model and parameters
+    - Runtime provider switching
     """
     
     def __init__(
         self,
         retriever: DocumentRetriever,
+        llm_provider: Optional[BaseLLM] = None,
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         base_url: Optional[str] = None
@@ -58,34 +60,78 @@ class RAGChain:
         
         Args:
             retriever: DocumentRetriever instance
-            model: Ollama model name (default: llama3)
-            temperature: Generation temperature
-            base_url: Ollama API base URL
+            llm_provider: Pre-configured LLM provider (if None, uses LLMFactory)
+            model: Model name override (legacy, for backwards compatibility)
+            temperature: Generation temperature (legacy)
+            base_url: API base URL (legacy)
         """
         self.retriever = retriever
-        self.model = model or rag_config.OLLAMA_MODEL
-        self.temperature = temperature or rag_config.OLLAMA_TEMPERATURE
-        self.base_url = base_url or rag_config.OLLAMA_BASE_URL
         
-        # Initialize LLM
-        self._init_llm()
+        # Store legacy params for backwards compatibility
+        self._model_override = model
+        self._temperature_override = temperature
+        self._base_url_override = base_url
+        
+        # Initialize LLM provider
+        self._llm_provider: Optional[BaseLLM] = llm_provider
         
         # Initialize prompt
         self.prompt = ChatPromptTemplate.from_template(RAG_PROMPT_TEMPLATE)
+        
+        # Initialize LLM if provider was passed
+        if self._llm_provider is None:
+            self._init_llm()
     
     def _init_llm(self):
-        """Initialize Ollama LLM."""
-        logger.info(f"Initializing Ollama LLM: {self.model}")
-        logger.info(f"Ollama base URL: {self.base_url}")
+        """Initialize LLM using factory."""
+        logger.info("Initializing LLM via factory...")
         
-        self.llm = ChatOllama(
-            model=self.model,
-            temperature=self.temperature,
-            base_url=self.base_url,
-            num_ctx=rag_config.OLLAMA_NUM_CTX,
+        # Build kwargs for factory
+        kwargs = {}
+        if self._temperature_override is not None:
+            kwargs["temperature"] = self._temperature_override
+        if self._base_url_override is not None:
+            kwargs["base_url"] = self._base_url_override
+        
+        self._llm_provider = LLMFactory.create(
+            model=self._model_override,
+            **kwargs
         )
         
-        logger.info("Ollama LLM initialized")
+        info = self._llm_provider.get_info()
+        logger.info(f"LLM initialized: provider={info['provider']}, model={info['model']}")
+    
+    @property
+    def llm(self):
+        """Get the underlying LangChain LLM instance."""
+        if self._llm_provider is None:
+            self._init_llm()
+        return self._llm_provider.llm
+    
+    @property
+    def model(self) -> str:
+        """Get current model name."""
+        if self._llm_provider:
+            return self._llm_provider.model
+        return self._model_override or rag_config.OLLAMA_MODEL
+    
+    @property
+    def base_url(self) -> str:
+        """Get current base URL."""
+        if self._llm_provider and hasattr(self._llm_provider, 'base_url'):
+            return self._llm_provider.base_url
+        return self._base_url_override or rag_config.OLLAMA_BASE_URL
+    
+    def set_llm_provider(self, provider: BaseLLM):
+        """
+        Set a new LLM provider at runtime.
+        
+        Args:
+            provider: New LLM provider instance
+        """
+        self._llm_provider = provider
+        info = provider.get_info()
+        logger.info(f"LLM provider updated: {info['provider']}, model={info['model']}")
     
     def query(
         self,
@@ -216,27 +262,22 @@ class RAGChain:
     
     def check_ollama_connection(self) -> Dict[str, Any]:
         """
-        Check if Ollama is running and model is available.
+        Check if the LLM provider is accessible.
+        Kept for backwards compatibility - now checks current provider.
         
         Returns:
             Dictionary with connection status
         """
-        try:
-            # Try a simple generation
-            response = self.llm.invoke("Say 'OK' if you can read this.")
-            
-            return {
-                "connected": True,
-                "model": self.model,
-                "base_url": self.base_url,
-                "message": "Ollama connection successful"
-            }
-        except Exception as e:
-            logger.error(f"Ollama connection check failed: {e}")
-            return {
-                "connected": False,
-                "model": self.model,
-                "base_url": self.base_url,
-                "error": str(e),
-                "message": f"Không thể kết nối Ollama: {str(e)}"
-            }
+        if self._llm_provider is None:
+            self._init_llm()
+        
+        return self._llm_provider.check_connection()
+    
+    def check_connection(self) -> Dict[str, Any]:
+        """
+        Check if the current LLM provider is accessible.
+        
+        Returns:
+            Dictionary with connection status
+        """
+        return self.check_ollama_connection()

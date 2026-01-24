@@ -14,7 +14,11 @@ langgraph>=0.0.20
 langchain>=0.1.0
 langchain-community>=0.0.20
 langchain-ollama>=0.0.1
+langchain-openai>=0.0.5  # For Groq Cloud (OpenAI-compatible API)
 ollama>=0.1.0
+
+# === Environment Configuration ===
+python-dotenv>=1.0.0
 
 # === Document RAG Dependencies ===
 langchain-core>=0.1.0

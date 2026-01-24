@@ -106,3 +106,16 @@ test_result.json
 final_result.json
 test_new.json
 backend/agent/test_agent_gating.py
+data/chroma/document_rag/0e8756f5-5e83-4de6-938c-fe59c8e5f48c/link_lists.bin
+data/chroma/document_rag/0e8756f5-5e83-4de6-938c-fe59c8e5f48c/header.bin
+data/chroma/document_rag/chroma.sqlite3
+data/chroma/document_rag/0e8756f5-5e83-4de6-938c-fe59c8e5f48c/data_level0.bin
+data/chroma/document_rag/0e8756f5-5e83-4de6-938c-fe59c8e5f48c/length.bin
+data/chroma/document_rag/ce4067cc-1f48-4110-aea9-a1b0820599ae/data_level0.bin
+data/chroma/document_rag/ce4067cc-1f48-4110-aea9-a1b0820599ae/header.bin
+data/chroma/document_rag/ce4067cc-1f48-4110-aea9-a1b0820599ae/length.bin
+data/chroma/document_rag/ce4067cc-1f48-4110-aea9-a1b0820599ae/link_lists.bin
+data/chroma/document_rag/dc369c24-2381-4ba2-99e1-8d0aae2e43f6/data_level0.bin
+data/chroma/document_rag/dc369c24-2381-4ba2-99e1-8d0aae2e43f6/header.bin
+data/chroma/document_rag/dc369c24-2381-4ba2-99e1-8d0aae2e43f6/length.bin
+data/chroma/document_rag/dc369c24-2381-4ba2-99e1-8d0aae2e43f6/link_lists.bin

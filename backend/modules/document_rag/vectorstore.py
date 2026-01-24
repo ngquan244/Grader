@@ -259,6 +259,72 @@ class ChromaVectorStore:
         
         return stats
     
+    def get_all_document_content(self, max_docs: int = 50) -> List[str]:
+        """
+        Get content of all documents in the collection for topic extraction.
+        
+        Args:
+            max_docs: Maximum number of documents to retrieve
+            
+        Returns:
+            List of document content strings
+        """
+        try:
+            if not self._vector_store:
+                return []
+            
+            collection = self._vector_store._collection
+            result = collection.get(
+                include=["documents"],
+                limit=max_docs
+            )
+            
+            if result and result.get("documents"):
+                return result["documents"]
+            
+            return []
+        except Exception as e:
+            logger.warning(f"Could not get document content: {e}")
+            return []
+    
+    def get_indexed_files(self) -> List[Dict[str, Any]]:
+        """
+        Get list of indexed files with metadata.
+        
+        Returns:
+            List of file info dictionaries
+        """
+        try:
+            if not self._vector_store:
+                return []
+            
+            collection = self._vector_store._collection
+            result = collection.get(include=["metadatas"])
+            
+            if not result or not result.get("metadatas"):
+                return []
+            
+            # Extract unique files
+            files = {}
+            for meta in result["metadatas"]:
+                if meta:
+                    filename = meta.get("filename", meta.get("source", "unknown"))
+                    if filename not in files:
+                        files[filename] = {
+                            "filename": filename,
+                            "source": meta.get("source", ""),
+                            "file_hash": meta.get("file_hash", ""),
+                            "chunk_count": 1
+                        }
+                    else:
+                        files[filename]["chunk_count"] += 1
+            
+            return list(files.values())
+            
+        except Exception as e:
+            logger.warning(f"Could not get indexed files: {e}")
+            return []
+    
     def reset_collection(self) -> bool:
         """
         Delete all documents and reset the collection.
@@ -269,17 +335,23 @@ class ChromaVectorStore:
         logger.warning(f"Resetting collection: {self.collection_name}")
         
         try:
-            # Delete the persist directory
-            persist_path = Path(self.persist_directory)
-            if persist_path.exists():
-                shutil.rmtree(persist_path)
-                logger.info(f"Deleted persist directory: {self.persist_directory}")
+            # First, delete the collection from ChromaDB client
+            if self._vector_store is not None:
+                try:
+                    # Get the client and delete collection
+                    client = self._vector_store._client
+                    client.delete_collection(self.collection_name)
+                    logger.info(f"Deleted collection: {self.collection_name}")
+                except Exception as e:
+                    logger.warning(f"Could not delete collection: {e}")
+                
+                # Clear reference
+                self._vector_store = None
             
             # Clear indexed hashes
             self._indexed_hashes.clear()
             
             # Recreate empty store
-            persist_path.mkdir(parents=True, exist_ok=True)
             self._load_or_create_store()
             
             logger.info("Collection reset complete")

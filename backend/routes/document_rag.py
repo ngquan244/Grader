@@ -9,10 +9,10 @@ import os
 import shutil
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import APIRouter, File, UploadFile, HTTPException, Form
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 from backend.modules.document_rag import RAGService
@@ -466,3 +466,258 @@ async def generate_quiz_from_documents(request: GenerateQuizRequest):
     except Exception as e:
         logger.error(f"Error generating quiz: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class ExportQuizRequest(BaseModel):
+    """Request model for quiz export"""
+    questions: List[QuizQuestion]
+    title: str = "Generated Quiz"
+    description: str = ""
+
+
+class SetLLMProviderRequest(BaseModel):
+    """Request model for setting LLM provider"""
+    provider: str  # "ollama" or "groq"
+    model: Optional[str] = None  # Optional model override
+
+
+class LLMProviderResponse(BaseModel):
+    """Response model for LLM provider operations"""
+    success: bool
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    message: Optional[str] = None
+    error: Optional[str] = None
+    connection: Optional[dict] = None
+
+
+@router.get("/extract-topics")
+async def extract_topics_from_documents():
+    """
+    Extract suggested topics from indexed documents.
+    
+    This uses LLM to analyze document content and suggest topics
+    that can be used for quiz generation.
+    
+    Returns:
+        List of suggested topics with descriptions
+    """
+    logger.info("Extracting topics from documents")
+    
+    try:
+        rag_service = get_rag_service()
+        
+        # Check if index has documents
+        stats = rag_service.get_index_stats()
+        if stats.get("total_documents", 0) == 0:
+            return {
+                "success": False,
+                "topics": [],
+                "message": "Chưa có tài liệu nào được index"
+            }
+        
+        # Extract topics
+        result = rag_service.extract_topics()
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error extracting topics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/export-quiz-qti")
+async def export_quiz_to_qti(request: ExportQuizRequest):
+    """
+    Export quiz questions to QTI 2.1 format.
+    
+    Args:
+        request: Quiz questions and metadata
+        
+    Returns:
+        QTI XML file
+    """
+    try:
+        rag_service = get_rag_service()
+        
+        # Convert Pydantic models to dicts
+        questions_dict = [q.dict() for q in request.questions]
+        
+        # Generate QTI XML
+        qti_xml = rag_service._quiz_generator.export_to_qti(
+            questions=questions_dict,
+            title=request.title,
+            description=request.description
+        )
+        
+        # Return as downloadable file
+        return Response(
+            content=qti_xml,
+            media_type="application/xml",
+            headers={
+                "Content-Disposition": f"attachment; filename=quiz_{request.title.replace(' ', '_')}.xml"
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Error exporting quiz to QTI: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== TOPIC MANAGEMENT ENDPOINTS ====================
+
+@router.get("/document-topics/{filename}")
+async def get_document_topics(filename: str):
+    """
+    Get cached topics for a specific indexed document.
+    Topics are extracted during indexing, so this is instant (no LLM call).
+    """
+    try:
+        rag_service = get_rag_service()
+        result = rag_service.get_document_topics(filename)
+        
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=404, 
+                detail=result.get("message", f"No topics found for document: {filename}. Please re-index the document.")
+            )
+        
+        # Extract just the topic names for frontend
+        topics = result.get("topics", [])
+        topic_names = [t.get("name", "") for t in topics if isinstance(t, dict)]
+        
+        return {
+            "success": True,
+            "filename": filename,
+            "topics": topic_names,
+            "count": len(topic_names)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting topics for {filename}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/indexed-documents")
+async def list_indexed_documents():
+    """
+    List all indexed documents with their topic counts.
+    """
+    try:
+        rag_service = get_rag_service()
+        result = rag_service.get_indexed_documents_with_topics()
+        documents = result.get("documents", [])
+        
+        # Format for frontend - use actual filename for topic lookup
+        formatted_docs = []
+        for doc in documents:
+            formatted_docs.append({
+                "filename": doc.get("filename", "unknown"),  # Use actual filename
+                "original_filename": doc.get("filename", "unknown"),
+                "topic_count": doc.get("topic_count", 0),
+                "indexed_at": doc.get("extracted_at", "")
+            })
+        
+        return {
+            "success": True,
+            "documents": formatted_docs,
+            "count": len(formatted_docs)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error listing indexed documents: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# LLM PROVIDER MANAGEMENT ENDPOINTS
+# ============================================================================
+
+@router.post("/set-llm", response_model=LLMProviderResponse)
+async def set_llm_provider(request: SetLLMProviderRequest):
+    """
+    Set the LLM provider at runtime.
+    
+    Allows switching between:
+    - "ollama": Local Ollama instance
+    - "groq": Groq Cloud API (requires GROQ_API_KEY in .env)
+    
+    Args:
+        request: Provider name and optional model override
+        
+    Returns:
+        Status of the provider switch with connection test results
+    """
+    logger.info(f"Setting LLM provider: {request.provider}, model: {request.model}")
+    
+    # Validate provider
+    valid_providers = ["ollama", "groq"]
+    if request.provider.lower() not in valid_providers:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid provider: {request.provider}. Valid options: {valid_providers}"
+        )
+    
+    try:
+        rag_service = get_rag_service()
+        result = rag_service.set_llm_provider(
+            provider=request.provider.lower(),
+            model=request.model
+        )
+        
+        return LLMProviderResponse(
+            success=result.get("success", False),
+            provider=result.get("provider"),
+            model=result.get("model"),
+            message=result.get("message"),
+            error=result.get("error"),
+            connection=result.get("connection")
+        )
+        
+    except Exception as e:
+        logger.error(f"Error setting LLM provider: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/llm-provider")
+async def get_llm_provider_info():
+    """
+    Get current LLM provider information.
+    
+    Returns:
+        Current provider, model, and available providers
+    """
+    try:
+        rag_service = get_rag_service()
+        result = rag_service.get_llm_provider_info()
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error getting LLM provider info: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/llm-status")
+async def check_llm_status():
+    """
+    Check current LLM provider connection status.
+    
+    Tests the connection to the current LLM provider
+    and returns detailed status information.
+    """
+    try:
+        rag_service = get_rag_service()
+        status = rag_service.check_llm_status()
+        
+        return status
+        
+    except Exception as e:
+        logger.error(f"Error checking LLM status: {e}")
+        return {
+            "connected": False,
+            "error": str(e),
+            "message": f"Error checking LLM status: {str(e)}"
+        }

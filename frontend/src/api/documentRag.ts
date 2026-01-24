@@ -66,18 +66,50 @@ export interface OllamaStatus {
   base_url?: string;
   message: string;
   error?: string;
+  provider?: string;
+  error_type?: string;
+  fallback_available?: boolean;
 }
 
 export interface RAGConfig {
   persist_directory: string;
   collection_name: string;
+  llm_provider: string;
+  llm_model: string;
+  available_providers: string[];
   ollama_model: string;
   ollama_base_url: string;
+  groq_model: string;
+  groq_configured: boolean;
   chunk_size: number;
   chunk_overlap: number;
   embedding_model: string;
   retriever_k: number;
   search_type: string;
+}
+
+// LLM Provider Types
+export interface LLMProviderInfo {
+  success: boolean;
+  current_provider: string;
+  current_model: string;
+  available_providers: string[];
+  groq_configured: boolean;
+  ollama_base_url: string;
+}
+
+export interface SetLLMProviderRequest {
+  provider: 'ollama' | 'groq';
+  model?: string;
+}
+
+export interface SetLLMProviderResponse {
+  success: boolean;
+  provider?: string;
+  model?: string;
+  message?: string;
+  error?: string;
+  connection?: OllamaStatus;
 }
 
 // Quiz Generation Types
@@ -110,6 +142,18 @@ export interface GenerateQuizResponse {
   context_used?: string;
   raw_response?: string;
   error?: string;
+}
+
+// Topic suggestion types
+export interface TopicSuggestion {
+  name: string;
+  description: string;
+}
+
+export interface ExtractTopicsResponse {
+  success: boolean;
+  topics: TopicSuggestion[];
+  message?: string;
 }
 
 // ===== API Functions =====
@@ -233,5 +277,89 @@ export const generateQuiz = async (request: GenerateQuizRequest): Promise<Genera
     '/api/document-rag/generate-quiz',
     request
   );
+  return response.data;
+};
+
+/**
+ * Export quiz to QTI format
+ */
+export const exportQuizToQTI = async (
+  questions: QuizQuestion[],
+  title: string = "Generated Quiz",
+  description: string = ""
+): Promise<Blob> => {
+  const response = await apiClient.post(
+    '/api/document-rag/export-quiz-qti',
+    { questions, title, description },
+    { responseType: 'blob' }
+  );
+  return response.data;
+};
+
+/**
+ * Extract suggested topics from indexed documents
+ */
+export const extractTopics = async (): Promise<ExtractTopicsResponse> => {
+  const response = await apiClient.get<ExtractTopicsResponse>('/api/document-rag/extract-topics');
+  return response.data;
+};
+
+/**
+ * Get cached topics for a specific indexed document
+ * Topics are extracted during indexing, so this is instant (no LLM call)
+ */
+export const getDocumentTopics = async (filename: string): Promise<{
+  success: boolean;
+  filename: string;
+  topics: string[];
+  count: number;
+}> => {
+  const response = await apiClient.get(`/api/document-rag/document-topics/${encodeURIComponent(filename)}`);
+  return response.data;
+};
+
+/**
+ * List all indexed documents with their topic counts
+ */
+export const listIndexedDocuments = async (): Promise<{
+  success: boolean;
+  documents: Array<{
+    filename: string;
+    original_filename: string;
+    topic_count: number;
+    indexed_at: string;
+  }>;
+  count: number;
+}> => {
+  const response = await apiClient.get('/api/document-rag/indexed-documents');
+  return response.data;
+};
+
+// ===== LLM Provider API Functions =====
+
+/**
+ * Get current LLM provider information
+ */
+export const getLLMProviderInfo = async (): Promise<LLMProviderInfo> => {
+  const response = await apiClient.get<LLMProviderInfo>('/api/document-rag/llm-provider');
+  return response.data;
+};
+
+/**
+ * Set/switch LLM provider at runtime
+ */
+export const setLLMProvider = async (request: SetLLMProviderRequest): Promise<SetLLMProviderResponse> => {
+  const response = await apiClient.post<SetLLMProviderResponse>(
+    '/api/document-rag/set-llm',
+    request
+  );
+  return response.data;
+};
+
+/**
+ * Check LLM provider connection status
+ */
+export const checkLLMStatus = async (): Promise<OllamaStatus> => {
+  const response = await apiClient.get<OllamaStatus>('/api/document-rag/llm-status');
   return response.data;
 };

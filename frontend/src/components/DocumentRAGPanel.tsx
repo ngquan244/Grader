@@ -18,6 +18,12 @@ import {
   HelpCircle,
   Check,
   X,
+  Edit2,
+  Download,
+  Save,
+  Cloud,
+  Cpu,
+  Zap,
 } from 'lucide-react';
 import {
   uploadAndIndexDocument,
@@ -27,12 +33,28 @@ import {
   checkOllamaStatus,
   listUploadedFiles,
   generateQuiz,
+  exportQuizToQTI,
+  getDocumentTopics,
+  listIndexedDocuments,
+  getLLMProviderInfo,
+  setLLMProvider,
+  checkLLMStatus,
   type RAGSource,
   type RAGIndexStats,
   type RAGUploadedFile,
   type OllamaStatus,
   type QuizQuestion,
+  type TopicSuggestion,
+  type LLMProviderInfo,
 } from '../api/documentRag';
+
+// Indexed document info
+interface IndexedDocument {
+  filename: string;
+  original_filename: string;
+  topic_count: number;
+  indexed_at: string;
+}
 
 interface QueryResult {
   answer: string;
@@ -62,8 +84,17 @@ const DocumentRAGPanel: React.FC = () => {
   const [generatedQuiz, setGeneratedQuiz] = useState<QuizQuestion[]>([]);
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
   const [quizError, setQuizError] = useState<string | null>(null);
-  const [userAnswers, setUserAnswers] = useState<{[key: number]: string}>({});
-  const [showAnswers, setShowAnswers] = useState(false);
+  const [editingQuestionIndex, setEditingQuestionIndex] = useState<number | null>(null);
+  const [editingQuestion, setEditingQuestion] = useState<QuizQuestion | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  
+  // Topic suggestions states - PER DOCUMENT
+  const [indexedDocuments, setIndexedDocuments] = useState<IndexedDocument[]>([]);
+  const [selectedDocument, setSelectedDocument] = useState<string>('');
+  const [suggestedTopics, setSuggestedTopics] = useState<TopicSuggestion[]>([]);
+  const [isLoadingTopics, setIsLoadingTopics] = useState(false);
+  const [showTopicSuggestions, setShowTopicSuggestions] = useState(false);
+  const [topicsCache, setTopicsCache] = useState<Record<string, TopicSuggestion[]>>({});
   
   // Loading states
   const [isUploading, setIsUploading] = useState(false);
@@ -79,6 +110,11 @@ const DocumentRAGPanel: React.FC = () => {
   const [uploadMessage, setUploadMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [queryError, setQueryError] = useState<string | null>(null);
   
+  // LLM Provider states
+  const [llmProviderInfo, setLlmProviderInfo] = useState<LLMProviderInfo | null>(null);
+  const [isSwitchingProvider, setIsSwitchingProvider] = useState(false);
+  const [providerMessage, setProviderMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load initial data
@@ -86,7 +122,72 @@ const DocumentRAGPanel: React.FC = () => {
     loadIndexStats();
     loadOllamaStatus();
     loadUploadedFiles();
+    loadIndexedDocuments();
+    loadLLMProviderInfo();
   }, []);
+
+  // Load LLM Provider info
+  const loadLLMProviderInfo = async () => {
+    try {
+      const info = await getLLMProviderInfo();
+      setLlmProviderInfo(info);
+    } catch (error) {
+      console.error('Error loading LLM provider info:', error);
+    }
+  };
+
+  // Handle LLM provider switch
+  const handleSwitchProvider = async (provider: 'ollama' | 'groq') => {
+    if (isSwitchingProvider) return;
+    
+    setIsSwitchingProvider(true);
+    setProviderMessage(null);
+    
+    try {
+      const response = await setLLMProvider({ provider });
+      
+      if (response.success) {
+        setProviderMessage({
+          type: 'success',
+          text: `Đã chuyển sang ${provider === 'groq' ? 'Groq Cloud' : 'Ollama'} thành công!`
+        });
+        // Reload provider info and status
+        await loadLLMProviderInfo();
+        await loadOllamaStatus();
+      } else {
+        setProviderMessage({
+          type: 'error',
+          text: response.error || `Không thể chuyển sang ${provider}`
+        });
+      }
+    } catch (error) {
+      console.error('Error switching provider:', error);
+      setProviderMessage({
+        type: 'error',
+        text: `Lỗi khi chuyển provider: ${error}`
+      });
+    } finally {
+      setIsSwitchingProvider(false);
+      // Clear message after 5 seconds
+      setTimeout(() => setProviderMessage(null), 5000);
+    }
+  };
+
+  // Load indexed documents with topics
+  const loadIndexedDocuments = async () => {
+    try {
+      const response = await listIndexedDocuments();
+      if (response.success && response.documents) {
+        setIndexedDocuments(response.documents);
+        // Auto-select first document if none selected
+        if (response.documents.length > 0 && !selectedDocument) {
+          setSelectedDocument(response.documents[0].filename);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading indexed documents:', error);
+    }
+  };
 
   const loadIndexStats = async () => {
     try {
@@ -122,6 +223,48 @@ const DocumentRAGPanel: React.FC = () => {
     } catch (error) {
       console.error('Error loading files:', error);
     }
+  };
+
+  // Load suggested topics for selected document (from cache, instant!)
+  const loadSuggestedTopics = async () => {
+    if (!selectedDocument) {
+      return;
+    }
+    
+    // Check cache first - instant!
+    if (topicsCache[selectedDocument]) {
+      setSuggestedTopics(topicsCache[selectedDocument]);
+      setShowTopicSuggestions(true);
+      return;
+    }
+    
+    // Load from API (topics are pre-extracted during indexing, so this is fast)
+    setIsLoadingTopics(true);
+    try {
+      const response = await getDocumentTopics(selectedDocument);
+      if (response.success && response.topics) {
+        const topics: TopicSuggestion[] = response.topics.map((name, idx) => ({
+          name,
+          relevance_score: 1 - (idx * 0.05), // Fake score based on order
+          description: `Chủ đề từ ${response.filename}`
+        }));
+        
+        // Cache it
+        setTopicsCache(prev => ({ ...prev, [selectedDocument]: topics }));
+        setSuggestedTopics(topics);
+        setShowTopicSuggestions(true);
+      }
+    } catch (error) {
+      console.error('Error getting topics:', error);
+    } finally {
+      setIsLoadingTopics(false);
+    }
+  };
+
+  // Select a suggested topic
+  const handleSelectTopic = (topic: TopicSuggestion) => {
+    setQuizTopic(topic.name);
+    setShowTopicSuggestions(false);
   };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -161,9 +304,10 @@ const DocumentRAGPanel: React.FC = () => {
         if (fileInputRef.current) {
           fileInputRef.current.value = '';
         }
-        // Reload stats
+        // Reload stats and indexed documents
         await loadIndexStats();
         await loadUploadedFiles();
+        await loadIndexedDocuments();
       } else {
         setUploadMessage({ type: 'error', text: response.error || 'Lỗi khi index tài liệu' });
       }
@@ -243,8 +387,8 @@ const DocumentRAGPanel: React.FC = () => {
     setIsGeneratingQuiz(true);
     setQuizError(null);
     setGeneratedQuiz([]);
-    setUserAnswers({});
-    setShowAnswers(false);
+    setEditingQuestionIndex(null);
+    setEditingQuestion(null);
 
     try {
       const response = await generateQuiz({
@@ -267,27 +411,71 @@ const DocumentRAGPanel: React.FC = () => {
     }
   };
 
-  const handleAnswerSelect = (questionNum: number, answer: string) => {
-    if (!showAnswers) {
-      setUserAnswers(prev => ({
-        ...prev,
-        [questionNum]: answer,
-      }));
+  // Start editing a specific question
+  const handleStartEdit = (index: number) => {
+    setEditingQuestionIndex(index);
+    setEditingQuestion(JSON.parse(JSON.stringify(generatedQuiz[index])));
+  };
+
+  // Update the currently editing question
+  const handleEditQuestion = (field: string, value: any) => {
+    if (!editingQuestion) return;
+    
+    const updated = { ...editingQuestion };
+    if (field === 'option') {
+      const [optionKey, optionValue] = value as [string, string];
+      updated.options = {
+        ...updated.options,
+        [optionKey]: optionValue
+      };
+    } else {
+      (updated as any)[field] = value;
     }
+    setEditingQuestion(updated);
   };
 
-  const handleSubmitQuiz = () => {
-    setShowAnswers(true);
+  // Save a single question
+  const handleSaveQuestion = () => {
+    if (editingQuestionIndex === null || !editingQuestion) return;
+    
+    const updated = [...generatedQuiz];
+    updated[editingQuestionIndex] = editingQuestion;
+    setGeneratedQuiz(updated);
+    setEditingQuestionIndex(null);
+    setEditingQuestion(null);
   };
 
-  const calculateScore = () => {
-    let correct = 0;
-    generatedQuiz.forEach(q => {
-      if (userAnswers[q.question_number] === q.correct_answer) {
-        correct++;
-      }
-    });
-    return { correct, total: generatedQuiz.length };
+  // Cancel editing a single question
+  const handleCancelEdit = () => {
+    setEditingQuestionIndex(null);
+    setEditingQuestion(null);
+  };
+
+  const handleExportQTI = async () => {
+    if (generatedQuiz.length === 0) {
+      setQuizError('Không có quiz để export');
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      const blob = await exportQuizToQTI(generatedQuiz, quizTopic || 'Generated Quiz');
+      
+      // Download file
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `quiz_${quizTopic.replace(/\s+/g, '_')}.xml`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Export error:', error);
+      setQuizError('Lỗi khi export quiz');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const formatFileSize = (bytes: number): string => {
@@ -307,21 +495,50 @@ const DocumentRAGPanel: React.FC = () => {
         {/* Status Section */}
         <div className="status-section">
           <div className="status-cards">
-            {/* Ollama Status */}
-            <div className={`status-card ${ollamaStatus?.connected ? 'connected' : 'disconnected'}`}>
+            {/* LLM Provider Selector - Dropdown Style */}
+            <div className="status-card llm-provider-card">
+              <Zap size={20} className="provider-icon" />
+              <div className="status-info">
+                <span className="status-label">LLM Provider</span>
+                <div className="provider-dropdown-wrapper">
+                  <select
+                    className="provider-dropdown"
+                    value={llmProviderInfo?.current_provider || 'ollama'}
+                    onChange={(e) => handleSwitchProvider(e.target.value as 'ollama' | 'groq')}
+                    disabled={isSwitchingProvider}
+                  >
+                    <option value="ollama">
+                      🖥️ Ollama (Local)
+                    </option>
+                    <option 
+                      value="groq" 
+                      disabled={!llmProviderInfo?.groq_configured}
+                    >
+                      ☁️ Groq Cloud {!llmProviderInfo?.groq_configured ? '(Chưa cấu hình)' : ''}
+                    </option>
+                  </select>
+                  {isSwitchingProvider && (
+                    <Loader2 size={14} className="spin provider-dropdown-loading" />
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Current Model Status */}
+            <div className={`status-card model-status-card ${ollamaStatus?.connected ? 'connected' : 'disconnected'}`}>
               <Server size={20} />
               <div className="status-info">
-                <span className="status-label">Ollama</span>
+                <span className="status-label">Model Status</span>
                 <span className="status-value">
                   {ollamaStatus?.connected ? (
                     <>
                       <CheckCircle size={14} className="status-icon success" />
-                      {ollamaStatus.model || 'Connected'}
+                      <span className="model-name">{llmProviderInfo?.current_model || ollamaStatus.model || 'Connected'}</span>
                     </>
                   ) : (
                     <>
                       <AlertCircle size={14} className="status-icon error" />
-                      Chưa kết nối
+                      <span className="status-text">Chưa kết nối</span>
                     </>
                   )}
                 </span>
@@ -357,12 +574,22 @@ const DocumentRAGPanel: React.FC = () => {
               loadIndexStats();
               loadOllamaStatus();
               loadUploadedFiles();
+              loadLLMProviderInfo();
             }}
             title="Refresh status"
           >
             <RefreshCw size={16} />
           </button>
         </div>
+
+        {/* Provider Switch Message */}
+        {providerMessage && (
+          <div className={`message provider-message ${providerMessage.type}`}>
+            {providerMessage.type === 'success' && <CheckCircle size={16} />}
+            {providerMessage.type === 'error' && <AlertCircle size={16} />}
+            {providerMessage.text}
+          </div>
+        )}
 
         {/* Upload Section */}
         <div className="upload-section">
@@ -460,15 +687,86 @@ const DocumentRAGPanel: React.FC = () => {
             </h3>
 
             <div className="quiz-form">
-              <div className="form-group">
+              {/* Document selector for topic suggestions */}
+              {indexedDocuments.length > 0 && (
+                <div className="form-group document-selector">
+                  <label>
+                    <FileText size={14} />
+                    Chọn tài liệu để gợi ý chủ đề
+                  </label>
+                  <select
+                    value={selectedDocument}
+                    onChange={(e) => {
+                      setSelectedDocument(e.target.value);
+                      setShowTopicSuggestions(false);
+                      setSuggestedTopics([]);
+                    }}
+                    disabled={isGeneratingQuiz}
+                    className="document-select"
+                  >
+                    {indexedDocuments.map((doc) => (
+                      <option key={doc.filename} value={doc.filename}>
+                        {doc.original_filename} ({doc.topic_count} chủ đề)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="form-group topic-input-group">
                 <label>Chủ đề Quiz</label>
-                <input
-                  type="text"
-                  value={quizTopic}
-                  onChange={(e) => setQuizTopic(e.target.value)}
-                  placeholder="Nhập chủ đề bạn muốn tạo quiz..."
-                  disabled={isGeneratingQuiz}
-                />
+                <div className="topic-input-wrapper">
+                  <input
+                    type="text"
+                    value={quizTopic}
+                    onChange={(e) => setQuizTopic(e.target.value)}
+                    placeholder="Nhập chủ đề bạn muốn tạo quiz..."
+                    disabled={isGeneratingQuiz}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-suggest-topics"
+                    onClick={loadSuggestedTopics}
+                    disabled={isLoadingTopics || isGeneratingQuiz || !selectedDocument}
+                    title={selectedDocument ? `Gợi ý chủ đề từ ${selectedDocument}` : "Chọn tài liệu trước"}
+                  >
+                    {isLoadingTopics ? (
+                      <Loader2 size={16} className="spin" />
+                    ) : (
+                      <HelpCircle size={16} />
+                    )}
+                    Gợi ý
+                  </button>
+                </div>
+                
+                {/* Topic suggestions dropdown */}
+                {showTopicSuggestions && suggestedTopics.length > 0 && (
+                  <div className="topic-suggestions">
+                    <div className="suggestions-header">
+                      <span>Chủ đề từ: <strong>{indexedDocuments.find(d => d.filename === selectedDocument)?.original_filename || selectedDocument}</strong></span>
+                      <button 
+                        className="btn-close-suggestions"
+                        onClick={() => setShowTopicSuggestions(false)}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                    <ul className="suggestions-list">
+                      {suggestedTopics.map((topic, index) => (
+                        <li 
+                          key={index} 
+                          onClick={() => handleSelectTopic(topic)}
+                          className="suggestion-item"
+                        >
+                          <span className="topic-name">{topic.name}</span>
+                          {topic.description && (
+                            <span className="topic-description">{topic.description}</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
 
               <div className="form-row">
@@ -552,88 +850,140 @@ const DocumentRAGPanel: React.FC = () => {
                     <HelpCircle size={18} />
                     Quiz: {quizTopic}
                   </h4>
-                  {showAnswers && (
-                    <div className="quiz-score">
-                      Điểm: {calculateScore().correct}/{calculateScore().total}
-                    </div>
-                  )}
+                  <div className="quiz-header-actions">
+                    <button
+                      className="btn btn-primary"
+                      onClick={handleExportQTI}
+                      disabled={isExporting || editingQuestionIndex !== null}
+                    >
+                      {isExporting ? (
+                        <><Loader2 size={16} className="spin" /> Đang export...</>
+                      ) : (
+                        <><Download size={16} /> Export QTI</>
+                      )}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="quiz-questions">
                   {generatedQuiz.map((q, idx) => (
-                    <div key={idx} className={`quiz-question ${showAnswers ? (userAnswers[q.question_number] === q.correct_answer ? 'correct' : 'incorrect') : ''}`}>
+                    <div key={idx} className={`quiz-question ${editingQuestionIndex === idx ? 'editing' : ''}`}>
                       <div className="question-header">
                         <span className="question-number">Câu {q.question_number}</span>
-                        {showAnswers && (
-                          <span className={`answer-status ${userAnswers[q.question_number] === q.correct_answer ? 'correct' : 'incorrect'}`}>
-                            {userAnswers[q.question_number] === q.correct_answer ? (
-                              <><Check size={14} /> Đúng</>
-                            ) : (
-                              <><X size={14} /> Sai</>
-                            )}
-                          </span>
+                        {editingQuestionIndex !== idx && (
+                          <button
+                            className="btn-edit-question"
+                            onClick={() => handleStartEdit(idx)}
+                            title="Chỉnh sửa câu hỏi"
+                          >
+                            <Edit2 size={14} strokeWidth={2} />
+                            <span>Chỉnh sửa</span>
+                          </button>
                         )}
                       </div>
-                      <div className="question-text">{q.question}</div>
                       
-                      <div className="question-options">
-                        {Object.entries(q.options).map(([key, value]) => (
-                          <label
-                            key={key}
-                            className={`option-label ${
-                              userAnswers[q.question_number] === key ? 'selected' : ''
-                            } ${
-                              showAnswers && key === q.correct_answer ? 'correct-answer' : ''
-                            } ${
-                              showAnswers && userAnswers[q.question_number] === key && key !== q.correct_answer ? 'wrong-answer' : ''
-                            }`}
-                          >
-                            <input
-                              type="radio"
-                              name={`question-${q.question_number}`}
-                              value={key}
-                              checked={userAnswers[q.question_number] === key}
-                              onChange={() => handleAnswerSelect(q.question_number, key)}
-                              disabled={showAnswers}
-                            />
-                            <span className="option-key">{key}</span>
-                            <span className="option-value">{value}</span>
-                          </label>
-                        ))}
-                      </div>
+                      {editingQuestionIndex === idx && editingQuestion ? (
+                        <>
+                          <textarea
+                            className="edit-question-text"
+                            value={editingQuestion.question}
+                            onChange={(e) => handleEditQuestion('question', e.target.value)}
+                            rows={2}
+                          />
+                          
+                          <div className="question-options edit-mode">
+                            {Object.entries(editingQuestion.options).map(([key, value]) => (
+                              <div key={key} className="edit-option">
+                                <span className="option-key">{key}</span>
+                                <input
+                                  type="text"
+                                  className="edit-option-input"
+                                  value={value}
+                                  onChange={(e) => handleEditQuestion('option', [key, e.target.value])}
+                                />
+                                <label className="correct-label">
+                                  <input
+                                    type="radio"
+                                    name={`correct-${idx}`}
+                                    checked={editingQuestion.correct_answer === key}
+                                    onChange={() => handleEditQuestion('correct_answer', key)}
+                                  />
+                                  <span>Đúng</span>
+                                </label>
+                              </div>
+                            ))}
+                          </div>
 
-                      {showAnswers && q.explanation && (
-                        <div className="question-explanation">
-                          <strong>Giải thích:</strong> {q.explanation}
-                        </div>
+                          <div className="edit-explanation">
+                            <label>Giải thích:</label>
+                            <textarea
+                              value={editingQuestion.explanation || ''}
+                              onChange={(e) => handleEditQuestion('explanation', e.target.value)}
+                              rows={2}
+                              placeholder="Nhập giải thích (tùy chọn)..."
+                            />
+                          </div>
+                          
+                          <div className="question-edit-actions">
+                            <button
+                              className="btn btn-sm btn-secondary"
+                              onClick={handleCancelEdit}
+                            >
+                              <X size={14} />
+                              Hủy
+                            </button>
+                            <button
+                              className="btn btn-sm btn-success"
+                              onClick={handleSaveQuestion}
+                            >
+                              <Save size={14} />
+                              Lưu
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="question-text">{q.question}</div>
+                          
+                          <div className="question-options">
+                            {Object.entries(q.options).map(([key, value]) => (
+                              <div
+                                key={key}
+                                className={`option-label ${key === q.correct_answer ? 'correct-answer' : ''}`}
+                              >
+                                <span className="option-key">{key}</span>
+                                <span className="option-value">{value}</span>
+                                {key === q.correct_answer && (
+                                  <Check size={14} className="correct-icon" style={{ color: '#10b981', marginLeft: 'auto' }} />
+                                )}
+                              </div>
+                            ))}
+                          </div>
+
+                          {q.explanation && (
+                            <div className="question-explanation">
+                              <strong>Giải thích:</strong> {q.explanation}
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   ))}
                 </div>
 
                 <div className="quiz-actions">
-                  {!showAnswers ? (
-                    <button
-                      className="btn btn-primary"
-                      onClick={handleSubmitQuiz}
-                      disabled={Object.keys(userAnswers).length !== generatedQuiz.length}
-                    >
-                      <Check size={16} />
-                      Nộp bài ({Object.keys(userAnswers).length}/{generatedQuiz.length})
-                    </button>
-                  ) : (
-                    <button
-                      className="btn btn-primary"
-                      onClick={() => {
-                        setGeneratedQuiz([]);
-                        setUserAnswers({});
-                        setShowAnswers(false);
-                      }}
-                    >
-                      <RefreshCw size={16} />
-                      Tạo Quiz mới
-                    </button>
-                  )}
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => {
+                      setGeneratedQuiz([]);
+                      setQuizError(null);
+                      setEditingQuestionIndex(null);
+                      setEditingQuestion(null);
+                    }}
+                  >
+                    <RefreshCw size={16} />
+                    Tạo Quiz mới
+                  </button>
                 </div>
               </div>
             )}
@@ -828,10 +1178,17 @@ const DocumentRAGPanel: React.FC = () => {
           align-items: center;
           gap: 12px;
           padding: 12px 16px;
-          background: var(--card-bg, #f9fafb);
+          background: white;
           border: 1px solid var(--border-color, #e5e7eb);
-          border-radius: 8px;
+          border-radius: 10px;
           min-width: 150px;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+          transition: all 0.2s ease;
+        }
+
+        .status-card:hover {
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+          transform: translateY(-1px);
         }
 
         .status-card.connected {
@@ -862,7 +1219,8 @@ const DocumentRAGPanel: React.FC = () => {
           align-items: center;
           gap: 6px;
           font-size: 0.875rem;
-          font-weight: 500;
+          font-weight: 600;
+          color: #1e293b;
         }
 
         .status-icon.success {
@@ -880,23 +1238,36 @@ const DocumentRAGPanel: React.FC = () => {
 
         /* Upload Section */
         .upload-section, .query-section, .results-section, .files-section {
-          background: var(--card-bg, #ffffff);
+          background: white;
           border: 1px solid var(--border-color, #e5e7eb);
-          border-radius: 12px;
-          padding: 20px;
+          border-radius: 16px;
+          padding: 24px;
+          box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+          transition: box-shadow 0.2s ease;
+        }
+
+        .upload-section:hover, .query-section:hover, .results-section:hover, .files-section:hover {
+          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
         }
 
         .upload-section h3, .query-section h3, .results-section h3, .files-section h3 {
           display: flex;
           align-items: center;
-          gap: 8px;
-          margin: 0 0 16px 0;
-          font-size: 1rem;
-          font-weight: 600;
+          gap: 10px;
+          margin: 0 0 20px 0;
+          font-size: 1.1rem;
+          font-weight: 700;
+          color: #1e293b;
+          padding-bottom: 12px;
+          border-bottom: 2px solid #e2e8f0;
+        }
+
+        .upload-section h3 svg, .query-section h3 svg, .results-section h3 svg, .files-section h3 svg {
+          color: #3b82f6;
         }
 
         .upload-area {
-          margin-bottom: 16px;
+          margin-bottom: 20px;
         }
 
         .file-input {
@@ -907,23 +1278,35 @@ const DocumentRAGPanel: React.FC = () => {
           display: flex;
           flex-direction: column;
           align-items: center;
-          gap: 8px;
-          padding: 32px;
-          border: 2px dashed var(--border-color, #d1d5db);
-          border-radius: 8px;
+          gap: 12px;
+          padding: 40px;
+          border: 3px dashed #cbd5e1;
+          border-radius: 16px;
           cursor: pointer;
-          transition: all 0.2s;
-          color: var(--text-secondary, #6b7280);
+          transition: all 0.3s ease;
+          color: #64748b;
+          background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
         }
 
         .file-label:hover {
-          border-color: var(--primary, #3b82f6);
-          background: var(--primary-light, #eff6ff);
+          border-color: #3b82f6;
+          background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+          color: #3b82f6;
+          transform: translateY(-2px);
         }
 
-        .file-size {
-          font-size: 0.75rem;
-          color: var(--text-tertiary, #9ca3af);
+        .file-label svg {
+          color: #94a3b8;
+          transition: color 0.3s ease;
+        }
+
+        .file-label:hover svg {
+          color: #3b82f6;
+        }
+
+        .file-label span {
+          font-weight: 500;
+          font-size: 0.95rem;
         }
 
         .upload-actions {
@@ -952,122 +1335,163 @@ const DocumentRAGPanel: React.FC = () => {
         }
 
         .btn-primary {
-          background: var(--primary, #3b82f6);
+          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
           color: white;
+          box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
         }
 
         .btn-primary:hover:not(:disabled) {
-          background: var(--primary-dark, #2563eb);
+          background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+          box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+          transform: translateY(-1px);
         }
 
         .btn-danger {
-          background: #fee2e2;
+          background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
           color: #dc2626;
+          border: 1px solid #fca5a5;
         }
 
         .btn-danger:hover:not(:disabled) {
-          background: #fecaca;
+          background: linear-gradient(135deg, #fecaca 0%, #fca5a5 100%);
+          transform: translateY(-1px);
         }
 
         .btn-icon {
-          padding: 8px;
-          background: transparent;
-          border: 1px solid var(--border-color, #e5e7eb);
-          border-radius: 6px;
+          padding: 10px;
+          background: white;
+          border: 2px solid #e2e8f0;
+          border-radius: 10px;
           cursor: pointer;
+          color: #64748b;
+          transition: all 0.2s ease;
         }
 
         .btn-icon:hover {
-          background: var(--hover-bg, #f3f4f6);
+          background: #f1f5f9;
+          border-color: #94a3b8;
+          color: #475569;
         }
 
         /* Messages */
         .message {
           display: flex;
           align-items: center;
-          gap: 8px;
-          padding: 12px;
-          border-radius: 8px;
-          font-size: 0.875rem;
-          margin-top: 12px;
+          gap: 10px;
+          padding: 14px 16px;
+          border-radius: 12px;
+          font-size: 0.9rem;
+          font-weight: 500;
+          margin-top: 16px;
         }
 
         .message.success {
-          background: #ecfdf5;
+          background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
           color: #065f46;
-          border: 1px solid #a7f3d0;
+          border: 2px solid #10b981;
         }
 
         .message.error {
-          background: #fef2f2;
+          background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
           color: #991b1b;
-          border: 1px solid #fecaca;
+          border: 2px solid #ef4444;
         }
 
         .message.info {
-          background: #eff6ff;
+          background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
           color: #1e40af;
-          border: 1px solid #bfdbfe;
+          border: 2px solid #3b82f6;
         }
 
         /* Query Section */
         .query-input-area textarea {
           width: 100%;
-          padding: 12px;
-          border: 1px solid var(--border-color, #d1d5db);
-          border-radius: 8px;
+          padding: 14px;
+          border: 2px solid #e2e8f0;
+          border-radius: 12px;
           resize: vertical;
           font-family: inherit;
-          font-size: 0.875rem;
+          font-size: 0.9rem;
+          color: #1e293b;
+          background: #f8fafc;
+          transition: all 0.2s ease;
+        }
+
+        .query-input-area textarea::placeholder {
+          color: #94a3b8;
         }
 
         .query-input-area textarea:focus {
           outline: none;
-          border-color: var(--primary, #3b82f6);
-          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+          border-color: #3b82f6;
+          background: white;
+          box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
         }
 
         .query-options {
-          margin: 12px 0;
+          margin: 14px 0;
         }
 
         .checkbox-label {
           display: flex;
           align-items: center;
-          gap: 8px;
-          font-size: 0.875rem;
-          color: var(--text-secondary, #6b7280);
+          gap: 10px;
+          font-size: 0.9rem;
+          color: #475569;
           cursor: pointer;
+          font-weight: 500;
         }
 
         .checkbox-label input {
           cursor: pointer;
+          width: 18px;
+          height: 18px;
+          accent-color: #3b82f6;
         }
 
         .btn-ask {
           width: 100%;
           justify-content: center;
+          padding: 14px;
+          font-size: 0.95rem;
         }
 
         /* Results */
         .answer-box, .sources-box, .context-box {
-          background: var(--bg-secondary, #f9fafb);
-          border-radius: 8px;
-          padding: 16px;
-          margin-bottom: 12px;
+          background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+          border-radius: 12px;
+          padding: 20px;
+          margin-bottom: 16px;
+          border: 1px solid #e2e8f0;
         }
 
         .answer-box h4, .sources-box h4, .context-box h4 {
-          margin: 0 0 12px 0;
-          font-size: 0.875rem;
-          font-weight: 600;
-          color: var(--text-secondary, #6b7280);
+          margin: 0 0 14px 0;
+          font-size: 0.95rem;
+          font-weight: 700;
+          color: #1e293b;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .answer-box h4::before {
+          content: '💬';
+        }
+
+        .sources-box h4::before {
+          content: '📚';
+        }
+
+        .context-box h4::before {
+          content: '📄';
         }
 
         .answer-content {
-          font-size: 0.9375rem;
-          line-height: 1.6;
+          font-size: 0.95rem;
+          line-height: 1.7;
           white-space: pre-wrap;
+          color: #1e293b;
         }
 
         .sources-toggle {
@@ -1094,43 +1518,55 @@ const DocumentRAGPanel: React.FC = () => {
 
         .source-item {
           background: white;
-          border: 1px solid var(--border-color, #e5e7eb);
-          border-radius: 6px;
-          padding: 12px;
+          border: 2px solid #e2e8f0;
+          border-radius: 10px;
+          padding: 14px;
+          transition: all 0.2s ease;
+        }
+
+        .source-item:hover {
+          border-color: #93c5fd;
+          box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
         }
 
         .source-header {
           display: flex;
           align-items: center;
           gap: 8px;
-          margin-bottom: 8px;
-          font-size: 0.8125rem;
+          margin-bottom: 10px;
+          font-size: 0.875rem;
         }
 
         .source-name {
-          font-weight: 500;
+          font-weight: 600;
+          color: #1e293b;
         }
 
         .source-page {
           margin-left: auto;
-          color: var(--text-tertiary, #9ca3af);
-          font-size: 0.75rem;
+          color: #64748b;
+          font-size: 0.8rem;
+          font-weight: 500;
+          background: #f1f5f9;
+          padding: 2px 8px;
+          border-radius: 4px;
         }
 
         .source-snippet {
-          font-size: 0.8125rem;
-          color: var(--text-secondary, #6b7280);
-          line-height: 1.5;
+          font-size: 0.875rem;
+          color: #475569;
+          line-height: 1.6;
         }
 
         .context-content {
-          font-size: 0.8125rem;
-          line-height: 1.5;
+          font-size: 0.875rem;
+          line-height: 1.6;
           max-height: 300px;
           overflow-y: auto;
           white-space: pre-wrap;
           margin: 0;
           font-family: inherit;
+          color: #475569;
         }
 
         /* Files List */
@@ -1144,14 +1580,29 @@ const DocumentRAGPanel: React.FC = () => {
           display: flex;
           align-items: center;
           gap: 12px;
-          padding: 10px 12px;
-          background: var(--bg-secondary, #f9fafb);
-          border-radius: 6px;
-          font-size: 0.875rem;
+          padding: 12px 16px;
+          background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+          border: 1px solid #e2e8f0;
+          border-radius: 10px;
+          font-size: 0.9rem;
+          transition: all 0.2s ease;
+        }
+
+        .file-item:hover {
+          background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+          border-color: #93c5fd;
         }
 
         .file-name {
           flex: 1;
+          color: #1e293b;
+          font-weight: 500;
+        }
+
+        .file-size {
+          font-size: 0.8rem;
+          color: #64748b;
+          font-weight: 500;
         }
 
         /* Animations */
@@ -1172,24 +1623,26 @@ const DocumentRAGPanel: React.FC = () => {
         .tab-navigation {
           display: flex;
           gap: 8px;
-          padding: 4px;
-          background: var(--bg-secondary, #f3f4f6);
-          border-radius: 10px;
+          padding: 6px;
+          background: white;
+          border-radius: 12px;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+          border: 1px solid #e5e7eb;
         }
 
         .tab-btn {
           display: flex;
           align-items: center;
           gap: 8px;
-          padding: 10px 20px;
+          padding: 12px 24px;
           background: transparent;
           border: none;
-          border-radius: 8px;
-          font-size: 0.875rem;
-          font-weight: 500;
-          color: var(--text-secondary, #6b7280);
+          border-radius: 10px;
+          font-size: 0.9rem;
+          font-weight: 600;
+          color: #64748b;
           cursor: pointer;
-          transition: all 0.2s;
+          transition: all 0.2s ease;
           flex: 1;
           justify-content: center;
         }
@@ -1199,26 +1652,38 @@ const DocumentRAGPanel: React.FC = () => {
         }
 
         .tab-btn.active {
-          background: white;
-          color: var(--primary, #3b82f6);
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+          color: white;
+          box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+        }
+
+        .tab-btn.active svg {
+          color: white;
         }
 
         /* Quiz Section */
         .quiz-section {
-          background: var(--card-bg, #ffffff);
+          background: white;
           border: 1px solid var(--border-color, #e5e7eb);
-          border-radius: 12px;
-          padding: 20px;
+          border-radius: 16px;
+          padding: 24px;
+          box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
         }
 
         .quiz-section h3 {
           display: flex;
           align-items: center;
-          gap: 8px;
-          margin: 0 0 16px 0;
-          font-size: 1rem;
-          font-weight: 600;
+          gap: 10px;
+          margin: 0 0 20px 0;
+          font-size: 1.1rem;
+          font-weight: 700;
+          color: #1e293b;
+          padding-bottom: 12px;
+          border-bottom: 2px solid #e2e8f0;
+        }
+
+        .quiz-section h3 svg {
+          color: #3b82f6;
         }
 
         .quiz-form {
@@ -1233,26 +1698,185 @@ const DocumentRAGPanel: React.FC = () => {
           gap: 6px;
         }
 
-        .form-group label {
+        /* Document selector for topic suggestions */
+        .document-selector {
+          margin-bottom: 8px;
+        }
+
+        .document-selector label {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 0.875rem;
+          font-weight: 500;
+          color: var(--text-secondary, #64748b);
+        }
+
+        .document-select {
+          padding: 8px 12px;
+          border: 1px solid var(--border-color, #e2e8f0);
+          border-radius: 8px;
+          font-size: 0.875rem;
+          background: white;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .document-select:hover {
+          border-color: var(--primary, #3b82f6);
+        }
+
+        .document-select:focus {
+          outline: none;
+          border-color: var(--primary, #3b82f6);
+          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .topic-input-group {
+          position: relative;
+        }
+
+        .topic-input-wrapper {
+          display: flex;
+          gap: 8px;
+        }
+
+        .topic-input-wrapper input {
+          flex: 1;
+        }
+
+        .btn-suggest-topics {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 8px 12px;
+          background: var(--bg-secondary, #f3f4f6);
+          border: 1px solid var(--border-color, #d1d5db);
+          border-radius: 8px;
+          font-size: 0.8125rem;
+          color: var(--text-secondary, #6b7280);
+          cursor: pointer;
+          transition: all 0.2s;
+          white-space: nowrap;
+        }
+
+        .btn-suggest-topics:hover:not(:disabled) {
+          background: var(--primary-light, #eff6ff);
+          border-color: var(--primary, #3b82f6);
+          color: var(--primary, #3b82f6);
+        }
+
+        .btn-suggest-topics:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        .topic-suggestions {
+          position: absolute;
+          top: 100%;
+          left: 0;
+          right: 0;
+          margin-top: 4px;
+          background: white;
+          border: 1px solid var(--border-color, #d1d5db);
+          border-radius: 8px;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+          z-index: 100;
+          max-height: 300px;
+          overflow-y: auto;
+        }
+
+        .suggestions-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 10px 12px;
+          border-bottom: 1px solid var(--border-color, #e5e7eb);
           font-size: 0.8125rem;
           font-weight: 500;
           color: var(--text-secondary, #6b7280);
         }
 
+        .btn-close-suggestions {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 4px;
+          background: none;
+          border: none;
+          color: var(--text-tertiary, #9ca3af);
+          cursor: pointer;
+          border-radius: 4px;
+        }
+
+        .btn-close-suggestions:hover {
+          background: var(--bg-secondary, #f3f4f6);
+          color: var(--text-secondary, #6b7280);
+        }
+
+        .suggestions-list {
+          list-style: none;
+          padding: 0;
+          margin: 0;
+        }
+
+        .suggestion-item {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          padding: 10px 12px;
+          cursor: pointer;
+          transition: background 0.15s;
+          border-bottom: 1px solid var(--border-light, #f3f4f6);
+        }
+
+        .suggestion-item:last-child {
+          border-bottom: none;
+        }
+
+        .suggestion-item:hover {
+          background: var(--primary-light, #eff6ff);
+        }
+
+        .topic-name {
+          font-size: 0.9rem;
+          font-weight: 600;
+          color: #1e293b;
+        }
+
+        .topic-description {
+          font-size: 0.8rem;
+          color: #64748b;
+          line-height: 1.4;
+        }
+
+        .form-group label {
+          font-size: 0.875rem;
+          font-weight: 600;
+          color: #374151;
+        }
+
         .form-group input,
         .form-group select {
-          padding: 10px 12px;
-          border: 1px solid var(--border-color, #d1d5db);
-          border-radius: 8px;
-          font-size: 0.875rem;
-          transition: border-color 0.2s, box-shadow 0.2s;
+          padding: 12px 14px;
+          border: 2px solid #e2e8f0;
+          border-radius: 10px;
+          font-size: 0.9rem;
+          color: #1e293b;
+          background: #f8fafc;
+          transition: all 0.2s ease;
+        }
+
+        .form-group input::placeholder {
+          color: #94a3b8;
         }
 
         .form-group input:focus,
         .form-group select:focus {
           outline: none;
-          border-color: var(--primary, #3b82f6);
-          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+          border-color: #3b82f6;
+          background: white;
+          box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
         }
 
         .form-row {
@@ -1306,11 +1930,23 @@ const DocumentRAGPanel: React.FC = () => {
         }
 
         .quiz-question {
-          background: var(--bg-secondary, #f9fafb);
-          border: 1px solid var(--border-color, #e5e7eb);
-          border-radius: 12px;
-          padding: 20px;
-          transition: border-color 0.2s;
+          background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+          border: 2px solid #e2e8f0;
+          border-radius: 16px;
+          padding: 24px;
+          transition: all 0.2s ease;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+        }
+
+        .quiz-question:hover {
+          border-color: #cbd5e1;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        }
+
+        .quiz-question.editing {
+          border-color: #3b82f6;
+          background: linear-gradient(135deg, #eff6ff 0%, #f0f9ff 100%);
+          box-shadow: 0 4px 16px rgba(59, 130, 246, 0.15);
         }
 
         .quiz-question.correct {
@@ -1331,9 +1967,60 @@ const DocumentRAGPanel: React.FC = () => {
         }
 
         .question-number {
-          font-weight: 600;
-          color: var(--primary, #3b82f6);
-          font-size: 0.875rem;
+          font-weight: 700;
+          color: white;
+          font-size: 0.8rem;
+          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+          padding: 6px 14px;
+          border-radius: 20px;
+          box-shadow: 0 2px 6px rgba(59, 130, 246, 0.3);
+        }
+
+        .btn-edit-question {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          padding: 6px 12px;
+          border: 1px solid #cbd5e1;
+          background: #f8fafc;
+          border-radius: 8px;
+          cursor: pointer;
+          color: #475569;
+          transition: all 0.2s;
+          font-size: 13px;
+          font-weight: 500;
+          white-space: nowrap;
+        }
+
+        .btn-edit-question:hover {
+          background: #e0e7ff;
+          border-color: #3b82f6;
+          color: #3b82f6;
+        }
+
+        .question-edit-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 8px;
+          margin-top: 16px;
+          padding-top: 16px;
+          border-top: 1px solid #e2e8f0;
+        }
+
+        .btn.btn-sm {
+          padding: 6px 12px;
+          font-size: 0.8125rem;
+        }
+
+        .btn.btn-success {
+          background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+          color: white;
+          border: none;
+        }
+
+        .btn.btn-success:hover {
+          background: linear-gradient(135deg, #059669 0%, #047857 100%);
         }
 
         .answer-status {
@@ -1353,11 +2040,11 @@ const DocumentRAGPanel: React.FC = () => {
         }
 
         .question-text {
-          font-size: 0.9375rem;
-          font-weight: 500;
-          margin-bottom: 16px;
-          line-height: 1.5;
-          color: #111827;
+          font-size: 1rem;
+          font-weight: 600;
+          margin-bottom: 20px;
+          line-height: 1.6;
+          color: #1e293b;
         }
 
         .question-options {
@@ -1369,13 +2056,13 @@ const DocumentRAGPanel: React.FC = () => {
         .option-label {
           display: flex;
           align-items: center;
-          gap: 12px;
-          padding: 12px 16px;
+          gap: 14px;
+          padding: 14px 18px;
           background: white;
-          border: 1px solid var(--border-color, #e5e7eb);
-          border-radius: 8px;
+          border: 2px solid #e2e8f0;
+          border-radius: 12px;
           cursor: pointer;
-          transition: all 0.2s;
+          transition: all 0.2s ease;
         }
 
         .option-label:hover:not(.correct-answer):not(.wrong-answer) {
@@ -1403,35 +2090,169 @@ const DocumentRAGPanel: React.FC = () => {
         }
 
         .option-key {
-          font-weight: 600;
-          color: var(--primary, #3b82f6);
-          min-width: 20px;
+          font-weight: 700;
+          color: #475569;
+          min-width: 28px;
+          height: 28px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: #f1f5f9;
+          border: 1px solid #e2e8f0;
+          border-radius: 8px;
+          font-size: 0.85rem;
+        }
+
+        .correct-answer .option-key {
+          background: #dcfce7;
+          border-color: #10b981;
+          color: #166534;
         }
 
         .option-value {
-          font-size: 0.875rem;
-          color: #374151;
+          font-size: 0.9rem;
+          color: #1e293b;
+          font-weight: 500;
         }
 
         .question-explanation {
-          margin-top: 16px;
-          padding: 12px;
-          background: #fffbeb;
-          border: 1px solid #fbbf24;
-          border-radius: 8px;
-          font-size: 0.8125rem;
-          color: #92400e;
+          margin-top: 20px;
+          padding: 16px;
+          background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+          border: 2px solid #f59e0b;
+          border-radius: 12px;
+          font-size: 0.875rem;
+          color: #78350f;
+          font-weight: 500;
+          line-height: 1.5;
+        }
+
+        .question-explanation::before {
+          content: '💡 ';
         }
 
         .quiz-actions {
           margin-top: 24px;
           display: flex;
           justify-content: center;
+          gap: 12px;
         }
 
         .quiz-actions .btn {
           min-width: 200px;
           justify-content: center;
+        }
+
+        /* Quiz Edit Mode */
+        .quiz-header-actions {
+          display: flex;
+          gap: 12px;
+        }
+
+        .btn-secondary {
+          background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+          color: #475569;
+          border: 1px solid #cbd5e1;
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+          background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 100%);
+          color: #334155;
+        }
+
+        .edit-question-text {
+          width: 100%;
+          padding: 14px;
+          border: 2px solid #e2e8f0;
+          border-radius: 10px;
+          font-size: 1rem;
+          font-weight: 500;
+          margin-bottom: 16px;
+          font-family: inherit;
+          resize: vertical;
+          color: #1e293b;
+          background: #f8fafc;
+        }
+
+        .edit-question-text:focus {
+          outline: none;
+          border-color: var(--primary, #3b82f6);
+          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .question-options.edit-mode {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .edit-option {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 14px;
+          background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+          border: 2px solid #e2e8f0;
+          border-radius: 12px;
+        }
+
+        .edit-option-input {
+          flex: 1;
+          padding: 10px 14px;
+          border: 2px solid #e2e8f0;
+          border-radius: 8px;
+          font-size: 0.9rem;
+          color: #1e293b;
+          background: white;
+        }
+
+        .edit-option-input:focus {
+          outline: none;
+          border-color: var(--primary, #3b82f6);
+        }
+
+        .correct-label {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 0.8125rem;
+          color: #10b981;
+          font-weight: 500;
+          white-space: nowrap;
+          cursor: pointer;
+        }
+
+        .edit-explanation {
+          margin-top: 16px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .edit-explanation label {
+          font-size: 0.875rem;
+          font-weight: 500;
+          color: var(--text-secondary, #6b7280);
+        }
+
+        .edit-explanation textarea {
+          width: 100%;
+          padding: 10px 12px;
+          border: 1px solid var(--border-color, #d1d5db);
+          border-radius: 8px;
+          font-size: 0.8125rem;
+          font-family: inherit;
+          resize: vertical;
+        }
+
+        .edit-explanation textarea:focus {
+          outline: none;
+          border-color: var(--primary, #3b82f6);
+          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .correct-icon {
+          margin-left: auto;
         }
       `}</style>
     </div>
