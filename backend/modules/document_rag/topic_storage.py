@@ -146,6 +146,30 @@ class TopicStorage:
             return True
         return False
     
+    def update_topics_by_filename(
+        self,
+        filename: str,
+        topics: List[Dict[str, str]]
+    ) -> bool:
+        """
+        Update topics for a document by filename.
+        
+        Args:
+            filename: Document filename
+            topics: New list of topic dictionaries with 'name' and optionally 'description'
+            
+        Returns:
+            True if updated, False if not found
+        """
+        for file_hash, data in self._topics.items():
+            if data.get("filename") == filename:
+                self._topics[file_hash]["topics"] = topics
+                self._topics[file_hash]["updated_at"] = datetime.now().isoformat()
+                self._save()
+                logger.info(f"Updated {len(topics)} topics for {filename}")
+                return True
+        return False
+    
     def clear(self):
         """Clear all stored topics."""
         self._topics = {}

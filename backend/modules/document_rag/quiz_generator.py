@@ -491,6 +491,152 @@ Return ONLY valid JSON, no additional text.""")
                 "error": str(e)
             }
     
+    def generate_quiz_multi_topics(
+        self,
+        topics: List[str],
+        num_questions: int = 10,
+        difficulty: str = "medium",
+        language: str = "vi",
+        k: int = 8
+    ) -> Dict[str, Any]:
+        """
+        Generate quiz questions based on multiple topics.
+        
+        This method retrieves documents for each topic and combines them
+        to generate a comprehensive quiz covering all selected topics.
+        
+        Args:
+            topics: List of topics to generate questions about
+            num_questions: Total number of questions to generate
+            difficulty: Difficulty level - "easy", "medium", or "hard"
+            language: "vi" for Vietnamese prompt, "en" for English
+            k: Number of documents to retrieve per topic
+            
+        Returns:
+            Dictionary with quiz questions and metadata
+        """
+        logger.info(f"Generating multi-topic quiz: topics={topics}, num_questions={num_questions}")
+        
+        if not topics:
+            return {
+                "success": False,
+                "questions": [],
+                "message": "Cần có ít nhất một chủ đề",
+                "sources": []
+            }
+        
+        # Step 1: Retrieve documents for all topics
+        all_documents = []
+        all_sources = []
+        k_per_topic = max(3, k // len(topics))  # Distribute k across topics
+        
+        for topic in topics:
+            documents = self.retriever.retrieve(topic, k=k_per_topic)
+            if documents:
+                all_documents.extend(documents)
+                logger.info(f"Retrieved {len(documents)} documents for topic: {topic}")
+        
+        if not all_documents:
+            logger.warning("No documents retrieved for any topic")
+            return {
+                "success": False,
+                "questions": [],
+                "message": f"Không tìm thấy nội dung về các chủ đề: {', '.join(topics)}",
+                "sources": []
+            }
+        
+        # Remove duplicates (same page content)
+        seen_content = set()
+        unique_documents = []
+        for doc in all_documents:
+            content_hash = hash(doc.page_content[:200])  # Hash first 200 chars
+            if content_hash not in seen_content:
+                seen_content.add(content_hash)
+                unique_documents.append(doc)
+        
+        logger.info(f"Total unique documents: {len(unique_documents)}")
+        
+        # Step 2: Format combined context
+        context = self.retriever.format_context(unique_documents[:15])  # Limit to avoid token overflow
+        
+        if not context.strip():
+            return {
+                "success": False,
+                "questions": [],
+                "message": "Context rỗng, không thể tạo quiz",
+                "sources": []
+            }
+        
+        # Step 3: Create combined topic string
+        topics_str = ", ".join(topics)
+        
+        # Step 4: Select prompt based on language
+        prompt = self.prompt_vi if language == "vi" else self.prompt_en
+        
+        # Step 5: Generate quiz using JSON-mode LLM
+        chain = prompt | self.llm_json
+        
+        try:
+            logger.info(f"Generating multi-topic quiz with LLM for topics: {topics_str}")
+            
+            response = chain.invoke({
+                "context": context,
+                "topic": topics_str,
+                "num_questions": num_questions,
+                "difficulty": difficulty
+            })
+            
+            # Parse response
+            content = response.content if hasattr(response, 'content') else str(response)
+            logger.info(f"Raw LLM response: {content[:500]}...")
+            
+            # Parse JSON
+            quiz_data = self._parse_quiz_response(content)
+            
+            if not quiz_data:
+                logger.error(f"Failed to parse quiz data from response")
+                return {
+                    "success": False,
+                    "questions": [],
+                    "message": "Không thể parse kết quả từ LLM",
+                    "sources": self.retriever.extract_citations(unique_documents),
+                    "raw_response": content
+                }
+            
+            # Check for error message from LLM
+            if quiz_data.get("message") and not quiz_data.get("quiz"):
+                return {
+                    "success": False,
+                    "questions": [],
+                    "message": quiz_data["message"],
+                    "sources": self.retriever.extract_citations(unique_documents)
+                }
+            
+            # Format quiz questions
+            formatted_quiz = self._format_quiz(quiz_data.get("quiz", []))
+            
+            logger.info(f"Generated {len(formatted_quiz)} questions for {len(topics)} topics")
+            
+            return {
+                "success": True,
+                "questions": formatted_quiz,
+                "message": quiz_data.get("message", ""),
+                "sources": self.retriever.extract_citations(unique_documents),
+                "num_questions_requested": num_questions,
+                "num_questions_generated": len(formatted_quiz),
+                "topics_used": topics
+            }
+            
+        except Exception as e:
+            logger.error(f"Error generating multi-topic quiz: {e}")
+            return {
+                "success": False,
+                "questions": [],
+                "message": f"Lỗi khi tạo quiz: {str(e)}",
+                "sources": self.retriever.extract_citations(unique_documents),
+                "error": str(e)
+            }
+    
     def _parse_quiz_response(self, content: str) -> Optional[Dict]:
         """Parse JSON response from LLM."""
         try:

@@ -127,10 +127,12 @@ export interface QuizQuestion {
 }
 
 export interface GenerateQuizRequest {
-  topic: string;
+  topic?: string;  // Single topic (legacy)
+  topics?: string[];  // Multiple topics (new)
   num_questions: number;
   difficulty?: 'easy' | 'medium' | 'hard';
   language?: 'vi' | 'en';
+  selected_documents?: string[];  // Selected document filenames
 }
 
 export interface GenerateQuizResponse {
@@ -148,6 +150,14 @@ export interface GenerateQuizResponse {
 export interface TopicSuggestion {
   name: string;
   description: string;
+  relevance_score?: number;  // Optional score for ordering
+}
+
+// Topic with document info (for multi-select)
+export interface TopicWithDocument {
+  topic: TopicSuggestion;
+  documentFilename: string;
+  documentOriginalName: string;
 }
 
 export interface ExtractTopicsResponse {
@@ -316,6 +326,45 @@ export const getDocumentTopics = async (filename: string): Promise<{
 }> => {
   const response = await apiClient.get(`/api/document-rag/document-topics/${encodeURIComponent(filename)}`);
   return response.data;
+};
+
+/**
+ * Update topics for a specific document
+ */
+export const updateDocumentTopics = async (filename: string, topics: string[]): Promise<{
+  success: boolean;
+  filename: string;
+  topics: string[];
+  count: number;
+  message: string;
+}> => {
+  const response = await apiClient.put(`/api/document-rag/document-topics/${encodeURIComponent(filename)}`, {
+    topics
+  });
+  return response.data;
+};
+
+/**
+ * Get topics for multiple documents at once
+ */
+export const getMultipleDocumentTopics = async (filenames: string[]): Promise<{
+  success: boolean;
+  documents: Array<{
+    filename: string;
+    topics: string[];
+  }>;
+}> => {
+  const results = await Promise.all(
+    filenames.map(filename => getDocumentTopics(filename))
+  );
+  
+  return {
+    success: true,
+    documents: results.map((result, idx) => ({
+      filename: filenames[idx],
+      topics: result.success ? result.topics : []
+    }))
+  };
 };
 
 /**

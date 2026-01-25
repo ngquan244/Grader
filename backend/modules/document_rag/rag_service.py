@@ -481,21 +481,27 @@ class RAGService:
     
     def generate_quiz(
         self,
-        topic: str,
+        topic: str = None,
+        topics: List[str] = None,
         num_questions: int = 5,
         difficulty: str = "medium",
         language: str = "vi",
-        k: int = 10
+        k: int = 10,
+        selected_documents: List[str] = None
     ) -> Dict[str, Any]:
         """
         Generate quiz questions from the document knowledge base.
         
+        Supports both single topic (legacy) and multiple topics.
+        
         Args:
-            topic: Topic or description of what to quiz about
-            num_questions: Number of questions to generate (1-20)
+            topic: Single topic or description (legacy support)
+            topics: List of topics for quiz generation (new)
+            num_questions: Number of questions to generate (1-30)
             difficulty: Difficulty level - "easy", "medium", or "hard"
             language: "vi" for Vietnamese, "en" for English
-            k: Number of documents to retrieve for context
+            k: Number of documents to retrieve for context per topic
+            selected_documents: Optional list of document filenames to retrieve from
             
         Returns:
             Dictionary with:
@@ -505,10 +511,22 @@ class RAGService:
         """
         self._ensure_initialized()
         
-        logger.info(f"Generating quiz: topic='{topic}', num_questions={num_questions}, difficulty={difficulty}")
+        # Handle both single topic and multiple topics
+        if topics and len(topics) > 0:
+            topic_list = topics
+        elif topic:
+            topic_list = [topic]
+        else:
+            return {
+                "success": False,
+                "questions": [],
+                "error": "Cần có ít nhất một chủ đề để tạo quiz"
+            }
+        
+        logger.info(f"Generating quiz: topics={topic_list}, num_questions={num_questions}, difficulty={difficulty}")
         
         # Validate num_questions
-        num_questions = max(1, min(20, num_questions))
+        num_questions = max(1, min(30, num_questions))
         
         # Check if index has documents
         stats = self.get_index_stats()
@@ -520,13 +538,24 @@ class RAGService:
             }
         
         try:
-            result = self._quiz_generator.generate_quiz(
-                topic=topic,
-                num_questions=num_questions,
-                difficulty=difficulty,
-                language=language,
-                k=k
-            )
+            # If multiple topics, use the new multi-topic method
+            if len(topic_list) > 1:
+                result = self._quiz_generator.generate_quiz_multi_topics(
+                    topics=topic_list,
+                    num_questions=num_questions,
+                    difficulty=difficulty,
+                    language=language,
+                    k=k
+                )
+            else:
+                # Single topic - use existing method
+                result = self._quiz_generator.generate_quiz(
+                    topic=topic_list[0],
+                    num_questions=num_questions,
+                    difficulty=difficulty,
+                    language=language,
+                    k=k
+                )
             
             return result
             
@@ -715,3 +744,33 @@ class RAGService:
             "documents": documents,
             "count": len(documents)
         }
+    
+    def update_document_topics(self, filename: str, topics: List[Dict[str, str]]) -> Dict[str, Any]:
+        """
+        Update topics for a specific document.
+        
+        Args:
+            filename: Document filename
+            topics: List of topic dictionaries with 'name' and optionally 'description'
+            
+        Returns:
+            Dictionary with success status
+        """
+        logger.info(f"Updating topics for document: {filename}, topics: {topics}")
+        
+        success = topic_storage.update_topics_by_filename(filename, topics)
+        
+        if success:
+            return {
+                "success": True,
+                "filename": filename,
+                "topics": topics,
+                "count": len(topics),
+                "message": f"Đã cập nhật {len(topics)} chủ đề"
+            }
+        else:
+            return {
+                "success": False,
+                "filename": filename,
+                "message": "Không tìm thấy tài liệu"
+            }

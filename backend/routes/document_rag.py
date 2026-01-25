@@ -65,11 +65,13 @@ class IngestResponse(BaseModel):
 
 class GenerateQuizRequest(BaseModel):
     """Request model for quiz generation"""
-    topic: str
+    topic: str = ""  # Single topic (legacy support)
+    topics: Optional[List[str]] = None  # Multiple topics (new)
     num_questions: int = 5
     difficulty: str = "medium"  # easy, medium, hard
     language: str = "vi"  # vi, en
     k: int = 10
+    selected_documents: Optional[List[str]] = None  # Selected document filenames
 
 
 class QuizQuestion(BaseModel):
@@ -389,27 +391,36 @@ async def generate_quiz_from_documents(request: GenerateQuizRequest):
     Generate quiz questions from indexed documents using RAG.
     
     This endpoint:
-    1. Retrieves relevant context from indexed documents based on the topic
+    1. Retrieves relevant context from indexed documents based on topic(s)
     2. Uses LLM (Ollama) to generate multiple choice questions
     3. Returns formatted quiz with questions, options, and answers
     
+    Supports both single topic (legacy) and multiple topics (new).
+    
     Args:
-        request: Quiz generation request with topic and number of questions
+        request: Quiz generation request with topic(s) and number of questions
         
     Returns:
         Generated quiz questions with answers
     """
-    logger.info(f"Generate quiz request - Topic: {request.topic}, Num questions: {request.num_questions}")
+    # Handle both single topic and multiple topics
+    topics_list = []
+    if request.topics and len(request.topics) > 0:
+        topics_list = [t.strip() for t in request.topics if t.strip()]
+    elif request.topic and request.topic.strip():
+        topics_list = [request.topic.strip()]
+    
+    logger.info(f"Generate quiz request - Topics: {topics_list}, Num questions: {request.num_questions}")
     
     # Validate inputs
-    if not request.topic or not request.topic.strip():
-        raise HTTPException(status_code=400, detail="Topic cannot be empty")
+    if not topics_list:
+        raise HTTPException(status_code=400, detail="At least one topic is required")
     
     if request.num_questions < 1:
         raise HTTPException(status_code=400, detail="Number of questions must be at least 1")
     
-    if request.num_questions > 20:
-        raise HTTPException(status_code=400, detail="Maximum 20 questions per request")
+    if request.num_questions > 30:
+        raise HTTPException(status_code=400, detail="Maximum 30 questions per request")
     
     try:
         rag_service = get_rag_service()
@@ -422,12 +433,14 @@ async def generate_quiz_from_documents(request: GenerateQuizRequest):
                 detail="No documents indexed. Please upload and index documents first."
             )
         
-        # Generate quiz
+        # Generate quiz with multiple topics support
         result = rag_service.generate_quiz(
-            topic=request.topic.strip(),
+            topic=topics_list[0] if len(topics_list) == 1 else None,
+            topics=topics_list if len(topics_list) > 1 else None,
             num_questions=request.num_questions,
             difficulty=request.difficulty,
-            language=request.language
+            language=request.language,
+            selected_documents=request.selected_documents
         )
         
         if not result.get("success"):
@@ -435,7 +448,7 @@ async def generate_quiz_from_documents(request: GenerateQuizRequest):
                 success=False,
                 error=result.get("error", "Failed to generate quiz"),
                 questions=[],
-                topic=request.topic,
+                topic=", ".join(topics_list),
                 num_questions_requested=request.num_questions,
                 num_questions_generated=0
             )
@@ -454,7 +467,7 @@ async def generate_quiz_from_documents(request: GenerateQuizRequest):
         return GenerateQuizResponse(
             success=True,
             questions=questions,
-            topic=request.topic,
+            topic=", ".join(topics_list),
             num_questions_requested=request.num_questions,
             num_questions_generated=len(questions),
             context_used=result.get("context_used"),
@@ -597,6 +610,46 @@ async def get_document_topics(filename: str):
         raise
     except Exception as e:
         logger.error(f"Error getting topics for {filename}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class UpdateTopicsRequest(BaseModel):
+    """Request model for updating document topics"""
+    topics: List[str]
+
+
+@router.put("/document-topics/{filename}")
+async def update_document_topics(filename: str, request: UpdateTopicsRequest):
+    """
+    Update topics for a specific document.
+    Allows users to add, remove, or modify topics.
+    """
+    try:
+        rag_service = get_rag_service()
+        
+        # Convert string topics to dict format
+        topics_dict = [{"name": topic, "description": ""} for topic in request.topics if topic.strip()]
+        
+        result = rag_service.update_document_topics(filename, topics_dict)
+        
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=404,
+                detail=result.get("message", f"Could not update topics for: {filename}")
+            )
+        
+        return {
+            "success": True,
+            "filename": filename,
+            "topics": request.topics,
+            "count": len(request.topics),
+            "message": result.get("message", "Topics updated successfully")
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating topics for {filename}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

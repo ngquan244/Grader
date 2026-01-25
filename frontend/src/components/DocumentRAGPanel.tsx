@@ -21,9 +21,12 @@ import {
   Edit2,
   Download,
   Save,
-  Cloud,
-  Cpu,
   Zap,
+  Plus,
+  Pencil,
+  Clock,
+  FileUp,
+  XCircle,
 } from 'lucide-react';
 import {
   uploadAndIndexDocument,
@@ -35,10 +38,10 @@ import {
   generateQuiz,
   exportQuizToQTI,
   getDocumentTopics,
+  updateDocumentTopics,
   listIndexedDocuments,
   getLLMProviderInfo,
   setLLMProvider,
-  checkLLMStatus,
   type RAGSource,
   type RAGIndexStats,
   type RAGUploadedFile,
@@ -62,12 +65,28 @@ interface QueryResult {
   context?: string;
 }
 
+// Multi-file upload status
+type FileUploadStatus = 'waiting' | 'uploading' | 'success' | 'error' | 'already_indexed';
+
+interface UploadFileItem {
+  file: File;
+  status: FileUploadStatus;
+  message?: string;
+  details?: {
+    filename?: string;
+    pages_loaded?: number;
+    chunks_added?: number;
+  };
+}
+
 // Tab type
 type ActiveTab = 'query' | 'quiz';
 
 const DocumentRAGPanel: React.FC = () => {
   // State
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<UploadFileItem[]>([]);
+  const [isProcessingQueue, setIsProcessingQueue] = useState(false);
   const [question, setQuestion] = useState('');
   const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
   const [showContext, setShowContext] = useState(false);
@@ -88,13 +107,30 @@ const DocumentRAGPanel: React.FC = () => {
   const [editingQuestion, setEditingQuestion] = useState<QuizQuestion | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   
-  // Topic suggestions states - PER DOCUMENT
+  // Document and Topic selection states
   const [indexedDocuments, setIndexedDocuments] = useState<IndexedDocument[]>([]);
-  const [selectedDocument, setSelectedDocument] = useState<string>('');
-  const [suggestedTopics, setSuggestedTopics] = useState<TopicSuggestion[]>([]);
-  const [isLoadingTopics, setIsLoadingTopics] = useState(false);
-  const [showTopicSuggestions, setShowTopicSuggestions] = useState(false);
+  const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
   const [topicsCache, setTopicsCache] = useState<Record<string, TopicSuggestion[]>>({});
+  const [topicsByDocument, setTopicsByDocument] = useState<Record<string, TopicSuggestion[]>>({});
+  const [selectedTopics, setSelectedTopics] = useState<{topic: string, documentFilename: string}[]>([]);
+  
+  // Topic selector modal states
+  const [showTopicModal, setShowTopicModal] = useState(false);
+  const [tempSelectedDocuments, setTempSelectedDocuments] = useState<string[]>([]);
+  const [tempSelectedTopics, setTempSelectedTopics] = useState<{topic: string, documentFilename: string}[]>([]);
+  const [tempTopicsByDocument, setTempTopicsByDocument] = useState<Record<string, TopicSuggestion[]>>({});
+  
+  // Edit topics modal states
+  const [showEditTopicsModal, setShowEditTopicsModal] = useState(false);
+  const [editingDocumentFilename, setEditingDocumentFilename] = useState<string>('');
+  const [editingTopics, setEditingTopics] = useState<string[]>([]);
+  const [newTopicInput, setNewTopicInput] = useState('');
+  const [editingTopicIndex, setEditingTopicIndex] = useState<number | null>(null);
+  const [editingTopicValue, setEditingTopicValue] = useState('');
+  const [isSavingTopics, setIsSavingTopics] = useState(false);
+  
+  // Quiz modal state
+  const [showQuizModal, setShowQuizModal] = useState(false);
   
   // Loading states
   const [isUploading, setIsUploading] = useState(false);
@@ -179,10 +215,6 @@ const DocumentRAGPanel: React.FC = () => {
       const response = await listIndexedDocuments();
       if (response.success && response.documents) {
         setIndexedDocuments(response.documents);
-        // Auto-select first document if none selected
-        if (response.documents.length > 0 && !selectedDocument) {
-          setSelectedDocument(response.documents[0].filename);
-        }
       }
     } catch (error) {
       console.error('Error loading indexed documents:', error);
@@ -225,97 +257,386 @@ const DocumentRAGPanel: React.FC = () => {
     }
   };
 
-  // Load suggested topics for selected document (from cache, instant!)
-  const loadSuggestedTopics = async () => {
-    if (!selectedDocument) {
-      return;
-    }
+  // Clear all selected topics
+  const clearSelectedTopics = () => {
+    setSelectedTopics([]);
+    setSelectedDocuments([]);
+    setTopicsByDocument({});
+    setQuizTopic('');
+  };
+
+  // Modal handlers
+  const openTopicModal = () => {
+    // Copy current selections to temp states
+    setTempSelectedDocuments([...selectedDocuments]);
+    setTempSelectedTopics([...selectedTopics]);
+    setTempTopicsByDocument({...topicsByDocument});
+    setShowTopicModal(true);
+  };
+
+  const closeTopicModal = () => {
+    setShowTopicModal(false);
+    // Discard temp changes
+    setTempSelectedDocuments([]);
+    setTempSelectedTopics([]);
+    setTempTopicsByDocument({});
+  };
+
+  const saveTopicSelections = () => {
+    // Apply temp selections to main states
+    setSelectedDocuments([...tempSelectedDocuments]);
+    setSelectedTopics([...tempSelectedTopics]);
+    setTopicsByDocument({...tempTopicsByDocument});
+    setShowTopicModal(false);
+  };
+
+  // Modal - Toggle document selection
+  const toggleDocumentInModal = async (filename: string) => {
+    const isCurrentlySelected = tempSelectedDocuments.includes(filename);
     
-    // Check cache first - instant!
-    if (topicsCache[selectedDocument]) {
-      setSuggestedTopics(topicsCache[selectedDocument]);
-      setShowTopicSuggestions(true);
-      return;
-    }
-    
-    // Load from API (topics are pre-extracted during indexing, so this is fast)
-    setIsLoadingTopics(true);
-    try {
-      const response = await getDocumentTopics(selectedDocument);
-      if (response.success && response.topics) {
-        const topics: TopicSuggestion[] = response.topics.map((name, idx) => ({
-          name,
-          relevance_score: 1 - (idx * 0.05), // Fake score based on order
-          description: `Chủ đề từ ${response.filename}`
-        }));
-        
-        // Cache it
-        setTopicsCache(prev => ({ ...prev, [selectedDocument]: topics }));
-        setSuggestedTopics(topics);
-        setShowTopicSuggestions(true);
+    if (isCurrentlySelected) {
+      // Remove document and its selected topics
+      setTempSelectedDocuments(prev => prev.filter(f => f !== filename));
+      setTempSelectedTopics(st => st.filter(t => t.documentFilename !== filename));
+      setTempTopicsByDocument(prev => {
+        const updated = { ...prev };
+        delete updated[filename];
+        return updated;
+      });
+    } else {
+      // Add document
+      setTempSelectedDocuments(prev => [...prev, filename]);
+      
+      // Auto-load topics for this document
+      if (!topicsCache[filename]) {
+        try {
+          const response = await getDocumentTopics(filename);
+          if (response.success && response.topics) {
+            const topics: TopicSuggestion[] = response.topics.map((name, idx) => ({
+              name,
+              relevance_score: 1 - (idx * 0.05),
+              description: ''
+            }));
+            setTopicsCache(prev => ({ ...prev, [filename]: topics }));
+            setTempTopicsByDocument(prev => ({ ...prev, [filename]: topics }));
+          }
+        } catch (error) {
+          console.error('Error loading topics for document:', error);
+        }
+      } else {
+        setTempTopicsByDocument(prev => ({ ...prev, [filename]: topicsCache[filename] }));
       }
-    } catch (error) {
-      console.error('Error getting topics:', error);
-    } finally {
-      setIsLoadingTopics(false);
     }
   };
 
-  // Select a suggested topic
-  const handleSelectTopic = (topic: TopicSuggestion) => {
-    setQuizTopic(topic.name);
-    setShowTopicSuggestions(false);
+  // Modal - Toggle topic selection
+  const toggleTopicInModal = (topic: string, documentFilename: string) => {
+    setTempSelectedTopics(prev => {
+      const exists = prev.find(t => t.topic === topic && t.documentFilename === documentFilename);
+      if (exists) {
+        return prev.filter(t => !(t.topic === topic && t.documentFilename === documentFilename));
+      } else {
+        return [...prev, { topic, documentFilename }];
+      }
+    });
+  };
+
+  // Modal - Check if topic is selected
+  const isTopicSelectedInModal = (topic: string, documentFilename: string) => {
+    return tempSelectedTopics.some(t => t.topic === topic && t.documentFilename === documentFilename);
+  };
+
+  // Modal - Select all topics from a document
+  const selectAllTopicsInModal = (docFilename: string) => {
+    const docTopics = tempTopicsByDocument[docFilename] || [];
+    const newSelections = docTopics
+      .filter(topic => !isTopicSelectedInModal(topic.name, docFilename))
+      .map(topic => ({ topic: topic.name, documentFilename: docFilename }));
+    setTempSelectedTopics(prev => [...prev, ...newSelections]);
+  };
+
+  // Modal - Deselect all topics from a document
+  const deselectAllTopicsInModal = (docFilename: string) => {
+    setTempSelectedTopics(prev => prev.filter(t => t.documentFilename !== docFilename));
+  };
+
+  // Modal - Check if all topics are selected
+  const areAllTopicsSelectedInModal = (docFilename: string) => {
+    const docTopics = tempTopicsByDocument[docFilename] || [];
+    if (docTopics.length === 0) return false;
+    return docTopics.every(topic => isTopicSelectedInModal(topic.name, docFilename));
+  };
+
+  // ===== Edit Topics Modal Handlers =====
+  const openEditTopicsModal = (filename: string) => {
+    const docTopics = tempTopicsByDocument[filename] || topicsCache[filename] || [];
+    setEditingDocumentFilename(filename);
+    setEditingTopics(docTopics.map(t => t.name));
+    setNewTopicInput('');
+    setEditingTopicIndex(null);
+    setEditingTopicValue('');
+    setShowEditTopicsModal(true);
+  };
+
+  const closeEditTopicsModal = () => {
+    setShowEditTopicsModal(false);
+    setEditingDocumentFilename('');
+    setEditingTopics([]);
+    setNewTopicInput('');
+    setEditingTopicIndex(null);
+    setEditingTopicValue('');
+  };
+
+  const addNewTopic = () => {
+    const trimmed = newTopicInput.trim();
+    if (trimmed && !editingTopics.includes(trimmed)) {
+      setEditingTopics([...editingTopics, trimmed]);
+      setNewTopicInput('');
+    }
+  };
+
+  const removeTopic = (index: number) => {
+    setEditingTopics(editingTopics.filter((_, i) => i !== index));
+  };
+
+  const startEditTopic = (index: number) => {
+    setEditingTopicIndex(index);
+    setEditingTopicValue(editingTopics[index]);
+  };
+
+  const saveEditTopic = () => {
+    if (editingTopicIndex !== null && editingTopicValue.trim()) {
+      const updated = [...editingTopics];
+      updated[editingTopicIndex] = editingTopicValue.trim();
+      setEditingTopics(updated);
+    }
+    setEditingTopicIndex(null);
+    setEditingTopicValue('');
+  };
+
+  const cancelEditTopic = () => {
+    setEditingTopicIndex(null);
+    setEditingTopicValue('');
+  };
+
+  const saveTopicsToBackend = async () => {
+    if (!editingDocumentFilename) return;
+    
+    setIsSavingTopics(true);
+    try {
+      const response = await updateDocumentTopics(editingDocumentFilename, editingTopics);
+      
+      if (response.success) {
+        // Update local caches
+        const updatedTopics: TopicSuggestion[] = editingTopics.map((name, idx) => ({
+          name,
+          relevance_score: 1 - (idx * 0.05),
+          description: ''
+        }));
+        
+        setTopicsCache(prev => ({ ...prev, [editingDocumentFilename]: updatedTopics }));
+        setTempTopicsByDocument(prev => ({ ...prev, [editingDocumentFilename]: updatedTopics }));
+        setTopicsByDocument(prev => ({ ...prev, [editingDocumentFilename]: updatedTopics }));
+        
+        // Update indexed documents count
+        setIndexedDocuments(prev => prev.map(doc => 
+          doc.filename === editingDocumentFilename 
+            ? { ...doc, topic_count: editingTopics.length }
+            : doc
+        ));
+        
+        closeEditTopicsModal();
+      } else {
+        alert('Không thể lưu chủ đề. Vui lòng thử lại.');
+      }
+    } catch (error) {
+      console.error('Error saving topics:', error);
+      alert('Lỗi khi lưu chủ đề. Vui lòng thử lại.');
+    } finally {
+      setIsSavingTopics(false);
+    }
   };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      if (!file.name.toLowerCase().endsWith('.pdf')) {
-        setUploadMessage({ type: 'error', text: 'Chỉ hỗ trợ file PDF' });
-        return;
+    const files = event.target.files;
+    if (files && files.length > 0) {
+      const newFiles: UploadFileItem[] = [];
+      const errors: string[] = [];
+      
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (!file.name.toLowerCase().endsWith('.pdf')) {
+          errors.push(file.name);
+        } else {
+          // Check if file already in queue
+          const exists = selectedFiles.some(f => f.file.name === file.name && f.file.size === file.size);
+          if (!exists) {
+            newFiles.push({
+              file,
+              status: 'waiting',
+            });
+          }
+        }
       }
-      setSelectedFile(file);
-      setUploadMessage(null);
+      
+      if (errors.length > 0) {
+        setUploadMessage({ 
+          type: 'error', 
+          text: `Các file không hỗ trợ (chỉ PDF): ${errors.join(', ')}` 
+        });
+      } else {
+        setUploadMessage(null);
+      }
+      
+      if (newFiles.length > 0) {
+        setSelectedFiles(prev => [...prev, ...newFiles]);
+        // Set first file as selectedFile for backward compatibility
+        if (!selectedFile && newFiles.length > 0) {
+          setSelectedFile(newFiles[0].file);
+        }
+      }
     }
   };
 
+  const removeFileFromQueue = (index: number) => {
+    setSelectedFiles(prev => {
+      const newList = prev.filter((_, i) => i !== index);
+      // Update selectedFile if needed
+      if (newList.length === 0) {
+        setSelectedFile(null);
+      } else if (selectedFile && prev[index]?.file === selectedFile) {
+        setSelectedFile(newList[0]?.file || null);
+      }
+      return newList;
+    });
+  };
+
+  const clearAllFiles = () => {
+    setSelectedFiles([]);
+    setSelectedFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    setUploadMessage(null);
+  };
+
   const handleUploadAndIndex = async () => {
-    if (!selectedFile) {
+    if (selectedFiles.length === 0) {
       setUploadMessage({ type: 'error', text: 'Vui lòng chọn file PDF' });
       return;
     }
 
     setIsUploading(true);
+    setIsProcessingQueue(true);
     setUploadMessage(null);
 
-    try {
-      const response = await uploadAndIndexDocument(selectedFile);
+    // Track results locally
+    let successCount = 0;
+    let alreadyIndexedCount = 0;
+    let errorCount = 0;
+
+    // Process files sequentially
+    for (let i = 0; i < selectedFiles.length; i++) {
+      const fileItem = selectedFiles[i];
       
-      if (response.success) {
-        if (response.already_indexed) {
-          setUploadMessage({ type: 'info', text: `Tài liệu đã được index trước đó: ${response.filename}` });
+      // Skip already processed files
+      if (fileItem.status !== 'waiting') continue;
+      
+      // Update status to uploading
+      setSelectedFiles(prev => prev.map((f, idx) => 
+        idx === i ? { ...f, status: 'uploading' as FileUploadStatus } : f
+      ));
+
+      try {
+        const response = await uploadAndIndexDocument(fileItem.file);
+        
+        if (response.success) {
+          if (response.already_indexed) {
+            alreadyIndexedCount++;
+            setSelectedFiles(prev => prev.map((f, idx) => 
+              idx === i ? { 
+                ...f, 
+                status: 'already_indexed' as FileUploadStatus,
+                message: 'Đã có trong cơ sở dữ liệu',
+                details: { filename: response.filename }
+              } : f
+            ));
+          } else {
+            successCount++;
+            setSelectedFiles(prev => prev.map((f, idx) => 
+              idx === i ? { 
+                ...f, 
+                status: 'success' as FileUploadStatus,
+                message: `${response.pages_loaded} trang, ${response.chunks_added} chunks`,
+                details: {
+                  filename: response.filename,
+                  pages_loaded: response.pages_loaded,
+                  chunks_added: response.chunks_added
+                }
+              } : f
+            ));
+          }
         } else {
-          setUploadMessage({
-            type: 'success',
-            text: `Đã index thành công: ${response.filename} (${response.pages_loaded} trang, ${response.chunks_added} chunks)`,
-          });
+          errorCount++;
+          setSelectedFiles(prev => prev.map((f, idx) => 
+            idx === i ? { 
+              ...f, 
+              status: 'error' as FileUploadStatus,
+              message: response.error || 'Lỗi không xác định'
+            } : f
+          ));
         }
-        setSelectedFile(null);
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
-        }
-        // Reload stats and indexed documents
-        await loadIndexStats();
-        await loadUploadedFiles();
-        await loadIndexedDocuments();
-      } else {
-        setUploadMessage({ type: 'error', text: response.error || 'Lỗi khi index tài liệu' });
+      } catch (error) {
+        console.error('Error uploading:', error);
+        errorCount++;
+        setSelectedFiles(prev => prev.map((f, idx) => 
+          idx === i ? { 
+            ...f, 
+            status: 'error' as FileUploadStatus,
+            message: 'Lỗi kết nối server'
+          } : f
+        ));
       }
-    } catch (error) {
-      console.error('Error uploading:', error);
-      setUploadMessage({ type: 'error', text: 'Lỗi khi upload và index tài liệu' });
-    } finally {
-      setIsUploading(false);
+      
+      // Small delay between files
+      if (i < selectedFiles.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+    }
+
+    // Reload stats and indexed documents
+    await loadIndexStats();
+    await loadUploadedFiles();
+    await loadIndexedDocuments();
+    
+    setIsUploading(false);
+    setIsProcessingQueue(false);
+    
+    // Summary message with accurate counts
+    const totalProcessed = successCount + alreadyIndexedCount + errorCount;
+    
+    if (errorCount === 0 && totalProcessed > 0) {
+      if (alreadyIndexedCount > 0 && successCount === 0) {
+        setUploadMessage({ 
+          type: 'info', 
+          text: `${alreadyIndexedCount} file đã có trong cơ sở dữ liệu từ trước.` 
+        });
+      } else if (alreadyIndexedCount > 0) {
+        setUploadMessage({ 
+          type: 'success', 
+          text: `Hoàn tất! ${successCount} file mới đã index, ${alreadyIndexedCount} file đã có sẵn.` 
+        });
+      } else {
+        setUploadMessage({ 
+          type: 'success', 
+          text: `Hoàn tất! ${successCount} file đã được index thành công.` 
+        });
+      }
+    } else if (errorCount > 0) {
+      setUploadMessage({ 
+        type: 'info', 
+        text: `Xử lý xong: ${successCount} thành công, ${alreadyIndexedCount} đã có sẵn, ${errorCount} lỗi.` 
+      });
     }
   };
 
@@ -379,8 +700,13 @@ const DocumentRAGPanel: React.FC = () => {
 
   // Quiz generation handler
   const handleGenerateQuiz = async () => {
-    if (!quizTopic.trim()) {
-      setQuizError('Vui lòng nhập chủ đề quiz');
+    // Build topics list from selectedTopics or quizTopic
+    const topicsList: string[] = selectedTopics.length > 0 
+      ? selectedTopics.map(t => t.topic)
+      : quizTopic.trim() ? [quizTopic.trim()] : [];
+    
+    if (topicsList.length === 0) {
+      setQuizError('Vui lòng chọn chủ đề quiz hoặc nhập chủ đề');
       return;
     }
 
@@ -392,14 +718,16 @@ const DocumentRAGPanel: React.FC = () => {
 
     try {
       const response = await generateQuiz({
-        topic: quizTopic.trim(),
+        topics: topicsList,
         num_questions: numQuestions,
         difficulty: quizDifficulty,
         language: quizLanguage,
+        selected_documents: selectedDocuments.length > 0 ? selectedDocuments : undefined,
       });
 
       if (response.success && response.questions.length > 0) {
         setGeneratedQuiz(response.questions);
+        setShowQuizModal(true); // Auto open quiz modal
       } else {
         setQuizError(response.error || 'Không thể tạo quiz. Hãy thử lại với chủ đề khác.');
       }
@@ -492,10 +820,11 @@ const DocumentRAGPanel: React.FC = () => {
       </div>
 
       <div className="rag-content">
-        {/* Status Section */}
-        <div className="status-section">
-          <div className="status-cards">
-            {/* LLM Provider Selector - Dropdown Style */}
+        {/* Top Section - 2 Column Layout */}
+        <div className="top-section-grid">
+          {/* Left Column - Status Cards */}
+          <div className="status-column">
+            {/* LLM Provider Selector */}
             <div className="status-card llm-provider-card">
               <Zap size={20} className="provider-icon" />
               <div className="status-info">
@@ -566,20 +895,214 @@ const DocumentRAGPanel: React.FC = () => {
                 </span>
               </div>
             </div>
+
+            {/* Refresh Button */}
+            <button
+              className="btn btn-secondary btn-refresh-status"
+              onClick={() => {
+                loadIndexStats();
+                loadOllamaStatus();
+                loadUploadedFiles();
+                loadLLMProviderInfo();
+              }}
+              title="Refresh status"
+            >
+              <RefreshCw size={16} />
+              Làm mới
+            </button>
           </div>
 
-          <button
-            className="btn-icon refresh-btn"
-            onClick={() => {
-              loadIndexStats();
-              loadOllamaStatus();
-              loadUploadedFiles();
-              loadLLMProviderInfo();
-            }}
-            title="Refresh status"
-          >
-            <RefreshCw size={16} />
-          </button>
+          {/* Right Column - Upload Section */}
+          <div className="upload-column">
+            <div className="upload-section-compact">
+              <h3>
+                <Upload size={18} />
+                Upload & Index PDF
+                {selectedFiles.length > 0 && (
+                  <span className="files-count-badge">{selectedFiles.length} file</span>
+                )}
+              </h3>
+              
+              {/* Drop Zone */}
+              <div className="upload-area-compact">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept=".pdf"
+                  multiple
+                  onChange={handleFileSelect}
+                  className="file-input"
+                  id="pdf-upload"
+                  disabled={isProcessingQueue}
+                />
+                <label 
+                  htmlFor="pdf-upload" 
+                  className={`file-label-compact ${selectedFiles.length > 0 ? 'has-file' : ''} ${isProcessingQueue ? 'disabled' : ''}`}
+                >
+                  <div className="upload-icon-wrapper">
+                    {selectedFiles.length > 0 ? <FileUp size={28} /> : <Upload size={28} />}
+                  </div>
+                  <div className="upload-text">
+                    <span className="upload-main-text">
+                      {selectedFiles.length > 0 
+                        ? `${selectedFiles.length} file đã chọn` 
+                        : 'Chọn hoặc kéo thả file PDF'}
+                    </span>
+                    <span className="upload-hint">
+                      <FileText size={14} />
+                      Hỗ trợ nhiều file PDF, tối đa 50MB/file
+                    </span>
+                  </div>
+                  {selectedFiles.length > 0 && !isProcessingQueue && (
+                    <button 
+                      type="button"
+                      className="btn-add-more"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        fileInputRef.current?.click();
+                      }}
+                    >
+                      <Plus size={16} />
+                      Thêm file
+                    </button>
+                  )}
+                </label>
+              </div>
+
+              {/* Files Queue List */}
+              {selectedFiles.length > 0 && (
+                <div className="files-queue">
+                  <div className="files-queue-header">
+                    <span className="queue-title">
+                      <FileIcon size={16} />
+                      Danh sách file ({selectedFiles.length})
+                    </span>
+                    {!isProcessingQueue && (
+                      <button 
+                        type="button" 
+                        className="btn-clear-all-files"
+                        onClick={clearAllFiles}
+                      >
+                        <Trash2 size={14} />
+                        Xóa tất cả
+                      </button>
+                    )}
+                  </div>
+                  
+                  <div className="files-list">
+                    {selectedFiles.map((fileItem, index) => (
+                      <div 
+                        key={`${fileItem.file.name}-${index}`} 
+                        className={`file-queue-item status-${fileItem.status}`}
+                      >
+                        <div className="file-queue-icon">
+                          {fileItem.status === 'waiting' && <Clock size={18} />}
+                          {fileItem.status === 'uploading' && <Loader2 size={18} className="spin" />}
+                          {fileItem.status === 'success' && <CheckCircle size={18} />}
+                          {fileItem.status === 'error' && <XCircle size={18} />}
+                          {fileItem.status === 'already_indexed' && <Database size={18} />}
+                        </div>
+                        
+                        <div className="file-queue-info">
+                          <span className="file-queue-name">{fileItem.file.name}</span>
+                          <div className="file-queue-meta">
+                            <span className="file-queue-size">{formatFileSize(fileItem.file.size)}</span>
+                            {fileItem.status === 'waiting' && (
+                              <span className="file-queue-status waiting">Chờ xử lý</span>
+                            )}
+                            {fileItem.status === 'uploading' && (
+                              <span className="file-queue-status uploading">Đang index...</span>
+                            )}
+                            {fileItem.status === 'success' && (
+                              <span className="file-queue-status success">{fileItem.message}</span>
+                            )}
+                            {fileItem.status === 'error' && (
+                              <span className="file-queue-status error">{fileItem.message}</span>
+                            )}
+                            {fileItem.status === 'already_indexed' && (
+                              <span className="file-queue-status already-indexed">Đã có trong CSDL</span>
+                            )}
+                          </div>
+                        </div>
+                        
+                        {fileItem.status === 'waiting' && !isProcessingQueue && (
+                          <button 
+                            type="button"
+                            className="btn-remove-file"
+                            onClick={() => removeFileFromQueue(index)}
+                          >
+                            <X size={16} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  
+                  {/* Progress Summary */}
+                  {isProcessingQueue && (
+                    <div className="upload-progress-summary">
+                      <div className="progress-bar">
+                        <div 
+                          className="progress-fill"
+                          style={{ 
+                            width: `${(selectedFiles.filter(f => f.status !== 'waiting' && f.status !== 'uploading').length / selectedFiles.length) * 100}%` 
+                          }}
+                        />
+                      </div>
+                      <span className="progress-text">
+                        {selectedFiles.filter(f => f.status !== 'waiting' && f.status !== 'uploading').length} / {selectedFiles.length} hoàn tất
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="upload-actions-compact">
+                <button
+                  className="btn btn-primary btn-upload-main"
+                  onClick={handleUploadAndIndex}
+                  disabled={selectedFiles.length === 0 || isUploading || selectedFiles.every(f => f.status !== 'waiting')}
+                >
+                  {isUploading ? (
+                    <>
+                      <Loader2 size={16} className="spin" />
+                      Đang xử lý...
+                    </>
+                  ) : (
+                    <>
+                      <Database size={16} />
+                      Build Index {selectedFiles.filter(f => f.status === 'waiting').length > 0 && 
+                        `(${selectedFiles.filter(f => f.status === 'waiting').length} file)`}
+                    </>
+                  )}
+                </button>
+
+                <button
+                  className="btn btn-outline-danger btn-reset"
+                  onClick={handleResetIndex}
+                  disabled={isResetting || (indexStats?.total_documents ?? 0) === 0}
+                  title="Xóa toàn bộ index"
+                >
+                  {isResetting ? (
+                    <Loader2 size={16} className="spin" />
+                  ) : (
+                    <Trash2 size={16} />
+                  )}
+                  Reset
+                </button>
+              </div>
+
+              {uploadMessage && (
+                <div className={`message message-compact ${uploadMessage.type}`}>
+                  {uploadMessage.type === 'success' && <CheckCircle size={16} />}
+                  {uploadMessage.type === 'error' && <AlertCircle size={16} />}
+                  {uploadMessage.type === 'info' && <Info size={16} />}
+                  {uploadMessage.text}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Provider Switch Message */}
@@ -590,75 +1113,6 @@ const DocumentRAGPanel: React.FC = () => {
             {providerMessage.text}
           </div>
         )}
-
-        {/* Upload Section */}
-        <div className="upload-section">
-          <h3>
-            <Upload size={18} />
-            Upload & Index PDF
-          </h3>
-          
-          <div className="upload-area">
-            <input
-              type="file"
-              ref={fileInputRef}
-              accept=".pdf"
-              onChange={handleFileSelect}
-              className="file-input"
-              id="pdf-upload"
-            />
-            <label htmlFor="pdf-upload" className="file-label">
-              <Upload size={24} />
-              <span>{selectedFile ? selectedFile.name : 'Chọn file PDF'}</span>
-              {selectedFile && (
-                <span className="file-size">{formatFileSize(selectedFile.size)}</span>
-              )}
-            </label>
-          </div>
-
-          <div className="upload-actions">
-            <button
-              className="btn btn-primary"
-              onClick={handleUploadAndIndex}
-              disabled={!selectedFile || isUploading}
-            >
-              {isUploading ? (
-                <>
-                  <Loader2 size={16} className="spin" />
-                  Đang xử lý...
-                </>
-              ) : (
-                <>
-                  <Database size={16} />
-                  Build Index
-                </>
-              )}
-            </button>
-
-            <button
-              className="btn btn-danger"
-              onClick={handleResetIndex}
-              disabled={isResetting || (indexStats?.total_documents ?? 0) === 0}
-              title="Xóa toàn bộ index"
-            >
-              {isResetting ? (
-                <Loader2 size={16} className="spin" />
-              ) : (
-                <Trash2 size={16} />
-              )}
-              Reset Index
-            </button>
-          </div>
-
-          {uploadMessage && (
-            <div className={`message ${uploadMessage.type}`}>
-              {uploadMessage.type === 'success' && <CheckCircle size={16} />}
-              {uploadMessage.type === 'error' && <AlertCircle size={16} />}
-              {uploadMessage.type === 'info' && <Info size={16} />}
-              {uploadMessage.text}
-            </div>
-          )}
-        </div>
 
         {/* Tab Navigation */}
         <div className="tab-navigation">
@@ -687,85 +1141,58 @@ const DocumentRAGPanel: React.FC = () => {
             </h3>
 
             <div className="quiz-form">
-              {/* Document selector for topic suggestions */}
-              {indexedDocuments.length > 0 && (
-                <div className="form-group document-selector">
-                  <label>
-                    <FileText size={14} />
-                    Chọn tài liệu để gợi ý chủ đề
-                  </label>
-                  <select
-                    value={selectedDocument}
-                    onChange={(e) => {
-                      setSelectedDocument(e.target.value);
-                      setShowTopicSuggestions(false);
-                      setSuggestedTopics([]);
-                    }}
-                    disabled={isGeneratingQuiz}
-                    className="document-select"
-                  >
-                    {indexedDocuments.map((doc) => (
-                      <option key={doc.filename} value={doc.filename}>
-                        {doc.original_filename} ({doc.topic_count} chủ đề)
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              <div className="form-group topic-input-group">
-                <label>Chủ đề Quiz</label>
-                <div className="topic-input-wrapper">
-                  <input
-                    type="text"
-                    value={quizTopic}
-                    onChange={(e) => setQuizTopic(e.target.value)}
-                    placeholder="Nhập chủ đề bạn muốn tạo quiz..."
-                    disabled={isGeneratingQuiz}
-                  />
-                  <button
-                    type="button"
-                    className="btn btn-suggest-topics"
-                    onClick={loadSuggestedTopics}
-                    disabled={isLoadingTopics || isGeneratingQuiz || !selectedDocument}
-                    title={selectedDocument ? `Gợi ý chủ đề từ ${selectedDocument}` : "Chọn tài liệu trước"}
-                  >
-                    {isLoadingTopics ? (
-                      <Loader2 size={16} className="spin" />
-                    ) : (
-                      <HelpCircle size={16} />
-                    )}
-                    Gợi ý
-                  </button>
-                </div>
+              {/* Topic Selection Button & Preview */}
+              <div className="topic-selector-section">
+                <label className="section-label">
+                  <FileText size={16} />
+                  Chủ đề quiz
+                </label>
                 
-                {/* Topic suggestions dropdown */}
-                {showTopicSuggestions && suggestedTopics.length > 0 && (
-                  <div className="topic-suggestions">
-                    <div className="suggestions-header">
-                      <span>Chủ đề từ: <strong>{indexedDocuments.find(d => d.filename === selectedDocument)?.original_filename || selectedDocument}</strong></span>
-                      <button 
-                        className="btn-close-suggestions"
-                        onClick={() => setShowTopicSuggestions(false)}
-                      >
-                        <X size={14} />
-                      </button>
+                {selectedTopics.length > 0 ? (
+                  <div className="selected-topics-preview">
+                    <div className="selected-topics-header">
+                      <span className="selected-count">
+                        <CheckCircle size={16} />
+                        {selectedTopics.length} chủ đề từ {selectedDocuments.length} tài liệu
+                      </span>
+                      <div className="preview-actions">
+                        <button type="button" className="btn-edit-topics" onClick={openTopicModal}>
+                          <Edit2 size={14} /> Sửa
+                        </button>
+                        <button type="button" className="btn-clear-all" onClick={clearSelectedTopics}>
+                          <X size={14} /> Xóa tất cả
+                        </button>
+                      </div>
                     </div>
-                    <ul className="suggestions-list">
-                      {suggestedTopics.map((topic, index) => (
-                        <li 
-                          key={index} 
-                          onClick={() => handleSelectTopic(topic)}
-                          className="suggestion-item"
-                        >
-                          <span className="topic-name">{topic.name}</span>
-                          {topic.description && (
-                            <span className="topic-description">{topic.description}</span>
-                          )}
-                        </li>
+                    <div className="selected-topics-chips">
+                      {selectedTopics.slice(0, 5).map((st, idx) => (
+                        <span key={idx} className="topic-chip">
+                          {st.topic}
+                        </span>
                       ))}
-                    </ul>
+                      {selectedTopics.length > 5 && (
+                        <span className="topic-chip more">+{selectedTopics.length - 5} khác</span>
+                      )}
+                    </div>
                   </div>
+                ) : (
+                  <button 
+                    type="button" 
+                    className="btn-select-topics"
+                    onClick={openTopicModal}
+                    disabled={indexedDocuments.length === 0}
+                  >
+                    <BookOpen size={18} />
+                    <span>Chọn chủ đề từ tài liệu</span>
+                    <ChevronDown size={18} />
+                  </button>
+                )}
+                
+                {indexedDocuments.length === 0 && (
+                  <p className="no-docs-hint">
+                    <Info size={14} />
+                    Chưa có tài liệu. Hãy upload tài liệu trước.
+                  </p>
                 )}
               </div>
 
@@ -812,7 +1239,7 @@ const DocumentRAGPanel: React.FC = () => {
               <button
                 className="btn btn-primary btn-generate"
                 onClick={handleGenerateQuiz}
-                disabled={!quizTopic.trim() || isGeneratingQuiz || (indexStats?.total_documents ?? 0) === 0}
+                disabled={selectedTopics.length === 0 || isGeneratingQuiz || (indexStats?.total_documents ?? 0) === 0}
               >
                 {isGeneratingQuiz ? (
                   <>
@@ -822,7 +1249,7 @@ const DocumentRAGPanel: React.FC = () => {
                 ) : (
                   <>
                     <BookOpen size={16} />
-                    Tạo Quiz
+                    Tạo Quiz {selectedTopics.length > 0 ? `(${selectedTopics.length} chủ đề)` : ''}
                   </>
                 )}
               </button>
@@ -842,148 +1269,38 @@ const DocumentRAGPanel: React.FC = () => {
               )}
             </div>
 
-            {/* Generated Quiz Display */}
+            {/* Generated Quiz Preview Button */}
             {generatedQuiz.length > 0 && (
-              <div className="quiz-display">
-                <div className="quiz-header">
-                  <h4>
-                    <HelpCircle size={18} />
-                    Quiz: {quizTopic}
-                  </h4>
-                  <div className="quiz-header-actions">
+              <div className="quiz-preview-section">
+                <div className="quiz-preview-card">
+                  <div className="quiz-preview-info">
+                    <HelpCircle size={20} className="quiz-icon" />
+                    <div className="quiz-preview-details">
+                      <span className="quiz-preview-title">Quiz đã tạo</span>
+                      <span className="quiz-preview-meta">{generatedQuiz.length} câu hỏi về "{selectedTopics.length > 0 ? selectedTopics.map(t => t.topic).join(', ') : quizTopic}"</span>
+                    </div>
+                  </div>
+                  <div className="quiz-preview-actions">
                     <button
                       className="btn btn-primary"
-                      onClick={handleExportQTI}
-                      disabled={isExporting || editingQuestionIndex !== null}
+                      onClick={() => setShowQuizModal(true)}
                     >
-                      {isExporting ? (
-                        <><Loader2 size={16} className="spin" /> Đang export...</>
-                      ) : (
-                        <><Download size={16} /> Export QTI</>
-                      )}
+                      <BookOpen size={16} />
+                      Xem Quiz
+                    </button>
+                    <button
+                      className="btn btn-secondary btn-new-quiz"
+                      onClick={() => {
+                        setGeneratedQuiz([]);
+                        setQuizError(null);
+                        setEditingQuestionIndex(null);
+                        setEditingQuestion(null);
+                      }}
+                    >
+                      <RefreshCw size={16} />
+                      Tạo mới
                     </button>
                   </div>
-                </div>
-
-                <div className="quiz-questions">
-                  {generatedQuiz.map((q, idx) => (
-                    <div key={idx} className={`quiz-question ${editingQuestionIndex === idx ? 'editing' : ''}`}>
-                      <div className="question-header">
-                        <span className="question-number">Câu {q.question_number}</span>
-                        {editingQuestionIndex !== idx && (
-                          <button
-                            className="btn-edit-question"
-                            onClick={() => handleStartEdit(idx)}
-                            title="Chỉnh sửa câu hỏi"
-                          >
-                            <Edit2 size={14} strokeWidth={2} />
-                            <span>Chỉnh sửa</span>
-                          </button>
-                        )}
-                      </div>
-                      
-                      {editingQuestionIndex === idx && editingQuestion ? (
-                        <>
-                          <textarea
-                            className="edit-question-text"
-                            value={editingQuestion.question}
-                            onChange={(e) => handleEditQuestion('question', e.target.value)}
-                            rows={2}
-                          />
-                          
-                          <div className="question-options edit-mode">
-                            {Object.entries(editingQuestion.options).map(([key, value]) => (
-                              <div key={key} className="edit-option">
-                                <span className="option-key">{key}</span>
-                                <input
-                                  type="text"
-                                  className="edit-option-input"
-                                  value={value}
-                                  onChange={(e) => handleEditQuestion('option', [key, e.target.value])}
-                                />
-                                <label className="correct-label">
-                                  <input
-                                    type="radio"
-                                    name={`correct-${idx}`}
-                                    checked={editingQuestion.correct_answer === key}
-                                    onChange={() => handleEditQuestion('correct_answer', key)}
-                                  />
-                                  <span>Đúng</span>
-                                </label>
-                              </div>
-                            ))}
-                          </div>
-
-                          <div className="edit-explanation">
-                            <label>Giải thích:</label>
-                            <textarea
-                              value={editingQuestion.explanation || ''}
-                              onChange={(e) => handleEditQuestion('explanation', e.target.value)}
-                              rows={2}
-                              placeholder="Nhập giải thích (tùy chọn)..."
-                            />
-                          </div>
-                          
-                          <div className="question-edit-actions">
-                            <button
-                              className="btn btn-sm btn-secondary"
-                              onClick={handleCancelEdit}
-                            >
-                              <X size={14} />
-                              Hủy
-                            </button>
-                            <button
-                              className="btn btn-sm btn-success"
-                              onClick={handleSaveQuestion}
-                            >
-                              <Save size={14} />
-                              Lưu
-                            </button>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <div className="question-text">{q.question}</div>
-                          
-                          <div className="question-options">
-                            {Object.entries(q.options).map(([key, value]) => (
-                              <div
-                                key={key}
-                                className={`option-label ${key === q.correct_answer ? 'correct-answer' : ''}`}
-                              >
-                                <span className="option-key">{key}</span>
-                                <span className="option-value">{value}</span>
-                                {key === q.correct_answer && (
-                                  <Check size={14} className="correct-icon" style={{ color: '#10b981', marginLeft: 'auto' }} />
-                                )}
-                              </div>
-                            ))}
-                          </div>
-
-                          {q.explanation && (
-                            <div className="question-explanation">
-                              <strong>Giải thích:</strong> {q.explanation}
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                <div className="quiz-actions">
-                  <button
-                    className="btn btn-primary"
-                    onClick={() => {
-                      setGeneratedQuiz([]);
-                      setQuizError(null);
-                      setEditingQuestionIndex(null);
-                      setEditingQuestion(null);
-                    }}
-                  >
-                    <RefreshCw size={16} />
-                    Tạo Quiz mới
-                  </button>
                 </div>
               </div>
             )}
@@ -1128,6 +1445,420 @@ const DocumentRAGPanel: React.FC = () => {
         )}
       </div>
 
+      {/* Topic Selector Modal */}
+      {showTopicModal && (
+        <div className="modal-overlay" onClick={closeTopicModal}>
+          <div className="topic-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>
+                <BookOpen size={20} />
+                Chọn chủ đề cho Quiz
+              </h3>
+              <button className="modal-close" onClick={closeTopicModal}>
+                <X size={16} />
+                <span>Đóng</span>
+              </button>
+            </div>
+            
+            <div className="modal-body">
+              {/* Selected topics summary */}
+              {tempSelectedTopics.length > 0 && (
+                <div className="modal-selected-summary">
+                  <span className="summary-label">
+                    <CheckCircle size={16} />
+                    Đã chọn {tempSelectedTopics.length} chủ đề từ {tempSelectedDocuments.length} tài liệu
+                  </span>
+                </div>
+              )}
+
+              {/* Document list */}
+              <div className="modal-documents">
+                {indexedDocuments.map((doc) => {
+                  const isDocSelected = tempSelectedDocuments.includes(doc.filename);
+                  const docTopics = tempTopicsByDocument[doc.filename] || [];
+                  const selectedCount = tempSelectedTopics.filter(t => t.documentFilename === doc.filename).length;
+                  
+                  return (
+                    <div 
+                      key={doc.filename} 
+                      className={`modal-doc-card ${isDocSelected ? 'expanded' : ''}`}
+                    >
+                      <div 
+                        className="modal-doc-header"
+                        onClick={() => toggleDocumentInModal(doc.filename)}
+                      >
+                        <div className="modal-doc-checkbox">
+                          <input 
+                            type="checkbox" 
+                            checked={isDocSelected} 
+                            onChange={() => toggleDocumentInModal(doc.filename)}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </div>
+                        <div className="modal-doc-info">
+                          <FileText size={18} className="doc-icon" />
+                          <div className="modal-doc-details">
+                            <span className="modal-doc-name">{doc.original_filename}</span>
+                            <span className="modal-doc-meta">{doc.topic_count} chủ đề</span>
+                          </div>
+                        </div>
+                        <div className="modal-doc-status">
+                          {selectedCount > 0 && (
+                            <span className="modal-selected-badge">{selectedCount} đã chọn</span>
+                          )}
+                          <span className={`modal-expand-icon ${isDocSelected ? 'expanded' : ''}`}>
+                            {isDocSelected ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      {isDocSelected && (
+                        <div className="modal-doc-topics">
+                          {docTopics.length > 0 ? (
+                            <>
+                              <div className="modal-topics-toolbar">
+                                <button
+                                  type="button"
+                                  className="btn-modal-select-all"
+                                  onClick={() => areAllTopicsSelectedInModal(doc.filename) 
+                                    ? deselectAllTopicsInModal(doc.filename)
+                                    : selectAllTopicsInModal(doc.filename)
+                                  }
+                                >
+                                  {areAllTopicsSelectedInModal(doc.filename) ? (
+                                    <><X size={14} /> Bỏ chọn tất cả</>
+                                  ) : (
+                                    <><Check size={14} /> Chọn tất cả</>
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn-modal-edit-topics"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openEditTopicsModal(doc.filename);
+                                  }}
+                                >
+                                  <Pencil size={14} /> Sửa chủ đề
+                                </button>
+                              </div>
+                              <div className="modal-topics-grid">
+                                {docTopics.map((topic, idx) => {
+                                  const isSelected = isTopicSelectedInModal(topic.name, doc.filename);
+                                  return (
+                                    <button
+                                      key={idx}
+                                      type="button"
+                                      className={`modal-topic-tag ${isSelected ? 'selected' : ''}`}
+                                      onClick={() => toggleTopicInModal(topic.name, doc.filename)}
+                                    >
+                                      {isSelected && <Check size={14} className="check-icon" />}
+                                      <span>{topic.name}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </>
+                          ) : (
+                            <div className="modal-loading-topics">
+                              <Loader2 size={16} className="spin" />
+                              <span>Đang tải chủ đề...</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={closeTopicModal}>
+                Hủy
+              </button>
+              <button 
+                className="btn btn-primary" 
+                onClick={saveTopicSelections}
+                disabled={tempSelectedTopics.length === 0}
+              >
+                <Save size={16} />
+                Lưu ({tempSelectedTopics.length} chủ đề)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Topics Modal */}
+      {showEditTopicsModal && (
+        <div className="modal-overlay edit-topics-overlay" onClick={closeEditTopicsModal}>
+          <div className="edit-topics-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>
+                <Pencil size={20} />
+                Sửa chủ đề - {indexedDocuments.find(d => d.filename === editingDocumentFilename)?.original_filename || editingDocumentFilename}
+              </h3>
+              <button className="modal-close" onClick={closeEditTopicsModal}>
+                <X size={16} />
+                <span>Đóng</span>
+              </button>
+            </div>
+            
+            <div className="modal-body edit-topics-body">
+              {/* Add new topic */}
+              <div className="add-topic-section">
+                <label>Thêm chủ đề mới</label>
+                <div className="add-topic-input-group">
+                  <input
+                    type="text"
+                    value={newTopicInput}
+                    onChange={(e) => setNewTopicInput(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && addNewTopic()}
+                    placeholder="Nhập tên chủ đề..."
+                    className="add-topic-input"
+                  />
+                  <button
+                    type="button"
+                    className="btn-add-topic"
+                    onClick={addNewTopic}
+                    disabled={!newTopicInput.trim()}
+                  >
+                    <Plus size={18} />
+                    Thêm
+                  </button>
+                </div>
+              </div>
+
+              {/* Topics list */}
+              <div className="edit-topics-list">
+                <label>Danh sách chủ đề ({editingTopics.length})</label>
+                {editingTopics.length === 0 ? (
+                  <div className="no-topics-message">
+                    <Info size={16} />
+                    <span>Chưa có chủ đề nào. Hãy thêm chủ đề mới.</span>
+                  </div>
+                ) : (
+                  <div className="topics-edit-grid">
+                    {editingTopics.map((topic, idx) => (
+                      <div key={idx} className="topic-edit-item">
+                        {editingTopicIndex === idx ? (
+                          <div className="topic-edit-inline">
+                            <input
+                              type="text"
+                              value={editingTopicValue}
+                              onChange={(e) => setEditingTopicValue(e.target.value)}
+                              onKeyPress={(e) => e.key === 'Enter' && saveEditTopic()}
+                              className="topic-edit-input"
+                              autoFocus
+                            />
+                            <button className="btn-save-edit" onClick={saveEditTopic}>
+                              <Check size={14} />
+                            </button>
+                            <button className="btn-cancel-edit" onClick={cancelEditTopic}>
+                              <X size={14} />
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <span className="topic-number">{idx + 1}</span>
+                            <span className="topic-name">{topic}</span>
+                            <div className="topic-actions">
+                              <button 
+                                className="btn-edit-topic" 
+                                onClick={() => startEditTopic(idx)}
+                                title="Sửa"
+                              >
+                                <Edit2 size={14} />
+                                <span>Sửa</span>
+                              </button>
+                              <button 
+                                className="btn-delete-topic" 
+                                onClick={() => removeTopic(idx)}
+                                title="Xóa"
+                              >
+                                <Trash2 size={14} />
+                                <span>Xóa</span>
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={closeEditTopicsModal}>
+                Hủy
+              </button>
+              <button 
+                className="btn btn-primary" 
+                onClick={saveTopicsToBackend}
+                disabled={isSavingTopics}
+              >
+                {isSavingTopics ? (
+                  <><Loader2 size={16} className="spin" /> Đang lưu...</>
+                ) : (
+                  <><Save size={16} /> Lưu thay đổi</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quiz Modal */}
+      {showQuizModal && generatedQuiz.length > 0 && (
+        <div className="modal-overlay" onClick={() => setShowQuizModal(false)}>
+          <div className="quiz-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="quiz-modal-header">
+              <h3>
+                <HelpCircle size={20} />
+                Quiz: {selectedTopics.length > 0 ? selectedTopics.map(t => t.topic).slice(0, 2).join(', ') + (selectedTopics.length > 2 ? '...' : '') : quizTopic}
+              </h3>
+              <div className="quiz-modal-header-info">
+                <span className="quiz-count">{generatedQuiz.length} câu hỏi</span>
+              </div>
+              <button className="modal-close" onClick={() => setShowQuizModal(false)}>
+                <X size={16} />
+                <span>Đóng</span>
+              </button>
+            </div>
+            
+            <div className="quiz-modal-body">
+              <div className="quiz-questions">
+                {generatedQuiz.map((q, idx) => (
+                  <div key={idx} className={`quiz-question ${editingQuestionIndex === idx ? 'editing' : ''}`}>
+                    <div className="question-header">
+                      <span className="question-number">Câu {q.question_number}</span>
+                      {editingQuestionIndex !== idx && (
+                        <button
+                          className="btn-edit-question"
+                          onClick={() => handleStartEdit(idx)}
+                          title="Chỉnh sửa câu hỏi"
+                        >
+                          <Edit2 size={14} strokeWidth={2} />
+                          <span>Chỉnh sửa</span>
+                        </button>
+                      )}
+                    </div>
+                    
+                    {editingQuestionIndex === idx && editingQuestion ? (
+                      <>
+                        <textarea
+                          className="edit-question-text"
+                          value={editingQuestion.question}
+                          onChange={(e) => handleEditQuestion('question', e.target.value)}
+                          rows={2}
+                        />
+                        
+                        <div className="question-options edit-mode">
+                          {Object.entries(editingQuestion.options).map(([key, value]) => (
+                            <div key={key} className="edit-option">
+                              <span className="option-key">{key}</span>
+                              <input
+                                type="text"
+                                className="edit-option-input"
+                                value={value}
+                                onChange={(e) => handleEditQuestion('option', [key, e.target.value])}
+                              />
+                              <label className="correct-label">
+                                <input
+                                  type="radio"
+                                  name={`correct-${idx}`}
+                                  checked={editingQuestion.correct_answer === key}
+                                  onChange={() => handleEditQuestion('correct_answer', key)}
+                                />
+                                <span>Đúng</span>
+                              </label>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="edit-explanation">
+                          <label>Giải thích:</label>
+                          <textarea
+                            value={editingQuestion.explanation || ''}
+                            onChange={(e) => handleEditQuestion('explanation', e.target.value)}
+                            rows={2}
+                            placeholder="Nhập giải thích (tùy chọn)..."
+                          />
+                        </div>
+                        
+                        <div className="question-edit-actions">
+                          <button
+                            className="btn btn-sm btn-secondary"
+                            onClick={handleCancelEdit}
+                          >
+                            <X size={14} />
+                            Hủy
+                          </button>
+                          <button
+                            className="btn btn-sm btn-success"
+                            onClick={handleSaveQuestion}
+                          >
+                            <Save size={14} />
+                            Lưu
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="question-text">{q.question}</div>
+                        
+                        <div className="question-options">
+                          {Object.entries(q.options).map(([key, value]) => (
+                            <div
+                              key={key}
+                              className={`option-label ${key === q.correct_answer ? 'correct-answer' : ''}`}
+                            >
+                              <span className="option-key">{key}</span>
+                              <span className="option-value">{value}</span>
+                              {key === q.correct_answer && (
+                                <Check size={14} className="correct-icon" style={{ color: '#10b981', marginLeft: 'auto' }} />
+                              )}
+                            </div>
+                          ))}
+                        </div>
+
+                        {q.explanation && (
+                          <div className="question-explanation">
+                            <strong>Giải thích:</strong> {q.explanation}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            <div className="quiz-modal-footer">
+              <button 
+                className="btn btn-secondary" 
+                onClick={() => setShowQuizModal(false)}
+              >
+                Đóng
+              </button>
+              <button
+                className="btn btn-primary btn-export"
+                onClick={handleExportQTI}
+                disabled={isExporting || editingQuestionIndex !== null}
+              >
+                {isExporting ? (
+                  <><Loader2 size={16} className="spin" /> Đang export...</>
+                ) : (
+                  <><Download size={16} /> Export QTI</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`
         .document-rag-panel {
           display: flex;
@@ -1159,29 +1890,29 @@ const DocumentRAGPanel: React.FC = () => {
           gap: 24px;
         }
 
-        /* Status Section */
-        .status-section {
-          display: flex;
-          align-items: center;
-          gap: 12px;
+        /* ===== TOP SECTION - 2 COLUMN LAYOUT ===== */
+        .top-section-grid {
+          display: grid;
+          grid-template-columns: 280px 1fr;
+          gap: 24px;
+          align-items: stretch;
         }
 
-        .status-cards {
+        /* Left Column - Status Cards */
+        .status-column {
           display: flex;
+          flex-direction: column;
           gap: 12px;
-          flex: 1;
-          flex-wrap: wrap;
         }
 
         .status-card {
           display: flex;
           align-items: center;
           gap: 12px;
-          padding: 12px 16px;
+          padding: 14px 16px;
           background: white;
           border: 1px solid var(--border-color, #e5e7eb);
-          border-radius: 10px;
-          min-width: 150px;
+          border-radius: 12px;
           box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
           transition: all 0.2s ease;
         }
@@ -1193,25 +1924,41 @@ const DocumentRAGPanel: React.FC = () => {
 
         .status-card.connected {
           border-color: #10b981;
-          background: #ecfdf5;
+          background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
         }
 
         .status-card.disconnected {
           border-color: #ef4444;
-          background: #fef2f2;
+          background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+        }
+
+        .status-card svg {
+          color: #64748b;
+          flex-shrink: 0;
+        }
+
+        .status-card.connected svg {
+          color: #10b981;
+        }
+
+        .status-card.disconnected svg {
+          color: #ef4444;
         }
 
         .status-info {
           display: flex;
           flex-direction: column;
           gap: 2px;
+          flex: 1;
+          min-width: 0;
         }
 
         .status-label {
-          font-size: 0.75rem;
+          font-size: 0.7rem;
           color: var(--text-secondary, #6b7280);
           text-transform: uppercase;
           letter-spacing: 0.05em;
+          font-weight: 600;
         }
 
         .status-value {
@@ -1231,88 +1978,618 @@ const DocumentRAGPanel: React.FC = () => {
           color: #ef4444;
         }
 
-        .refresh-btn {
-          padding: 8px;
-          border-radius: 6px;
+        /* LLM Provider Dropdown Styling */
+        .llm-provider-card {
+          background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
         }
 
-        /* Upload Section */
-        .upload-section, .query-section, .results-section, .files-section {
+        .llm-provider-card .provider-icon {
+          color: #8b5cf6;
+        }
+
+        .provider-dropdown-wrapper {
+          position: relative;
+        }
+
+        .provider-dropdown {
+          width: 100%;
+          padding: 8px 12px;
+          padding-right: 32px;
+          border: 2px solid #e2e8f0;
+          border-radius: 8px;
+          background: white;
+          color: #334155;
+          font-size: 0.85rem;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          appearance: none;
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+          background-repeat: no-repeat;
+          background-position: right 10px center;
+        }
+
+        .provider-dropdown:hover:not(:disabled) {
+          border-color: #8b5cf6;
+          background-color: #faf5ff;
+        }
+
+        .provider-dropdown:focus {
+          outline: none;
+          border-color: #8b5cf6;
+          box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+        }
+
+        .provider-dropdown:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+          background-color: #f1f5f9;
+        }
+
+        .provider-dropdown option {
+          padding: 10px;
+          background: white;
+          color: #334155;
+        }
+
+        .provider-dropdown option:disabled {
+          color: #94a3b8;
+        }
+
+        .provider-dropdown-loading {
+          position: absolute;
+          right: 32px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: #8b5cf6;
+        }
+
+        .btn-refresh-status {
+          margin-top: 4px;
+          justify-content: center;
+          padding: 10px 16px;
+          font-size: 0.85rem;
+        }
+
+        /* Right Column - Upload Section */
+        .upload-column {
+          display: flex;
+          flex-direction: column;
+        }
+
+        .upload-section-compact {
           background: white;
           border: 1px solid var(--border-color, #e5e7eb);
           border-radius: 16px;
-          padding: 24px;
+          padding: 20px;
           box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
           transition: box-shadow 0.2s ease;
+          height: 100%;
+          display: flex;
+          flex-direction: column;
         }
 
-        .upload-section:hover, .query-section:hover, .results-section:hover, .files-section:hover {
+        .upload-section-compact:hover {
           box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
         }
 
-        .upload-section h3, .query-section h3, .results-section h3, .files-section h3 {
+        .upload-section-compact h3 {
           display: flex;
           align-items: center;
           gap: 10px;
-          margin: 0 0 20px 0;
-          font-size: 1.1rem;
+          margin: 0 0 16px 0;
+          font-size: 1rem;
           font-weight: 700;
           color: #1e293b;
           padding-bottom: 12px;
           border-bottom: 2px solid #e2e8f0;
         }
 
-        .upload-section h3 svg, .query-section h3 svg, .results-section h3 svg, .files-section h3 svg {
+        .upload-section-compact h3 svg {
           color: #3b82f6;
         }
 
-        .upload-area {
-          margin-bottom: 20px;
+        .files-count-badge {
+          margin-left: auto;
+          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+          color: white;
+          padding: 4px 10px;
+          border-radius: 20px;
+          font-size: 0.75rem;
+          font-weight: 600;
+        }
+
+        .upload-area-compact {
+          flex: 1;
+          margin-bottom: 16px;
+        }
+
+        .file-label-compact {
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          padding: 24px;
+          border: 2px dashed #cbd5e1;
+          border-radius: 16px;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+          min-height: 100px;
+          position: relative;
+        }
+
+        .file-label-compact:hover {
+          border-color: #3b82f6;
+          background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+          transform: translateY(-2px);
+          box-shadow: 0 8px 25px rgba(59, 130, 246, 0.15);
+        }
+
+        .file-label-compact.has-file {
+          border-style: solid;
+          border-color: #10b981;
+          background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+        }
+
+        .file-label-compact.has-file:hover {
+          border-color: #059669;
+          background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+        }
+
+        .upload-icon-wrapper {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 64px;
+          height: 64px;
+          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+          border-radius: 16px;
+          color: white;
+          flex-shrink: 0;
+          transition: all 0.3s ease;
+          box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+        }
+
+        .file-label-compact.has-file .upload-icon-wrapper {
+          background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+          box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+        }
+
+        .file-label-compact:hover .upload-icon-wrapper {
+          transform: scale(1.08);
+          box-shadow: 0 6px 20px rgba(59, 130, 246, 0.35);
+        }
+
+        .file-label-compact.has-file:hover .upload-icon-wrapper {
+          box-shadow: 0 6px 20px rgba(16, 185, 129, 0.35);
+        }
+
+        .upload-text {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          flex: 1;
+          min-width: 0;
+        }
+
+        .upload-main-text {
+          font-size: 1rem;
+          font-weight: 600;
+          color: #1e293b;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .file-label-compact.has-file .upload-main-text {
+          color: #065f46;
+        }
+
+        .upload-hint {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 0.85rem;
+          color: #64748b;
+        }
+
+        .upload-hint svg {
+          color: #94a3b8;
+        }
+
+        .file-meta {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .file-size {
+          font-size: 0.8rem;
+          color: #047857;
+          background: rgba(16, 185, 129, 0.15);
+          padding: 3px 10px;
+          border-radius: 20px;
+          font-weight: 500;
+        }
+
+        .file-type {
+          font-size: 0.8rem;
+          color: #64748b;
+          background: #e2e8f0;
+          padding: 3px 10px;
+          border-radius: 20px;
+          font-weight: 500;
+        }
+
+        .btn-clear-file {
+          position: absolute;
+          top: 12px;
+          right: 12px;
+          width: 28px;
+          height: 28px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border: none;
+          background: rgba(239, 68, 68, 0.1);
+          color: #ef4444;
+          border-radius: 50%;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          opacity: 0;
+        }
+
+        .file-label-compact:hover .btn-clear-file {
+          opacity: 1;
+        }
+
+        .btn-clear-file:hover {
+          background: #ef4444;
+          color: white;
+          transform: scale(1.1);
+        }
+
+        .upload-actions-compact {
+          display: flex;
+          gap: 12px;
+        }
+
+        .btn-upload-main {
+          flex: 1;
+          padding: 12px 20px;
+          font-size: 0.95rem;
+          justify-content: center;
+        }
+
+        .btn-outline-danger {
+          background: white;
+          color: #dc2626;
+          border: 2px solid #fecaca;
+          transition: all 0.2s ease;
+        }
+
+        .btn-outline-danger:hover:not(:disabled) {
+          background: #fef2f2;
+          border-color: #f87171;
+        }
+
+        .btn-outline-danger:disabled {
+          opacity: 0.5;
+          color: #9ca3af;
+          border-color: #e5e7eb;
+        }
+
+        .btn-reset {
+          padding: 12px 16px;
+        }
+
+        /* Multi-file upload queue styles */
+        .btn-add-more {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 8px 14px;
+          background: white;
+          border: 2px solid #3b82f6;
+          border-radius: 8px;
+          color: #3b82f6;
+          font-size: 0.85rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          flex-shrink: 0;
+        }
+
+        .btn-add-more:hover {
+          background: #3b82f6;
+          color: white;
+        }
+
+        .file-label-compact.disabled {
+          pointer-events: none;
+          opacity: 0.7;
+        }
+
+        .files-queue {
+          margin-bottom: 16px;
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          border-radius: 12px;
+          padding: 12px;
+        }
+
+        .files-queue-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 12px;
+          padding-bottom: 10px;
+          border-bottom: 1px solid #e2e8f0;
+        }
+
+        .queue-title {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 0.9rem;
+          font-weight: 600;
+          color: #1e293b;
+        }
+
+        .queue-title svg {
+          color: #64748b;
+        }
+
+        .btn-clear-all-files {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 6px 12px;
+          background: transparent;
+          border: 1px solid #fca5a5;
+          border-radius: 6px;
+          color: #dc2626;
+          font-size: 0.8rem;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .btn-clear-all-files:hover {
+          background: #fef2f2;
+        }
+
+        .files-list {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          max-height: 200px;
+          overflow-y: auto;
+          padding-right: 4px;
+        }
+
+        .files-list::-webkit-scrollbar {
+          width: 6px;
+        }
+
+        .files-list::-webkit-scrollbar-track {
+          background: #f1f5f9;
+          border-radius: 10px;
+        }
+
+        .files-list::-webkit-scrollbar-thumb {
+          background: #cbd5e1;
+          border-radius: 10px;
+        }
+
+        .file-queue-item {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 10px 12px;
+          background: white;
+          border: 1px solid #e2e8f0;
+          border-radius: 10px;
+          transition: all 0.3s ease;
+        }
+
+        .file-queue-item.status-waiting {
+          border-color: #e2e8f0;
+        }
+
+        .file-queue-item.status-uploading {
+          border-color: #3b82f6;
+          background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+          box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
+        }
+
+        .file-queue-item.status-success {
+          border-color: #10b981;
+          background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+        }
+
+        .file-queue-item.status-error {
+          border-color: #ef4444;
+          background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+        }
+
+        .file-queue-item.status-already_indexed {
+          border-color: #8b5cf6;
+          background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%);
+        }
+
+        .file-queue-icon {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 36px;
+          height: 36px;
+          border-radius: 8px;
+          flex-shrink: 0;
+        }
+
+        .status-waiting .file-queue-icon {
+          background: #f1f5f9;
+          color: #64748b;
+        }
+
+        .status-uploading .file-queue-icon {
+          background: #3b82f6;
+          color: white;
+        }
+
+        .status-success .file-queue-icon {
+          background: #10b981;
+          color: white;
+        }
+
+        .status-error .file-queue-icon {
+          background: #ef4444;
+          color: white;
+        }
+
+        .status-already_indexed .file-queue-icon {
+          background: #8b5cf6;
+          color: white;
+        }
+
+        .file-queue-info {
+          flex: 1;
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .file-queue-name {
+          font-size: 0.9rem;
+          font-weight: 600;
+          color: #1e293b;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .file-queue-meta {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .file-queue-size {
+          font-size: 0.75rem;
+          color: #64748b;
+          background: #e2e8f0;
+          padding: 2px 8px;
+          border-radius: 4px;
+        }
+
+        .file-queue-status {
+          font-size: 0.75rem;
+          font-weight: 500;
+          padding: 2px 8px;
+          border-radius: 4px;
+        }
+
+        .file-queue-status.waiting {
+          background: #f1f5f9;
+          color: #64748b;
+        }
+
+        .file-queue-status.uploading {
+          background: #dbeafe;
+          color: #1d4ed8;
+        }
+
+        .file-queue-status.success {
+          background: #d1fae5;
+          color: #047857;
+        }
+
+        .file-queue-status.error {
+          background: #fee2e2;
+          color: #dc2626;
+        }
+
+        .file-queue-status.already-indexed {
+          background: #ede9fe;
+          color: #7c3aed;
+        }
+
+        .btn-remove-file {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 28px;
+          height: 28px;
+          background: transparent;
+          border: 1px solid #e2e8f0;
+          border-radius: 6px;
+          color: #64748b;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          flex-shrink: 0;
+        }
+
+        .btn-remove-file:hover {
+          background: #fef2f2;
+          border-color: #fca5a5;
+          color: #dc2626;
+        }
+
+        .upload-progress-summary {
+          margin-top: 12px;
+          padding-top: 12px;
+          border-top: 1px solid #e2e8f0;
+        }
+
+        .progress-bar {
+          width: 100%;
+          height: 8px;
+          background: #e2e8f0;
+          border-radius: 10px;
+          overflow: hidden;
+          margin-bottom: 8px;
+        }
+
+        .progress-fill {
+          height: 100%;
+          background: linear-gradient(90deg, #10b981 0%, #059669 100%);
+          border-radius: 10px;
+          transition: width 0.5s ease;
+        }
+
+        .progress-text {
+          font-size: 0.8rem;
+          font-weight: 500;
+          color: #64748b;
+          text-align: center;
+          display: block;
+        }
+
+        .message-compact {
+          margin-top: 12px;
+          padding: 12px 16px;
+          font-size: 0.85rem;
+          border-radius: 10px;
         }
 
         .file-input {
           display: none;
         }
 
-        .file-label {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 12px;
-          padding: 40px;
-          border: 3px dashed #cbd5e1;
-          border-radius: 16px;
-          cursor: pointer;
-          transition: all 0.3s ease;
-          color: #64748b;
-          background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+        /* Status Section - Remove old styles */
+        .status-section {
+          display: none;
         }
 
-        .file-label:hover {
-          border-color: #3b82f6;
-          background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-          color: #3b82f6;
-          transform: translateY(-2px);
+        /* Upload Section - Hide old styles */
+        .upload-section {
+          display: none;
         }
 
-        .file-label svg {
-          color: #94a3b8;
-          transition: color 0.3s ease;
-        }
-
-        .file-label:hover svg {
-          color: #3b82f6;
-        }
-
-        .file-label span {
-          font-weight: 500;
-          font-size: 0.95rem;
-        }
-
-        .upload-actions {
-          display: flex;
-          gap: 12px;
-          flex-wrap: wrap;
+        .refresh-btn {
+          display: none;
         }
 
         /* Buttons */
@@ -1404,6 +2681,35 @@ const DocumentRAGPanel: React.FC = () => {
         }
 
         /* Query Section */
+        .query-section, .results-section, .files-section {
+          background: white;
+          border: 1px solid var(--border-color, #e5e7eb);
+          border-radius: 16px;
+          padding: 24px;
+          box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+          transition: box-shadow 0.2s ease;
+        }
+
+        .query-section:hover, .results-section:hover, .files-section:hover {
+          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        }
+
+        .query-section h3, .results-section h3, .files-section h3 {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin: 0 0 20px 0;
+          font-size: 1.1rem;
+          font-weight: 700;
+          color: #1e293b;
+          padding-bottom: 12px;
+          border-bottom: 2px solid #e2e8f0;
+        }
+
+        .query-section h3 svg, .results-section h3 svg, .files-section h3 svg {
+          color: #3b82f6;
+        }
+
         .query-input-area textarea {
           width: 100%;
           padding: 14px;
@@ -2253,6 +3559,1486 @@ const DocumentRAGPanel: React.FC = () => {
 
         .correct-icon {
           margin-left: auto;
+        }
+
+        /* ===== NEW IMPROVED TOPIC SELECTOR STYLES ===== */
+        
+        /* Selected Topics Preview at Top */
+        .selected-topics-preview {
+          background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+          border: 2px solid #10b981;
+          border-radius: 16px;
+          padding: 16px;
+          margin-bottom: 20px;
+        }
+
+        .selected-topics-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 12px;
+        }
+
+        .selected-count {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 0.9rem;
+          font-weight: 600;
+          color: #065f46;
+        }
+
+        .btn-clear-all {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          padding: 6px 12px;
+          background: white;
+          border: 1px solid #fca5a5;
+          border-radius: 8px;
+          font-size: 0.8rem;
+          font-weight: 500;
+          color: #dc2626;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .btn-clear-all:hover {
+          background: #fee2e2;
+          border-color: #f87171;
+        }
+
+        .selected-topics-chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+
+        .topic-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 6px 12px;
+          background: white;
+          border: 1px solid #10b981;
+          border-radius: 20px;
+          font-size: 0.85rem;
+          font-weight: 500;
+          color: #065f46;
+        }
+
+        .chip-remove {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 18px;
+          height: 18px;
+          padding: 0;
+          background: #dcfce7;
+          border: none;
+          border-radius: 50%;
+          cursor: pointer;
+          color: #065f46;
+          transition: all 0.15s ease;
+        }
+
+        .chip-remove:hover {
+          background: #fecaca;
+          color: #dc2626;
+        }
+
+        /* Document Topic Selector */
+        .document-topic-selector {
+          margin-bottom: 20px;
+        }
+
+        .selector-label {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 0.9rem;
+          font-weight: 600;
+          color: #374151;
+          margin-bottom: 12px;
+        }
+
+        .document-cards {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .document-card {
+          background: white;
+          border: 2px solid #e2e8f0;
+          border-radius: 16px;
+          overflow: hidden;
+          transition: all 0.2s ease;
+        }
+
+        .document-card:hover {
+          border-color: #cbd5e1;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+        }
+
+        .document-card.expanded {
+          border-color: #3b82f6;
+          box-shadow: 0 4px 16px rgba(59, 130, 246, 0.15);
+        }
+
+        .document-card-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 16px;
+          cursor: pointer;
+          transition: background 0.15s ease;
+        }
+
+        .document-card-header:hover {
+          background: #f8fafc;
+        }
+
+        .document-card.expanded .document-card-header {
+          background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+          border-bottom: 1px solid #bfdbfe;
+        }
+
+        .doc-info {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .doc-icon {
+          color: #3b82f6;
+        }
+
+        .doc-details {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .doc-details .doc-name {
+          font-size: 0.95rem;
+          font-weight: 600;
+          color: #1e293b;
+        }
+
+        .doc-details .doc-meta {
+          font-size: 0.8rem;
+          color: #64748b;
+        }
+
+        .doc-actions {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .selected-badge {
+          padding: 4px 10px;
+          background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+          color: white;
+          border-radius: 12px;
+          font-size: 0.75rem;
+          font-weight: 600;
+        }
+
+        .expand-icon {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 32px;
+          height: 32px;
+          background: #f1f5f9;
+          border-radius: 8px;
+          color: #64748b;
+          transition: all 0.2s ease;
+        }
+
+        .expand-icon.expanded {
+          background: #3b82f6;
+          color: white;
+          transform: rotate(180deg);
+        }
+
+        .document-card-content {
+          padding: 16px;
+          background: #fafbfc;
+          border-top: 1px solid #e2e8f0;
+        }
+
+        .topics-toolbar {
+          display: flex;
+          justify-content: flex-end;
+          margin-bottom: 12px;
+        }
+
+        .btn-select-all {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 6px 12px;
+          background: white;
+          border: 1px solid #d1d5db;
+          border-radius: 8px;
+          font-size: 0.8rem;
+          font-weight: 500;
+          color: #4b5563;
+          cursor: pointer;
+          transition: all 0.15s ease;
+        }
+
+        .btn-select-all:hover {
+          background: #f3f4f6;
+          border-color: #9ca3af;
+        }
+
+        .topics-grid {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 10px;
+        }
+
+        .topic-tag {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 10px 16px;
+          background: white;
+          border: 2px solid #e2e8f0;
+          border-radius: 25px;
+          font-size: 0.875rem;
+          font-weight: 500;
+          color: #374151;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .topic-tag:hover:not(:disabled) {
+          border-color: #3b82f6;
+          background: #eff6ff;
+          transform: translateY(-1px);
+        }
+
+        .topic-tag.selected {
+          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+          border-color: #2563eb;
+          color: white;
+          box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35);
+        }
+
+        .topic-tag .check-icon {
+          color: white;
+        }
+
+        .topic-tag:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+
+        .loading-topics {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          padding: 24px;
+          color: #64748b;
+          font-size: 0.9rem;
+        }
+
+        /* Topic Selector Section */
+        .topic-selector-section {
+          margin-bottom: 16px;
+        }
+
+        .section-label {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-weight: 600;
+          color: #1e293b;
+          margin-bottom: 12px;
+          font-size: 0.95rem;
+        }
+
+        .btn-select-topics {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          width: 100%;
+          padding: 16px 20px;
+          border: 2px dashed #cbd5e1;
+          border-radius: 12px;
+          background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+          color: #64748b;
+          font-size: 0.95rem;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .btn-select-topics:hover:not(:disabled) {
+          border-color: #3b82f6;
+          background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+          color: #3b82f6;
+        }
+
+        .btn-select-topics:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+
+        .btn-select-topics span {
+          flex: 1;
+          text-align: left;
+          margin-left: 8px;
+        }
+
+        .no-docs-hint {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-top: 8px;
+          padding: 12px 16px;
+          background: #fef3c7;
+          border: 1px solid #fcd34d;
+          border-radius: 10px;
+          color: #92400e;
+          font-size: 0.85rem;
+        }
+
+        .selected-topics-preview {
+          background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+          border: 1px solid #6ee7b7;
+          border-radius: 12px;
+          padding: 16px;
+        }
+
+        .selected-topics-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 12px;
+        }
+
+        .selected-count {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          color: #059669;
+          font-weight: 600;
+          font-size: 0.9rem;
+        }
+
+        .preview-actions {
+          display: flex;
+          gap: 8px;
+        }
+
+        .btn-edit-topics,
+        .btn-clear-all {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          padding: 6px 12px;
+          border: none;
+          border-radius: 8px;
+          font-size: 0.8rem;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .btn-edit-topics {
+          background: #3b82f6;
+          color: white;
+        }
+
+        .btn-edit-topics:hover {
+          background: #2563eb;
+        }
+
+        .btn-clear-all {
+          background: #fee2e2;
+          color: #dc2626;
+        }
+
+        .btn-clear-all:hover {
+          background: #fecaca;
+        }
+
+        .selected-topics-chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+
+        .topic-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 6px 12px;
+          background: white;
+          border: 1px solid #d1fae5;
+          border-radius: 20px;
+          font-size: 0.82rem;
+          color: #047857;
+          font-weight: 500;
+        }
+
+        .topic-chip.more {
+          background: #ecfdf5;
+          color: #059669;
+          font-style: italic;
+        }
+
+        /* Modal Styles */
+        .modal-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.5);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+          padding: 20px;
+          animation: fadeIn 0.2s ease;
+        }
+
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+
+        .topic-modal {
+          background: white;
+          border-radius: 16px;
+          width: 100%;
+          max-width: 700px;
+          max-height: 85vh;
+          display: flex;
+          flex-direction: column;
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+          animation: slideUp 0.3s ease;
+        }
+
+        @keyframes slideUp {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .modal-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 20px 24px;
+          border-bottom: 1px solid #e5e7eb;
+        }
+
+        .modal-header h3 {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin: 0;
+          font-size: 1.15rem;
+          font-weight: 600;
+          color: #1e293b;
+        }
+
+        .modal-header h3 svg {
+          color: #3b82f6;
+        }
+
+        .modal-close {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          padding: 0 12px;
+          height: 40px;
+          min-width: 80px;
+          border: 2px solid #e5e7eb;
+          border-radius: 12px;
+          background: white;
+          color: #6b7280;
+          font-size: 0.9rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          flex-shrink: 0;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .modal-close svg {
+          width: 16px;
+          height: 16px;
+          stroke-width: 2.5;
+          transition: all 0.2s ease;
+        }
+
+        .modal-close span {
+          transition: all 0.2s ease;
+        }
+
+        .modal-close:hover {
+          background: #fee2e2;
+          border-color: #fca5a5;
+          color: #dc2626;
+          transform: scale(1.02);
+          box-shadow: 0 4px 8px rgba(220, 38, 38, 0.2);
+        }
+
+        .modal-close:active {
+          transform: scale(0.98);
+        }
+
+        .modal-body {
+          flex: 1;
+          overflow-y: auto;
+          padding: 20px 24px;
+        }
+
+        /* Custom Scrollbar for Modal */
+        .modal-body::-webkit-scrollbar,
+        .quiz-modal-body::-webkit-scrollbar {
+          width: 8px;
+        }
+
+        .modal-body::-webkit-scrollbar-track,
+        .quiz-modal-body::-webkit-scrollbar-track {
+          background: #f1f5f9;
+          border-radius: 10px;
+        }
+
+        .modal-body::-webkit-scrollbar-thumb,
+        .quiz-modal-body::-webkit-scrollbar-thumb {
+          background: #cbd5e1;
+          border-radius: 10px;
+          border: 2px solid #f1f5f9;
+        }
+
+        .modal-body::-webkit-scrollbar-thumb:hover,
+        .quiz-modal-body::-webkit-scrollbar-thumb:hover {
+          background: #94a3b8;
+        }
+
+        .modal-selected-summary {
+          display: flex;
+          align-items: center;
+          padding: 12px 16px;
+          background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+          border: 1px solid #6ee7b7;
+          border-radius: 10px;
+          margin-bottom: 16px;
+        }
+
+        .summary-label {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          color: #059669;
+          font-weight: 600;
+          font-size: 0.9rem;
+        }
+
+        .modal-documents {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .modal-doc-card {
+          border: 1px solid #e5e7eb;
+          border-radius: 12px;
+          overflow: hidden;
+          transition: all 0.2s ease;
+        }
+
+        .modal-doc-card:hover {
+          border-color: #94a3b8;
+        }
+
+        .modal-doc-card.expanded {
+          border-color: #3b82f6;
+          box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+        }
+
+        .modal-doc-header {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 14px 16px;
+          background: #f8fafc;
+          cursor: pointer;
+          transition: background 0.2s ease;
+        }
+
+        .modal-doc-header:hover {
+          background: #f1f5f9;
+        }
+
+        .modal-doc-card.expanded .modal-doc-header {
+          background: #eff6ff;
+          border-bottom: 1px solid #e5e7eb;
+        }
+
+        .modal-doc-checkbox {
+          display: flex;
+          align-items: center;
+        }
+
+        .modal-doc-checkbox input[type="checkbox"] {
+          width: 18px;
+          height: 18px;
+          cursor: pointer;
+          accent-color: #3b82f6;
+        }
+
+        .modal-doc-info {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          flex: 1;
+        }
+
+        .modal-doc-info .doc-icon {
+          color: #3b82f6;
+        }
+
+        .modal-doc-details {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .modal-doc-name {
+          font-weight: 600;
+          color: #1e293b;
+          font-size: 0.9rem;
+        }
+
+        .modal-doc-meta {
+          font-size: 0.8rem;
+          color: #64748b;
+        }
+
+        .modal-doc-status {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .modal-selected-badge {
+          padding: 4px 10px;
+          background: #dbeafe;
+          border-radius: 20px;
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: #2563eb;
+        }
+
+        .modal-expand-icon {
+          display: flex;
+          align-items: center;
+          color: #64748b;
+          transition: transform 0.2s ease;
+        }
+
+        .modal-expand-icon.expanded {
+          transform: rotate(180deg);
+        }
+
+        .modal-doc-topics {
+          padding: 16px;
+          background: white;
+        }
+
+        .modal-topics-toolbar {
+          margin-bottom: 12px;
+        }
+
+        .btn-modal-select-all {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 6px 12px;
+          border: 1px solid #e5e7eb;
+          border-radius: 8px;
+          background: white;
+          color: #64748b;
+          font-size: 0.8rem;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .btn-modal-select-all:hover {
+          border-color: #3b82f6;
+          color: #3b82f6;
+          background: #eff6ff;
+        }
+
+        .modal-topics-grid {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+
+        .modal-topic-tag {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 8px 14px;
+          border: 2px solid #e5e7eb;
+          border-radius: 20px;
+          background: white;
+          font-size: 0.85rem;
+          color: #374151;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .modal-topic-tag:hover {
+          border-color: #3b82f6;
+          background: #eff6ff;
+        }
+
+        .modal-topic-tag.selected {
+          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+          border-color: #2563eb;
+          color: white;
+          box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35);
+        }
+
+        .modal-topic-tag .check-icon {
+          color: white;
+        }
+
+        .modal-loading-topics {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          padding: 24px;
+          color: #64748b;
+          font-size: 0.9rem;
+        }
+
+        .modal-footer {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 12px;
+          padding: 16px 24px;
+          border-top: 1px solid #e5e7eb;
+          background: #f8fafc;
+        }
+
+        .modal-footer .btn {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 10px 20px;
+          border-radius: 10px;
+          font-weight: 600;
+          font-size: 0.9rem;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .modal-footer .btn-secondary {
+          background: white;
+          border: 1px solid #e5e7eb;
+          color: #64748b;
+        }
+
+        .modal-footer .btn-secondary:hover {
+          background: #f1f5f9;
+          color: #374151;
+        }
+
+        .modal-footer .btn-primary {
+          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+          border: none;
+          color: white;
+        }
+
+        .modal-footer .btn-primary:hover:not(:disabled) {
+          background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+        }
+
+        .modal-footer .btn-primary:disabled {
+          background: #cbd5e1;
+          cursor: not-allowed;
+        }
+
+        /* Quiz Preview Section */
+        .quiz-preview-section {
+          margin-top: 20px;
+        }
+
+        .quiz-preview-card {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 16px 20px;
+          background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+          border: 1px solid #6ee7b7;
+          border-radius: 12px;
+          gap: 16px;
+        }
+
+        .quiz-preview-info {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          flex: 1;
+        }
+
+        .quiz-preview-info .quiz-icon {
+          color: #059669;
+        }
+
+        .quiz-preview-details {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .quiz-preview-title {
+          font-weight: 600;
+          color: #047857;
+          font-size: 0.95rem;
+        }
+
+        .quiz-preview-meta {
+          font-size: 0.82rem;
+          color: #059669;
+          max-width: 300px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .quiz-preview-actions {
+          display: flex;
+          gap: 8px;
+        }
+
+        .quiz-preview-actions .btn {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 8px 16px;
+          border-radius: 8px;
+          font-size: 0.85rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .quiz-preview-actions .btn-primary {
+          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+          border: none;
+          color: white;
+        }
+
+        .quiz-preview-actions .btn-primary:hover {
+          background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
+        }
+
+        .quiz-preview-actions .btn-new-quiz {
+          background: white;
+          border: 1px solid #d1fae5;
+          color: #059669;
+        }
+
+        .quiz-preview-actions .btn-new-quiz:hover {
+          background: #ecfdf5;
+          border-color: #6ee7b7;
+        }
+
+        /* Quiz Modal Styles */
+        .quiz-modal {
+          background: white;
+          border-radius: 16px;
+          width: 100%;
+          max-width: 800px;
+          max-height: 90vh;
+          display: flex;
+          flex-direction: column;
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+          animation: slideUp 0.3s ease;
+        }
+
+        .quiz-modal-header {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 20px 24px;
+          border-bottom: 1px solid #e5e7eb;
+          background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+          border-radius: 16px 16px 0 0;
+        }
+
+        .quiz-modal-header h3 {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin: 0;
+          font-size: 1.1rem;
+          font-weight: 600;
+          color: #1e293b;
+          flex: 1;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .quiz-modal-header h3 svg {
+          color: #3b82f6;
+          flex-shrink: 0;
+        }
+
+        .quiz-modal-header-info {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .quiz-count {
+          padding: 4px 12px;
+          background: #dbeafe;
+          border-radius: 20px;
+          font-size: 0.8rem;
+          font-weight: 600;
+          color: #2563eb;
+        }
+
+        .quiz-modal-body {
+          flex: 1;
+          overflow-y: auto;
+          padding: 20px 24px;
+        }
+
+        .quiz-modal .quiz-questions {
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+
+        .quiz-modal .quiz-question {
+          background: white;
+          border: 1px solid #e5e7eb;
+          border-radius: 12px;
+          padding: 16px;
+          transition: all 0.2s ease;
+        }
+
+        .quiz-modal .quiz-question:hover {
+          border-color: #94a3b8;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        .quiz-modal .quiz-question.editing {
+          border-color: #3b82f6;
+          box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+        }
+
+        .quiz-modal .question-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 12px;
+        }
+
+        .quiz-modal .question-number {
+          font-weight: 700;
+          color: #3b82f6;
+          font-size: 0.9rem;
+          padding: 4px 12px;
+          background: #eff6ff;
+          border-radius: 6px;
+        }
+
+        .quiz-modal .btn-edit-question {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          padding: 4px 10px;
+          border: 1px solid #e5e7eb;
+          border-radius: 6px;
+          background: white;
+          color: #64748b;
+          font-size: 0.75rem;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .quiz-modal .btn-edit-question:hover {
+          border-color: #3b82f6;
+          color: #3b82f6;
+          background: #eff6ff;
+        }
+
+        .quiz-modal .question-text {
+          font-size: 0.95rem;
+          line-height: 1.6;
+          color: #1e293b;
+          margin-bottom: 12px;
+        }
+
+        .quiz-modal .question-options {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .quiz-modal .option-label {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 10px 14px;
+          border: 1px solid #e5e7eb;
+          border-radius: 8px;
+          background: #f8fafc;
+          transition: all 0.2s ease;
+        }
+
+        .quiz-modal .option-label.correct-answer {
+          background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+          border-color: #6ee7b7;
+        }
+
+        .quiz-modal .option-key {
+          font-weight: 700;
+          color: #3b82f6;
+          min-width: 24px;
+        }
+
+        .quiz-modal .option-value {
+          flex: 1;
+          color: #374151;
+          font-size: 0.9rem;
+        }
+
+        .quiz-modal .question-explanation {
+          margin-top: 12px;
+          padding: 12px;
+          background: #fffbeb;
+          border: 1px solid #fcd34d;
+          border-radius: 8px;
+          font-size: 0.85rem;
+          color: #92400e;
+        }
+
+        .quiz-modal .edit-question-text,
+        .quiz-modal .edit-option-input,
+        .quiz-modal .edit-explanation textarea {
+          width: 100%;
+          padding: 10px 12px;
+          border: 2px solid #e5e7eb;
+          border-radius: 8px;
+          font-size: 0.9rem;
+          font-family: inherit;
+          resize: vertical;
+          transition: border-color 0.2s ease;
+        }
+
+        .quiz-modal .edit-question-text:focus,
+        .quiz-modal .edit-option-input:focus,
+        .quiz-modal .edit-explanation textarea:focus {
+          outline: none;
+          border-color: #3b82f6;
+        }
+
+        .quiz-modal .edit-option {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin-bottom: 8px;
+        }
+
+        .quiz-modal .correct-label {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          font-size: 0.8rem;
+          color: #64748b;
+          cursor: pointer;
+        }
+
+        .quiz-modal .edit-explanation {
+          margin-top: 12px;
+        }
+
+        .quiz-modal .edit-explanation label {
+          display: block;
+          margin-bottom: 6px;
+          font-size: 0.85rem;
+          font-weight: 500;
+          color: #64748b;
+        }
+
+        .quiz-modal .question-edit-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 8px;
+          margin-top: 12px;
+        }
+
+        .quiz-modal .question-edit-actions .btn {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          padding: 6px 12px;
+          border-radius: 6px;
+          font-size: 0.8rem;
+          font-weight: 500;
+          cursor: pointer;
+        }
+
+        .quiz-modal .btn-secondary {
+          background: #f1f5f9;
+          border: 1px solid #e5e7eb;
+          color: #64748b;
+        }
+
+        .quiz-modal .btn-secondary:hover {
+          background: #e2e8f0;
+        }
+
+        .quiz-modal .btn-success {
+          background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+          border: none;
+          color: white;
+        }
+
+        .quiz-modal .btn-success:hover {
+          background: linear-gradient(135deg, #059669 0%, #047857 100%);
+        }
+
+        /* Quiz Modal Footer - Fixed */
+        .quiz-modal-footer {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 12px;
+          padding: 16px 24px;
+          border-top: 1px solid #e5e7eb;
+          background: #f8fafc;
+          border-radius: 0 0 16px 16px;
+          position: sticky;
+          bottom: 0;
+        }
+
+        .quiz-modal-footer .btn {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 10px 20px;
+          border-radius: 10px;
+          font-weight: 600;
+          font-size: 0.9rem;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .quiz-modal-footer .btn-secondary {
+          background: white;
+          border: 1px solid #e5e7eb;
+          color: #64748b;
+        }
+
+        .quiz-modal-footer .btn-secondary:hover {
+          background: #f1f5f9;
+          color: #374151;
+        }
+
+        .quiz-modal-footer .btn-export {
+          background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+          border: none;
+          color: white;
+        }
+
+        .quiz-modal-footer .btn-export:hover:not(:disabled) {
+          background: linear-gradient(135deg, #059669 0%, #047857 100%);
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+        }
+
+        .quiz-modal-footer .btn-export:disabled {
+          background: #cbd5e1;
+          cursor: not-allowed;
+        }
+
+        /* Edit Topics Modal Styles */
+        .edit-topics-overlay {
+          z-index: 1100; /* Higher than topic modal */
+        }
+
+        .edit-topics-modal {
+          background: white;
+          border-radius: 16px;
+          width: 100%;
+          max-width: 750px;
+          max-height: 85vh;
+          display: flex;
+          flex-direction: column;
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+          animation: slideUp 0.3s ease;
+        }
+
+        .edit-topics-modal .modal-body {
+          flex: 1;
+          overflow-y: auto;
+          padding: 20px 24px;
+          padding-bottom: 40px; /* Giảm padding để khoảng cách hợp lý hơn */
+        }
+
+        .edit-topics-body {
+          display: flex;
+          flex-direction: column;
+          gap: 20px;
+          overflow: visible; /* Bỏ scroll inner */
+        }
+
+        .add-topic-section label,
+        .edit-topics-list label {
+          display: block;
+          font-weight: 600;
+          color: #1e293b;
+          margin-bottom: 10px;
+          font-size: 0.9rem;
+        }
+
+        .add-topic-input-group {
+          display: flex;
+          gap: 10px;
+        }
+
+        .add-topic-input {
+          flex: 1;
+          padding: 12px 16px;
+          border: 2px solid #e5e7eb;
+          border-radius: 10px;
+          font-size: 0.9rem;
+          transition: all 0.2s ease;
+        }
+
+        .add-topic-input:focus {
+          outline: none;
+          border-color: #3b82f6;
+          box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+        }
+
+        .btn-add-topic {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 0 20px;
+          background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+          border: none;
+          border-radius: 10px;
+          color: white;
+          font-weight: 600;
+          font-size: 0.9rem;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .btn-add-topic:hover:not(:disabled) {
+          background: linear-gradient(135deg, #059669 0%, #047857 100%);
+          transform: translateY(-1px);
+        }
+
+        .btn-add-topic:disabled {
+          background: #cbd5e1;
+          cursor: not-allowed;
+        }
+
+        .no-topics-message {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          padding: 40px 20px;
+          background: #f8fafc;
+          border: 2px dashed #e5e7eb;
+          border-radius: 12px;
+          color: #64748b;
+          font-size: 0.9rem;
+        }
+
+        .topics-edit-grid {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          /* Bỏ max-height và overflow để sử dụng scroll của modal-body */
+        }
+
+        /* Bỏ scrollbar styles cho topics-edit-grid */
+
+        .topic-edit-item {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 12px 16px;
+          background: #f8fafc;
+          border: 1px solid #e5e7eb;
+          border-radius: 10px;
+          transition: all 0.2s ease;
+        }
+
+        .topic-edit-item:hover {
+          background: #f1f5f9;
+          border-color: #94a3b8;
+        }
+
+        .topic-number {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 28px;
+          height: 28px;
+          background: #3b82f6;
+          color: white;
+          border-radius: 8px;
+          font-size: 0.8rem;
+          font-weight: 700;
+        }
+
+        .topic-name {
+          flex: 1;
+          font-size: 0.9rem;
+          color: #1e293b;
+        }
+
+        .topic-actions {
+          display: flex;
+          gap: 6px;
+        }
+
+        .btn-edit-topic,
+        .btn-delete-topic {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          padding: 8px 12px;
+          min-width: 70px;
+          height: 32px;
+          border: 1px solid #e5e7eb;
+          border-radius: 8px;
+          background: white;
+          color: #64748b;
+          font-size: 0.8rem;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .btn-edit-topic:hover {
+          background: #eff6ff;
+          border-color: #3b82f6;
+          color: #3b82f6;
+        }
+
+        .btn-delete-topic:hover {
+          background: #fee2e2;
+          border-color: #fca5a5;
+          color: #dc2626;
+        }
+
+        .topic-edit-inline {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex: 1;
+        }
+
+        .topic-edit-input {
+          flex: 1;
+          padding: 8px 12px;
+          border: 2px solid #3b82f6;
+          border-radius: 8px;
+          font-size: 0.9rem;
+          outline: none;
+        }
+
+        .btn-save-edit,
+        .btn-cancel-edit {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 32px;
+          height: 32px;
+          border: none;
+          border-radius: 8px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .btn-save-edit {
+          background: #10b981;
+          color: white;
+        }
+
+        .btn-save-edit:hover {
+          background: #059669;
+        }
+
+        .btn-cancel-edit {
+          background: #f1f5f9;
+          color: #64748b;
+        }
+
+        .btn-cancel-edit:hover {
+          background: #e2e8f0;
+          color: #374151;
+        }
+
+        .btn-modal-edit-topics {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 6px 12px;
+          border: 1px solid #fcd34d;
+          border-radius: 8px;
+          background: #fffbeb;
+          color: #b45309;
+          font-size: 0.8rem;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .btn-modal-edit-topics:hover {
+          background: #fef3c7;
+          border-color: #f59e0b;
+          color: #92400e;
+        }
+
+        .modal-topics-toolbar {
+          display: flex;
+          gap: 8px;
+          margin-bottom: 12px;
         }
       `}</style>
     </div>
