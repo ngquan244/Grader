@@ -422,13 +422,22 @@ const DocumentRAGPanel: React.FC = () => {
   const saveTopicsToBackend = async () => {
     if (!editingDocumentFilename) return;
     
+    // Auto-save the currently editing topic if any
+    let topicsToSave = [...editingTopics];
+    if (editingTopicIndex !== null && editingTopicValue.trim()) {
+      topicsToSave[editingTopicIndex] = editingTopicValue.trim();
+      setEditingTopics(topicsToSave);
+      setEditingTopicIndex(null);
+      setEditingTopicValue('');
+    }
+    
     setIsSavingTopics(true);
     try {
-      const response = await updateDocumentTopics(editingDocumentFilename, editingTopics);
+      const response = await updateDocumentTopics(editingDocumentFilename, topicsToSave);
       
       if (response.success) {
         // Update local caches
-        const updatedTopics: TopicSuggestion[] = editingTopics.map((name, idx) => ({
+        const updatedTopics: TopicSuggestion[] = topicsToSave.map((name, idx) => ({
           name,
           relevance_score: 1 - (idx * 0.05),
           description: ''
@@ -441,7 +450,7 @@ const DocumentRAGPanel: React.FC = () => {
         // Update indexed documents count
         setIndexedDocuments(prev => prev.map(doc => 
           doc.filename === editingDocumentFilename 
-            ? { ...doc, topic_count: editingTopics.length }
+            ? { ...doc, topic_count: topicsToSave.length }
             : doc
         ));
         
@@ -1654,9 +1663,11 @@ const DocumentRAGPanel: React.FC = () => {
                             />
                             <button className="btn-save-edit" onClick={saveEditTopic}>
                               <Check size={14} />
+                              <span>Lưu</span>
                             </button>
                             <button className="btn-cancel-edit" onClick={cancelEditTopic}>
                               <X size={14} />
+                              <span>Hủy</span>
                             </button>
                           </div>
                         ) : (
@@ -1870,8 +1881,8 @@ const DocumentRAGPanel: React.FC = () => {
         .panel-header {
           display: flex;
           align-items: center;
-          gap: 12px;
-          padding: 20px 24px;
+          gap: 10px;
+          padding: 12px 24px;
           border-bottom: 1px solid var(--border-color, #e5e7eb);
         }
 
@@ -4987,30 +4998,37 @@ const DocumentRAGPanel: React.FC = () => {
           display: flex;
           align-items: center;
           justify-content: center;
-          width: 32px;
+          gap: 6px;
+          padding: 8px 12px;
+          min-width: 70px;
           height: 32px;
-          border: none;
+          border: 1px solid #e5e7eb;
           border-radius: 8px;
+          font-size: 0.8rem;
+          font-weight: 500;
           cursor: pointer;
           transition: all 0.2s ease;
         }
 
         .btn-save-edit {
           background: #10b981;
+          border-color: #10b981;
           color: white;
         }
 
         .btn-save-edit:hover {
           background: #059669;
+          border-color: #059669;
         }
 
         .btn-cancel-edit {
-          background: #f1f5f9;
+          background: white;
           color: #64748b;
         }
 
         .btn-cancel-edit:hover {
-          background: #e2e8f0;
+          background: #f1f5f9;
+          border-color: #cbd5e1;
           color: #374151;
         }
 
