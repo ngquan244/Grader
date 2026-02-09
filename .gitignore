@@ -103,6 +103,9 @@ docs/
 data/rag_uploads/
 data/chroma/document_rag/
 data/quiz
+data/canvas_downloads/
+data/canvas_rag_uploads/
+data/chroma
 kaggle/Filled-temp/
 final_result.json
 test_fresh.json
@@ -119,3 +122,4 @@ README_document_rag.md
 kaggle/output.ipynb
 final_result.json
 kaggle/Filled-temp/test2.jpg
+
