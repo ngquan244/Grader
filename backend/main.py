@@ -19,6 +19,7 @@ from backend.routes import chat, upload, quiz, grading, config as config_routes
 from backend.routes import document_rag as document_rag_routes
 from backend.routes import canvas as canvas_routes
 from backend.routes import canvas_rag as canvas_rag_routes
+from backend.auth import auth_router
 from backend.config import settings
 from backend.core import BaseAPIException
 
@@ -95,6 +96,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 
 # Include routers
+app.include_router(auth_router, prefix="/api", tags=["Authentication"])
 app.include_router(chat.router, prefix="/api/chat", tags=["Chat"])
 app.include_router(upload.router, prefix="/api/upload", tags=["Upload"])
 app.include_router(quiz.router, prefix="/api/quiz", tags=["Quiz"])

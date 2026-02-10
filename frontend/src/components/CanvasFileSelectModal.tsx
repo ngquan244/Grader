@@ -11,9 +11,9 @@ import {
   Check,
   ChevronRight,
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import { canvasApi } from '../api/canvas';
 import {
-  isCanvasConfigured,
   getSelectedCourse,
   setSelectedCourse,
 } from '../utils/canvasStorage';
@@ -34,6 +34,7 @@ const CanvasFileSelectModal: React.FC<CanvasFileSelectModalProps> = ({
   onFilesSelected,
   acceptedTypes = ['application/pdf'],
 }) => {
+  const { isAuthenticated, canvasTokens } = useAuth();
   // Step state
   const [step, setStep] = useState<ModalStep>('course');
   
@@ -71,8 +72,13 @@ const CanvasFileSelectModal: React.FC<CanvasFileSelectModalProps> = ({
   }, [isOpen]);
 
   const fetchCourses = async () => {
-    if (!isCanvasConfigured()) {
-      setCourseError('Canvas chưa được cấu hình. Vui lòng thêm access token trong Cài đặt.');
+    const isConfigured = isAuthenticated && canvasTokens.length > 0;
+    if (!isConfigured) {
+      setCourseError(
+        !isAuthenticated
+          ? 'Vui lòng đăng nhập để sử dụng tính năng Canvas.'
+          : 'Canvas chưa được cấu hình. Vui lòng thêm access token trong Cài đặt.'
+      );
       return;
     }
 
@@ -183,7 +189,7 @@ const CanvasFileSelectModal: React.FC<CanvasFileSelectModalProps> = ({
 
   if (!isOpen) return null;
 
-  const isConfigured = isCanvasConfigured();
+  const isConfigured = isAuthenticated && canvasTokens.length > 0;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -220,7 +226,11 @@ const CanvasFileSelectModal: React.FC<CanvasFileSelectModalProps> = ({
             <div className="canvas-not-configured-modal">
               <AlertCircle size={48} />
               <h3>Canvas chưa được cấu hình</h3>
-              <p>Vui lòng thêm Canvas access token trong trang Cài đặt trước.</p>
+              <p>
+                {!isAuthenticated
+                  ? 'Vui lòng đăng nhập để sử dụng tính năng Canvas.'
+                  : 'Vui lòng thêm Canvas access token trong trang Cài đặt trước.'}
+              </p>
             </div>
           )}
 

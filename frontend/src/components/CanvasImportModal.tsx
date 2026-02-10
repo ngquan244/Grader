@@ -9,9 +9,13 @@ import {
   Settings,
   BookOpen,
   Server,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { authApi } from '../api/auth';
 import { fetchCourses, importQTIToCanvas } from '../api/canvas';
-import { getCanvasSettings, getCanvasBaseUrl, getCanvasToken } from '../utils/canvasStorage';
+import { getCanvasSettings } from '../utils/canvasStorage';
 import type { CanvasCourse, ImportProgressStatus } from '../types/canvas';
 
 interface CanvasImportModalProps {
@@ -27,10 +31,13 @@ const CanvasImportModal: React.FC<CanvasImportModalProps> = ({
   qtiZipBlob,
   defaultBankName,
 }) => {
+  const { canvasTokens, isAuthenticated } = useAuth();
+  
   // Form fields
-  const [canvasHost, setCanvasHost] = useState(getCanvasBaseUrl());
-  const [accessToken, setAccessToken] = useState(getCanvasToken() || '');
+  const [canvasHost, setCanvasHost] = useState('');
+  const [accessToken, setAccessToken] = useState('');
   const [showToken, setShowToken] = useState(false);
+  const [isFetchingToken, setIsFetchingToken] = useState(false);
   const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
   const [questionBankName, setQuestionBankName] = useState(defaultBankName);
 
@@ -47,23 +54,48 @@ const CanvasImportModal: React.FC<CanvasImportModalProps> = ({
   // Validation
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
-  // Load saved settings on open
+  // Load saved settings and fetch token on open
   useEffect(() => {
     if (isOpen) {
-      const settings = getCanvasSettings();
-      if (settings) {
-        setCanvasHost(settings.baseUrl);
-        setAccessToken(settings.accessToken);
-        if (settings.selectedCourseId) {
-          setSelectedCourseId(settings.selectedCourseId);
-        }
-      }
+      // Reset states
       setQuestionBankName(defaultBankName);
       setImportStatus('idle');
       setImportError(null);
       setImportMessage('');
+      setShowToken(false);
+      
+      // Load saved course selection
+      const settings = getCanvasSettings();
+      if (settings?.selectedCourseId) {
+        setSelectedCourseId(settings.selectedCourseId);
+      }
+      
+      // Auto-fetch token from auth context
+      const fetchTokenFromAuth = async () => {
+        if (isAuthenticated && canvasTokens.length > 0) {
+          setIsFetchingToken(true);
+          try {
+            const result = await authApi.getActiveCanvasToken();
+            setAccessToken(result.access_token);
+            setCanvasHost(result.canvas_domain);
+          } catch (err) {
+            console.error('Failed to fetch Canvas token:', err);
+            // Keep fields empty if fetch fails
+            setAccessToken('');
+            setCanvasHost('');
+          } finally {
+            setIsFetchingToken(false);
+          }
+        } else {
+          // Not authenticated or no token - keep fields empty
+          setAccessToken('');
+          setCanvasHost('');
+        }
+      };
+      
+      fetchTokenFromAuth();
     }
-  }, [isOpen, defaultBankName]);
+  }, [isOpen, defaultBankName, isAuthenticated, canvasTokens]);
 
   // Fetch courses when token changes
   const handleFetchCourses = async () => {
@@ -246,8 +278,9 @@ const CanvasImportModal: React.FC<CanvasImportModalProps> = ({
                   type="text"
                   value={canvasHost}
                   onChange={(e) => setCanvasHost(e.target.value)}
-                  placeholder="https://canvas.example.com"
+                  placeholder={isFetchingToken ? 'Loading from Settings...' : 'https://canvas.example.com'}
                   className={validationErrors.canvasHost ? 'error' : ''}
+                  disabled={isFetchingToken}
                 />
                 {validationErrors.canvasHost && (
                   <span className="error-text">{validationErrors.canvasHost}</span>
@@ -259,26 +292,39 @@ const CanvasImportModal: React.FC<CanvasImportModalProps> = ({
                 <label>
                   <Settings size={16} />
                   Access Token
-                  <span className="label-hint">(from Settings or override below)</span>
+                  <span className="label-hint">
+                    {isFetchingToken ? '(loading from Settings...)' : '(from Settings or override below)'}
+                  </span>
                 </label>
                 <div className="token-input-wrapper">
                   <input
                     type={showToken ? 'text' : 'password'}
                     value={accessToken}
                     onChange={(e) => setAccessToken(e.target.value)}
-                    placeholder="Canvas API access token"
+                    placeholder={isFetchingToken ? 'Loading token...' : 'Canvas API access token'}
                     className={validationErrors.accessToken ? 'error' : ''}
+                    disabled={isFetchingToken}
                   />
                   <button
                     type="button"
                     className="toggle-visibility"
                     onClick={() => setShowToken(!showToken)}
+                    disabled={isFetchingToken}
                   >
-                    {showToken ? 'Hide' : 'Show'}
+                    {isFetchingToken ? (
+                      <Loader2 size={14} className="spin" />
+                    ) : showToken ? (
+                      <EyeOff size={14} />
+                    ) : (
+                      <Eye size={14} />
+                    )}
                   </button>
                 </div>
                 {validationErrors.accessToken && (
                   <span className="error-text">{validationErrors.accessToken}</span>
+                )}
+                {!isAuthenticated && (
+                  <span className="info-text">Please login and add Canvas token in Settings first</span>
                 )}
               </div>
 

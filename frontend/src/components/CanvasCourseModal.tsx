@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { X, Loader2, BookOpen, AlertCircle, CheckCircle } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import { canvasApi } from '../api/canvas';
-import { setSelectedCourse, isCanvasConfigured } from '../utils/canvasStorage';
+import { setSelectedCourse } from '../utils/canvasStorage';
 import type { CanvasCourse } from '../types/canvas';
 
 interface CanvasCourseModalProps {
@@ -15,6 +16,7 @@ const CanvasCourseModal: React.FC<CanvasCourseModalProps> = ({
   onClose,
   onCourseSelected,
 }) => {
+  const { isAuthenticated, canvasTokens } = useAuth();
   const [courses, setCourses] = useState<CanvasCourse[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,8 +29,13 @@ const CanvasCourseModal: React.FC<CanvasCourseModalProps> = ({
   }, [isOpen]);
 
   const fetchCourses = async () => {
-    if (!isCanvasConfigured()) {
-      setError('Canvas access token not configured. Please add it in Settings.');
+    const isConfigured = isAuthenticated && canvasTokens.length > 0;
+    if (!isConfigured) {
+      setError(
+        !isAuthenticated
+          ? 'Please login first to access Canvas integration.'
+          : 'Canvas access token not configured. Please add it in Settings.'
+      );
       return;
     }
 

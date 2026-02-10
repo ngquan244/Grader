@@ -1,6 +1,7 @@
 import React from 'react';
 import { MessageSquare, FileUp, BookOpen, BarChart3, Settings, GraduationCap, FileText, FolderOpen } from 'lucide-react';
 import { TABS, type TabType } from '../types';
+import UserMenu from './UserMenu';
 
 interface SidebarProps {
   activeTab: TabType;
@@ -47,10 +48,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {
         })}
       </nav>
 
-      <div className="sidebar-footer">
-        <p>Teaching Assistant</p>
-        <p className="version">v1.0.0</p>
-      </div>
+      {/* User menu with logout */}
+      <UserMenu />
     </div>
   );
 };

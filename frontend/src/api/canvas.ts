@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { apiClient } from './client';
-import { getCanvasToken, getCanvasBaseUrl } from '../utils/canvasStorage';
+import { authApi } from './auth';
 import type {
   CanvasCoursesResponse,
   CanvasFilesResponse,
@@ -15,21 +15,48 @@ import type {
   QTIImportResponse,
 } from '../types/canvas';
 
+// Cache for Canvas token to avoid repeated API calls
+let cachedToken: { token: string; baseUrl: string; expiresAt: number } | null = null;
+
 /**
- * Get headers with Canvas token for proxy requests
+ * Get Canvas headers from backend (fetches decrypted token)
+ * Caches the token for 5 minutes to reduce API calls
  */
-function getCanvasHeaders(): Record<string, string> {
-  const token = getCanvasToken();
-  const baseUrl = getCanvasBaseUrl();
+async function getCanvasHeaders(): Promise<Record<string, string>> {
+  const now = Date.now();
   
-  if (!token) {
-    throw new Error('Canvas access token not configured');
+  // Return cached token if still valid
+  if (cachedToken && cachedToken.expiresAt > now) {
+    return {
+      'X-Canvas-Token': cachedToken.token,
+      'X-Canvas-Base-Url': cachedToken.baseUrl,
+    };
   }
-  
-  return {
-    'X-Canvas-Token': token,
-    'X-Canvas-Base-Url': baseUrl,
-  };
+
+  try {
+    const { access_token, canvas_domain } = await authApi.getActiveCanvasToken();
+    
+    // Cache for 5 minutes
+    cachedToken = {
+      token: access_token,
+      baseUrl: canvas_domain,
+      expiresAt: now + 5 * 60 * 1000,
+    };
+
+    return {
+      'X-Canvas-Token': access_token,
+      'X-Canvas-Base-Url': canvas_domain,
+    };
+  } catch {
+    throw new Error('Canvas access token not configured. Please add a token in Settings.');
+  }
+}
+
+/**
+ * Clear the cached Canvas token (call when token is updated)
+ */
+export function clearCanvasTokenCache(): void {
+  cachedToken = null;
 }
 
 /**
@@ -37,13 +64,14 @@ function getCanvasHeaders(): Record<string, string> {
  */
 export async function fetchCourses(): Promise<CanvasCoursesResponse> {
   try {
+    const headers = await getCanvasHeaders();
     const response = await apiClient.get<CanvasCoursesResponse>(
       '/api/canvas/courses',
-      { headers: getCanvasHeaders() }
+      { headers }
     );
     return response.data;
   } catch (error: unknown) {
-    const err = error as { response?: { data?: { error?: string }; status?: number } };
+    const err = error as { response?: { data?: { error?: string }; status?: number }; message?: string };
     if (err.response?.status === 401) {
       return {
         success: false,
@@ -54,7 +82,7 @@ export async function fetchCourses(): Promise<CanvasCoursesResponse> {
     return {
       success: false,
       courses: [],
-      error: err.response?.data?.error || 'Failed to fetch courses',
+      error: err.response?.data?.error || err.message || 'Failed to fetch courses',
     };
   }
 }
@@ -64,13 +92,14 @@ export async function fetchCourses(): Promise<CanvasCoursesResponse> {
  */
 export async function fetchCourseFiles(courseId: number): Promise<CanvasFilesResponse> {
   try {
+    const headers = await getCanvasHeaders();
     const response = await apiClient.get<CanvasFilesResponse>(
       `/api/canvas/courses/${courseId}/files`,
-      { headers: getCanvasHeaders() }
+      { headers }
     );
     return response.data;
   } catch (error: unknown) {
-    const err = error as { response?: { data?: { error?: string }; status?: number } };
+    const err = error as { response?: { data?: { error?: string }; status?: number }; message?: string };
     if (err.response?.status === 401) {
       return {
         success: false,
@@ -83,7 +112,7 @@ export async function fetchCourseFiles(courseId: number): Promise<CanvasFilesRes
       success: false,
       files: [],
       course_id: courseId,
-      error: err.response?.data?.error || 'Failed to fetch files',
+      error: err.response?.data?.error || err.message || 'Failed to fetch files',
     };
   }
 }
@@ -95,20 +124,21 @@ export async function downloadFile(
   request: FileDownloadRequest
 ): Promise<FileDownloadResponse> {
   try {
+    const headers = await getCanvasHeaders();
     const response = await apiClient.post<FileDownloadResponse>(
       '/api/canvas/download',
       request,
-      { headers: getCanvasHeaders() }
+      { headers }
     );
     return response.data;
   } catch (error: unknown) {
-    const err = error as { response?: { data?: { error?: string } } };
+    const err = error as { response?: { data?: { error?: string } }; message?: string };
     return {
       success: false,
       file_id: request.file_id,
       filename: request.filename,
       status: 'failed',
-      error: err.response?.data?.error || 'Download failed',
+      error: err.response?.data?.error || err.message || 'Download failed',
     };
   }
 }
@@ -120,11 +150,12 @@ export async function downloadFiles(
   request: BatchDownloadRequest
 ): Promise<BatchDownloadResponse> {
   try {
+    const headers = await getCanvasHeaders();
     const response = await apiClient.post<BatchDownloadResponse>(
       '/api/canvas/download/batch',
       request,
       { 
-        headers: getCanvasHeaders(),
+        headers,
         timeout: 300000, // 5 minutes for batch downloads
       }
     );
@@ -187,17 +218,18 @@ export async function importQTIToCanvas(
   request: QTIImportRequest
 ): Promise<QTIImportResponse> {
   try {
+    const headers = await getCanvasHeaders();
     const response = await apiClient.post<QTIImportResponse>(
       '/api/canvas/import-qti-bank',
       request,
       { 
-        headers: getCanvasHeaders(),
+        headers,
         timeout: 300000, // 5 minutes for full import process
       }
     );
     return response.data;
   } catch (error: unknown) {
-    const err = error as { response?: { data?: { error?: string; detail?: string }; status?: number } };
+    const err = error as { response?: { data?: { error?: string; detail?: string }; status?: number }; message?: string };
     if (err.response?.status === 401) {
       return {
         success: false,
@@ -208,7 +240,7 @@ export async function importQTIToCanvas(
     return {
       success: false,
       status: 'failed',
-      error: err.response?.data?.error || err.response?.data?.detail || 'Failed to import QTI to Canvas',
+      error: err.response?.data?.error || err.response?.data?.detail || err.message || 'Failed to import QTI to Canvas',
     };
   }
 }
@@ -220,6 +252,7 @@ export const canvasApi = {
   downloadFiles,
   downloadFileWithProgress,
   importQTIToCanvas,
+  clearCanvasTokenCache,
 };
 
 export default canvasApi;

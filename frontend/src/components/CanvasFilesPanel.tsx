@@ -22,6 +22,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import { canvasApi } from '../api/canvas';
 import {
   downloadCanvasFile,
@@ -39,7 +40,6 @@ import {
   type CanvasStats,
 } from '../api/canvasRag';
 import {
-  isCanvasConfigured,
   getSelectedCourse,
   clearSelectedCourse,
 } from '../utils/canvasStorage';
@@ -115,6 +115,7 @@ const statusLabels: Record<ExtendedFileStatus, string> = {
 type PanelTab = 'remote' | 'local';
 
 const CanvasFilesPanel: React.FC = () => {
+  const { isAuthenticated, canvasTokens } = useAuth();
   const [activeTab, setActiveTab] = useState<PanelTab>('remote');
   
   // Remote files state (from Canvas API)
@@ -668,7 +669,7 @@ const CanvasFilesPanel: React.FC = () => {
     };
   };
 
-  const isConfigured = isCanvasConfigured();
+  const isConfigured = isAuthenticated && canvasTokens.length > 0;
 
   if (!isConfigured) {
     return (
@@ -680,7 +681,11 @@ const CanvasFilesPanel: React.FC = () => {
         <div className="canvas-not-configured">
           <AlertCircle size={48} />
           <h3>Canvas Not Configured</h3>
-          <p>Please add your Canvas access token in Settings first.</p>
+          <p>
+            {!isAuthenticated 
+              ? 'Please login first to access Canvas integration.'
+              : 'Please add your Canvas access token in Settings first.'}
+          </p>
         </div>
       </div>
     );

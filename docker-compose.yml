@@ -1,0 +1,118 @@
+# =============================================================================
+# Docker Compose Configuration for AI Teaching Assistant
+# =============================================================================
+# Production-ready PostgreSQL setup with proper security and persistence
+#
+# Usage:
+#   Development:  docker-compose up -d
+#   Production:   docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#   Stop:         docker-compose down
+#   With volumes: docker-compose down -v (removes data!)
+# =============================================================================
+
+services:
+  # ===========================================================================
+  # PostgreSQL Database
+  # ===========================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: grader_postgres
+    restart: unless-stopped
+    
+    # Environment configuration (use .env file in production)
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-grader_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-grader_secret_password}
+      POSTGRES_DB: ${POSTGRES_DB:-grader_db}
+      # Performance tuning
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.UTF-8"
+      # Timezone
+      TZ: UTC
+    
+    # Port mapping (exposed for DBeaver and local development)
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    
+    # Persistent volume for data
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    
+    # Health check for container orchestration
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-grader_user} -d ${POSTGRES_DB:-grader_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    
+    # Resource limits (adjust for your environment)
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Network configuration
+    networks:
+      - grader_network
+
+  # ===========================================================================
+  # Redis (Optional - for caching and session storage)
+  # ===========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: grader_redis
+    restart: unless-stopped
+    
+    # Redis configuration
+    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
+    
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    
+    volumes:
+      - redis_data:/data
+    
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+    
+    networks:
+      - grader_network
+
+# =============================================================================
+# Named Volumes (Persistent Storage)
+# =============================================================================
+volumes:
+  postgres_data:
+    driver: local
+    name: grader_postgres_data
+  redis_data:
+    driver: local
+    name: grader_redis_data
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  grader_network:
+    driver: bridge
+    name: grader_network

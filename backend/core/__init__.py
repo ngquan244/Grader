@@ -12,6 +12,15 @@ from .exceptions import (
     AIModelException
 )
 from .logger import logger, setup_logger, agent_logger, tools_logger, grading_logger
+from .security import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    create_refresh_token,
+    verify_access_token,
+    encrypt_token,
+    decrypt_token,
+)
 
 __all__ = [
     # Constants
@@ -35,4 +44,12 @@ __all__ = [
     "agent_logger",
     "tools_logger",
     "grading_logger",
+    # Security
+    "hash_password",
+    "verify_password",
+    "create_access_token",
+    "create_refresh_token",
+    "verify_access_token",
+    "encrypt_token",
+    "decrypt_token",
 ]

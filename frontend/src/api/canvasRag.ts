@@ -5,27 +5,53 @@
  */
 
 import axios from 'axios';
-import { getCanvasToken, getCanvasBaseUrl } from '../utils/canvasStorage';
+import { authApi } from './auth';
 
 const API_BASE = '/api/canvas-rag';
 
+// Cache for Canvas token to avoid repeated API calls
+let cachedToken: { token: string; baseUrl: string; expiresAt: number } | null = null;
+
 /**
- * Get headers with Canvas token for download requests
+ * Get Canvas headers from backend (fetches decrypted token)
+ * Caches the token for 5 minutes to reduce API calls
  */
-function getCanvasHeaders(): Record<string, string> {
-  const token = getCanvasToken();
-  const baseUrl = getCanvasBaseUrl();
+async function getCanvasHeaders(): Promise<Record<string, string>> {
+  const now = Date.now();
   
-  const headers: Record<string, string> = {};
-  
-  if (token) {
-    headers['X-Canvas-Token'] = token;
+  // Return cached token if still valid
+  if (cachedToken && cachedToken.expiresAt > now) {
+    return {
+      'X-Canvas-Token': cachedToken.token,
+      'X-Canvas-Base-Url': cachedToken.baseUrl,
+    };
   }
-  if (baseUrl) {
-    headers['X-Canvas-Base-Url'] = baseUrl;
+
+  try {
+    const { access_token, canvas_domain } = await authApi.getActiveCanvasToken();
+    
+    // Cache for 5 minutes
+    cachedToken = {
+      token: access_token,
+      baseUrl: canvas_domain,
+      expiresAt: now + 5 * 60 * 1000,
+    };
+
+    return {
+      'X-Canvas-Token': access_token,
+      'X-Canvas-Base-Url': canvas_domain,
+    };
+  } catch {
+    // Return empty headers if not authenticated
+    return {};
   }
-  
-  return headers;
+}
+
+/**
+ * Clear the cached Canvas token
+ */
+export function clearCanvasRagTokenCache(): void {
+  cachedToken = null;
 }
 
 // ===== Types =====
@@ -161,10 +187,11 @@ export interface CanvasQuizResponse {
 export async function downloadCanvasFile(
   request: CanvasDownloadRequest
 ): Promise<CanvasDownloadResponse> {
+  const headers = await getCanvasHeaders();
   const response = await axios.post<CanvasDownloadResponse>(
     `${API_BASE}/download`,
     request,
-    { headers: getCanvasHeaders() }
+    { headers }
   );
   return response.data;
 }
