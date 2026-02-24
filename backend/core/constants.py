@@ -32,7 +32,6 @@ class Messages:
     
     # Success messages
     UPLOAD_SUCCESS = "Upload thành công"
-    PDF_UPLOAD_SUCCESS = "Đã upload PDF đề thi thành công"
     IMAGE_UPLOAD_SUCCESS = "Đã upload ảnh thành công"
     ROLE_SWITCHED = "Đã chuyển vai trò thành công"
     GRADING_COMPLETE = "Đã chấm điểm xong"

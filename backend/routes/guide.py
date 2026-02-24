@@ -26,7 +26,6 @@ _SECTION_PANEL_MAP = {
     "chat ai": "chat",
     "upload bài thi": "upload",
     "upload": "upload",
-    "tạo quiz": "quiz",
     "chấm điểm": "grading",
     "rag tài liệu": "document_rag",
     "canvas lms": "canvas",
@@ -37,7 +36,6 @@ _SECTION_PANEL_MAP = {
 _FEATURE_NAMES = {
     "chat": "Chat AI",
     "upload": "Upload bài thi",
-    "quiz": "Tạo Quiz",
     "grading": "Chấm điểm tự động",
     "document_rag": "RAG Tài Liệu",
     "canvas": "Canvas LMS",

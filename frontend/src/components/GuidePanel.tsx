@@ -8,7 +8,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   BookOpen, Edit3, Save, X, Loader2, AlertCircle, CheckCircle2,
-  MessageSquare, Upload, FileQuestion, CheckSquare, BookText,
+  MessageSquare, Upload, CheckSquare, BookText,
   GraduationCap, PenSquare, Settings, HelpCircle, Home, ChevronRight,
   ArrowLeft,
 } from 'lucide-react';
@@ -23,7 +23,6 @@ import './GuidePanel.css';
 const SECTION_PANEL_MAP: Record<string, string> = {
   'chat ai': 'chat',
   'upload': 'upload',
-  'tạo quiz': 'quiz',
   'chấm điểm': 'grading',
   'rag tài liệu': 'document_rag',
   'canvas lms': 'canvas',
@@ -51,7 +50,6 @@ const FAQ_PANEL_MAP: Array<{ keywords: string[]; panels: string[] }> = [
 const SECTION_ICONS: Record<string, React.ReactNode> = {
   'chat ai':         <MessageSquare size={18} />,
   'upload':          <Upload size={18} />,
-  'tạo quiz':        <FileQuestion size={18} />,
   'chấm điểm':      <CheckSquare size={18} />,
   'rag tài liệu':   <BookText size={18} />,
   'canvas lms':      <GraduationCap size={18} />,
@@ -62,8 +60,7 @@ const SECTION_ICONS: Record<string, React.ReactNode> = {
 
 const SECTION_DESCRIPTIONS: Record<string, string> = {
   'chat ai':         'Giao tiếp AI bằng ngôn ngữ tự nhiên',
-  'upload':          'Tải ảnh bài thi & PDF đề thi',
-  'tạo quiz':        'Tạo bài kiểm tra HTML từ PDF',
+  'upload':          'Tải ảnh bài thi lên hệ thống',
   'chấm điểm':      'Chấm bài trắc nghiệm tự động',
   'rag tài liệu':   'Hỏi đáp thông minh từ tài liệu',
   'canvas lms':      'Tích hợp hệ thống Canvas',
@@ -149,7 +146,6 @@ function filterIntro(intro: string, isPanelVisible: (key: string) => boolean): s
   const featurePanelMap: Record<string, string> = {
     'Chat AI': 'chat',
     'Upload bài thi': 'upload',
-    'Tạo Quiz': 'quiz',
     'Chấm điểm tự động': 'grading',
     'RAG Tài Liệu': 'document_rag',
     'Canvas LMS': 'canvas',

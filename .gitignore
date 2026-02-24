@@ -100,25 +100,15 @@ test_output/
 output/
 docs/
 data/rag_uploads/
-data/chroma/document_rag/
-data/quiz
+data/chroma/
 data/canvas_downloads/
 data/canvas_rag_uploads/
-data/chroma
-kaggle/Filled-temp/
 final_result.json
 test_fresh.json
 test_result.json
-final_result.json
 test_new.json
 backend/agent/test_agent_gating.py
-final_result.json
 kaggle/output.ipynb
-RAG_base/RAG_AI_Tutor.ipynb
 tests/test_document_rag.py
-final_result.json
 README_document_rag.md
-kaggle/output.ipynb
-final_result.json
-kaggle/Filled-temp/test2.jpg
 

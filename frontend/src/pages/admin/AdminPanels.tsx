@@ -11,7 +11,6 @@ import {
   Save,
   MessageSquare,
   FileUp,
-  BookOpen,
   BarChart3,
   FileText,
   FolderOpen,
@@ -26,7 +25,6 @@ import { getAdminPanelConfig, updatePanelConfig, type PanelConfig } from '../../
 const PANEL_ICONS: Record<string, typeof MessageSquare> = {
   chat: MessageSquare,
   upload: FileUp,
-  quiz: BookOpen,
   grading: BarChart3,
   document_rag: FileText,
   canvas: FolderOpen,
@@ -38,7 +36,6 @@ const PANEL_ICONS: Record<string, typeof MessageSquare> = {
 const PANEL_DESCRIPTIONS: Record<string, string> = {
   chat: 'Trò chuyện với AI assistant để hỗ trợ giảng dạy',
   upload: 'Upload file bài thi, tài liệu để xử lý',
-  quiz: 'Tạo quiz tự động từ tài liệu đã upload',
   grading: 'Chấm điểm bài thi tự động bằng AI',
   document_rag: 'Hỏi đáp dựa trên tài liệu (RAG)',
   canvas: 'Kết nối và quản lý Canvas LMS',

@@ -70,11 +70,6 @@ class ReActAgent:
         re.IGNORECASE
     )
     
-    QUIZ_GEN_PATTERNS = re.compile(
-        r'(tạo\s*quiz|create\s*quiz|generate\s*quiz|làm\s*quiz|sinh\s*quiz|tạo\s*đề|tạo\s*bài\s*kiểm\s*tra)',
-        re.IGNORECASE
-    )
-    
     CALCULATOR_PATTERNS = re.compile(
         r'(\d+\s*[\+\-\*\/\%\^]\s*\d+|tính|calculate|compute)\s*[\d\+\-\*\/\(\)\.\s]+',
         re.IGNORECASE
@@ -250,9 +245,6 @@ class ReActAgent:
         if self.GRADE_EXAM_PATTERNS.search(text):
             return "allow_tools"
         
-        if self.QUIZ_GEN_PATTERNS.search(text):
-            return "allow_tools"
-        
         if self.CALCULATOR_PATTERNS.search(text):
             return "allow_tools"
         
@@ -352,8 +344,10 @@ Answer the user's question directly from your knowledge. Do NOT mention or try t
             return f"""
 IMPORTANT — Disabled features:
 The following features have been TEMPORARILY DISABLED by the administrator: {disabled_str}.
-If a user asks about any of these features, DO NOT try to perform the action.
-Instead, politely inform them: "Tính năng [tên tính năng] hiện đang tạm thời bị khóa bởi quản trị viên. Vui lòng liên hệ admin để được hỗ trợ."
+If a user asks about EXACTLY one of these disabled features listed above, politely inform them:
+"Tính năng [tên tính năng] hiện đang tạm thời bị khóa bởi quản trị viên. Vui lòng liên hệ admin để được hỗ trợ."
+ONLY use this response for the EXACT features listed above. Do NOT apply this to any other request.
+For example, if a user asks about "tạo quiz" or quiz generation, that is NOT a disabled feature — it is available in the RAG Tài Liệu panel. Guide them there instead.
 Never pretend you can do something that is disabled. Be honest and helpful.
 """
         except Exception as e:
@@ -383,7 +377,7 @@ Never pretend you can do something that is disabled. Be honest and helpful.
                 try:
                     data = json.loads(content) if isinstance(content, str) else content
                     # Check if this was a successful tool call
-                    has_result = any(k in data for k in ("result", "results", "data", "output", "content", "quiz", "answer", "html_file"))
+                    has_result = any(k in data for k in ("result", "results", "data", "output", "content", "answer"))
                     is_ok = data.get("ok") is True or data.get("success") is True
                     is_fatal = data.get("fatal") is True or data.get("ok") is False
                     
@@ -496,7 +490,7 @@ Never pretend you can do something that is disabled. Be honest and helpful.
                     return "fallback_no_tools"
                 
                 # Case 3: Has result/data -> SUCCESS even with warnings
-                has_result = any(k in data for k in ("result", "results", "data", "output", "content", "quiz", "answer", "html_file"))
+                has_result = any(k in data for k in ("result", "results", "data", "output", "content", "answer"))
                 if has_result:
                     return "agent_with_tools"  # SUCCESS
                 
@@ -708,41 +702,10 @@ Context: {error_context[:200]}""")
     def _extract_text_from_content(self, content) -> str:
         """
         Extract plain text from dict/list/JSON string recursively,
-        ưu tiên 'text' hoặc 'content' nếu có, vẫn giữ logic file:/// HTML.
+        ưu tiên 'text' hoặc 'content' nếu có.
         """
-        import os
         import re
         import json
-
-        def html_link_from_path(path):
-            import os
-            if path.startswith("file://"):
-                return path
-
-            if os.path.isabs(path):
-                abs_path = path
-            else:
-                base_dir = "E:/WorkSpace/Agent/Teaching Assistant/Grader/"
-                abs_path = os.path.abspath(os.path.join(base_dir, path))
-
-            abs_path = abs_path.replace("\\", "/")
-            if not abs_path.startswith("/"):
-                abs_path = "/" + abs_path
-            return f"file://{abs_path}"
-
-        def extract_all_html_files(obj):
-            html_files = set()
-            if isinstance(obj, dict):
-                for v in obj.values():
-                    html_files.update(extract_all_html_files(v))
-            elif isinstance(obj, list):
-                for item in obj:
-                    html_files.update(extract_all_html_files(item))
-            elif isinstance(obj, str) and ".html" in obj:
-                matches = re.findall(r"([\w\-./\\]+\.html)", obj)
-                for m in matches:
-                    html_files.add(m.strip())
-            return html_files
 
         def extract_text_recursive(obj):
             if isinstance(obj, dict):
@@ -770,12 +733,7 @@ Context: {error_context[:200]}""")
 
             return str(obj)
 
-        result_text = extract_text_recursive(content)
-        html_files = extract_all_html_files(content)
-        html_file = max(html_files, key=lambda x: len(x), default=None)
-        if html_file:
-            return f"{result_text}\n[Link quiz: {html_link_from_path(html_file)}]"
-        return result_text
+        return extract_text_recursive(content)
 
     
     def invoke(self, user_input: str, history: list[dict] = None) -> dict:

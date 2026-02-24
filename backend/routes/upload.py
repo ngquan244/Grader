@@ -7,7 +7,6 @@ from typing import List
 
 from backend.schemas import UploadResponse
 from backend.services import file_service
-from backend.core import Messages
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -23,22 +22,6 @@ async def upload_exam_images(files: List[UploadFile] = File(...)):
         message=f"Đã upload {count} ảnh thành công",
         files=uploaded_files,
         count=count
-    )
-
-
-@router.post("/pdf", response_model=UploadResponse)
-async def upload_exam_pdf(file: UploadFile = File(...)):
-    """Upload exam PDF for quiz generation"""
-    filename = await file_service.upload_pdf(
-        file,
-        target_name="Đề thi Xử lý ảnh kỳ 2 năm học 2022-2023 - UET.pdf"
-    )
-    
-    return UploadResponse(
-        success=True,
-        message=Messages.PDF_UPLOAD_SUCCESS,
-        files=[filename],
-        count=1
     )
 
 

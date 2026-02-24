@@ -75,7 +75,6 @@ def _read_guide() -> str:
                 feature_names = {
                     "chat": "Chat AI",
                     "upload": "Upload bài thi",
-                    "quiz": "Tạo Quiz",
                     "grading": "Chấm điểm tự động",
                     "document_rag": "RAG Tài Liệu",
                     "canvas": "Canvas LMS",
@@ -156,7 +155,7 @@ class UserGuideTool(BaseTool):
 
     Sử dụng khi người dùng hỏi:
     - Cách sử dụng ứng dụng / tính năng
-    - Hướng dẫn upload tài liệu, chấm bài, tạo quiz, v.v.
+    - Hướng dẫn upload tài liệu, chấm bài, hỏi đáp RAG, v.v.
     - "Làm sao để ...?", "Hướng dẫn ...", "Cách dùng ..."
     - "Help", "Trợ giúp", "Giúp tôi"
 
