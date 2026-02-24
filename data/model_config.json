@@ -13,8 +13,8 @@
     "groq": {
       "llama-3.3-70b-versatile": true,
       "llama-3.1-8b-instant": true,
-      "gemma2-9b-it": true,
-      "mixtral-8x7b-32768": true
+      "gemma2-9b-it": false,
+      "mixtral-8x7b-32768": false
     }
   }
 }

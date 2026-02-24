@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
-from backend.config import settings
+from backend.core.config import settings
 from backend.core import ForbiddenException, NotFoundException, DatabaseException
 from backend.utils import ensure_directory, evaluate_score
 

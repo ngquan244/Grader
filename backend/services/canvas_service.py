@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Optional
 import httpx
 
-from backend.config import settings
+from backend.core.config import settings
 
 logger = logging.getLogger(__name__)
 

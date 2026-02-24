@@ -7,7 +7,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from backend.schemas import ConfigResponse, ModelConfig
-from backend.config import settings
+from backend.core.config import settings
 from backend.core import BadRequestException, Messages
 from backend.auth.dependencies import CurrentUser, AdminUser
 from backend.services.panel_config_service import get_panel_config, PANEL_LABELS

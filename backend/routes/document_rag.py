@@ -19,7 +19,7 @@ from pydantic import BaseModel
 
 from backend.auth.dependencies import CurrentUser, AdminUser
 from backend.modules.document_rag import RAGService
-from backend.config import settings
+from backend.core.config import settings
 
 logger = logging.getLogger(__name__)
 

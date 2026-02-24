@@ -13,7 +13,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException
 from backend.auth.dependencies import CurrentUser
 from backend.schemas import GradingRequest, GradingResponse, GradingResult, GradingSummary
 from backend.services import grading_service
-from backend.config import settings
+from backend.core.config import settings
 from backend.grader import create_processor, ExamProcessor
 
 logger = logging.getLogger(__name__)

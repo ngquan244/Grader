@@ -1,13 +1,25 @@
 """
-Core application configuration with security-first design.
+Core application configuration — single source of truth.
 Loads all settings from environment variables.
 """
 import warnings
+from enum import Enum
 from functools import lru_cache
 from typing import List, Optional
 from pathlib import Path
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
+
+
+# =============================================================================
+# Enums
+# =============================================================================
+
+class LLMProviderType(str, Enum):
+    """Supported LLM providers."""
+    OLLAMA = "ollama"
+    GROQ = "groq"
+
 
 # Development-only default keys (DO NOT USE IN PRODUCTION)
 _DEV_JWT_SECRET = "dev-only-secret-key-change-in-production-min-32-chars"
@@ -25,7 +37,7 @@ class Settings(BaseSettings):
     # Server Configuration
     # ==========================================================================
     HOST: str = "0.0.0.0"  # Bind to all interfaces
-    PORT: int = 8000  # Default port (8000 often conflicted with other services)
+    PORT: int = 8000
     DEBUG: bool = False
     ENVIRONMENT: str = "development"  # development | staging | production
     
@@ -39,6 +51,8 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5173",
         "http://localhost:5174",
         "http://127.0.0.1:5174",
+        "http://localhost:5175",
+        "http://127.0.0.1:5175",
     ]
     
     # ==========================================================================
@@ -49,6 +63,11 @@ class Settings(BaseSettings):
     POSTGRES_USER: str = "grader_user"
     POSTGRES_PASSWORD: str = "grader_secret_password"  # Same as docker-compose default
     POSTGRES_DB: str = "grader_db"
+    
+    # ==========================================================================
+    # Database Configuration (SQL Server — legacy, set via .env)
+    # ==========================================================================
+    SQL_SERVER_CONN_STR: str = ""
     
     # ==========================================================================
     # Redis & Celery Configuration
@@ -129,6 +148,15 @@ class Settings(BaseSettings):
     BCRYPT_ROUNDS: int = 12
     
     # ==========================================================================
+    # Email / SMTP Configuration (set via .env — NEVER hardcode credentials)
+    # ==========================================================================
+    EMAIL_RECEIVER: str = ""
+    EMAIL_USER: str = ""     # SMTP login username (e.g. Gmail address)
+    EMAIL_PASSWORD: str = ""  # SMTP login password (e.g. Google App Password)
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 465      # SSL port; use 587 for STARTTLS
+    
+    # ==========================================================================
     # Project Paths (computed from PROJECT_ROOT)
     # ==========================================================================
     PROJECT_ROOT: Path = Path(__file__).parent.parent.parent
@@ -144,6 +172,14 @@ class Settings(BaseSettings):
     @property
     def EXPORTS_DIR(self) -> Path:
         return self.PROJECT_ROOT / "exports"
+    
+    @property
+    def CONFIG_DIR(self) -> Path:
+        return self.PROJECT_ROOT / "config"
+    
+    @property
+    def MODELS_DIR(self) -> Path:
+        return self.PROJECT_ROOT / "models"
     
     @model_validator(mode='after')
     def warn_dev_secrets(self) -> 'Settings':
@@ -205,6 +241,13 @@ class Settings(BaseSettings):
     MAX_ITERATIONS: int = 10
     TEMPERATURE: float = 0.3
     
+    # ==========================================================================
+    # UI Configuration (Gradio — legacy, set via .env if needed)
+    # ==========================================================================
+    UI_PORT: int = 7860
+    UI_HOST: str = "127.0.0.1"
+    SHARE_GRADIO: bool = True
+    
     @property
     def DEFAULT_MODEL(self) -> str:
         if self.LLM_PROVIDER == "groq":
@@ -235,3 +278,8 @@ def get_settings() -> Settings:
 
 # Global settings instance
 settings = get_settings()
+
+# Ensure critical directories exist on first import
+settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
+settings.LOGS_DIR.mkdir(parents=True, exist_ok=True)
+settings.EXPORTS_DIR.mkdir(parents=True, exist_ok=True)

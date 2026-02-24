@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Callable
 from functools import wraps
 
-from ...config import settings
+from ...core.config import settings
 from ...core.logger import logger
 
 __all__ = [

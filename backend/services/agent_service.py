@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 def _get_provider_config() -> dict:
     """Load LLM provider configuration from settings"""
-    from backend.config import settings
+    from backend.core.config import settings
     return {
         "provider": settings.LLM_PROVIDER,
         "groq_api_key": settings.GROQ_API_KEY,

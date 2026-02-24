@@ -120,7 +120,7 @@ def build_index(
         user_id: User ID for logging
         course_id: Optional course ID for Canvas files
     """
-    from backend.config import settings
+    from backend.core.config import settings
     from pathlib import Path
     
     job_service, db_session = get_sync_job_service()

@@ -15,7 +15,7 @@ import pyodbc
 import yagmail
 
 from .base import logger
-from ...config import settings
+from ...core.config import settings
 
 __all__ = ["ExamResultSummaryTool", "ExamSummaryInput"]
 

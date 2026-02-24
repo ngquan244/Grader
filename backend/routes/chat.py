@@ -7,7 +7,7 @@ from fastapi import APIRouter
 from backend.auth.dependencies import CurrentUser
 from backend.schemas import ChatRequest, ChatResponse, ToolUsage
 from backend.services import agent_service
-from backend.config import settings
+from backend.core.config import settings
 from backend.core import Messages, BadRequestException
 
 logger = logging.getLogger(__name__)

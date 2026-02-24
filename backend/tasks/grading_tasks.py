@@ -37,7 +37,7 @@ def grade_batch(
     Args:
         job_id: Job ID for tracking
     """
-    from backend.config import settings
+    from backend.core.config import settings
     from backend.grader import create_processor
     
     job_service, db_session = get_sync_job_service()
@@ -121,7 +121,7 @@ def grade_single(
     """
     import cv2
     import numpy as np
-    from backend.config import settings
+    from backend.core.config import settings
     from backend.grader import create_processor
     
     job_service, db_session = get_sync_job_service()
@@ -194,7 +194,7 @@ def generate_report(
         send_email: Whether to send email notification
     """
     from backend.services import grading_service
-    from backend.config import settings
+    from backend.core.config import settings
     
     job_service, db_session = get_sync_job_service()
     job_uuid = uuid.UUID(job_id)

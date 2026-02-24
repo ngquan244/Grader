@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 import pyodbc
 
 from .base import logger
-from ...config import settings
+from ...core.config import settings
 from ...grader import create_processor, ExamProcessor
 
 __all__ = ["GradingTool", "GradingInput", "get_grading_tool"]

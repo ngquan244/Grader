@@ -125,7 +125,7 @@ def send_email(
         
         msg = EmailMessage()
         msg["Subject"] = subject
-        msg["From"] = settings.EMAIL_SENDER
+        msg["From"] = settings.EMAIL_USER
         msg["To"] = to_email
         msg.set_content(body)
         
@@ -147,7 +147,7 @@ def send_email(
         with smtplib.SMTP_SSL(
             settings.SMTP_HOST, settings.SMTP_PORT, context=context
         ) as server:
-            server.login(settings.EMAIL_SENDER, settings.EMAIL_PASSWORD)
+            server.login(settings.EMAIL_USER, settings.EMAIL_PASSWORD)
             server.send_message(msg)
         
         result = {
@@ -270,7 +270,7 @@ def export_data(
     import json
     from datetime import datetime
     
-    from backend.config import settings
+    from backend.core.config import settings
     
     job_service, db_session = get_sync_job_service()
     job_uuid = uuid.UUID(job_id)

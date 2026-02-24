@@ -5,7 +5,7 @@ import logging
 import sys
 from pathlib import Path
 from datetime import datetime
-from ..config import settings
+from .config import settings
 
 
 def setup_logger(name: str, log_file: str = None, level=logging.INFO) -> logging.Logger:

@@ -24,7 +24,7 @@ from backend.routes import jobs as jobs_routes
 from backend.routes import admin as admin_routes
 from backend.routes import guide as guide_routes
 from backend.auth import auth_router
-from backend.config import settings
+from backend.core.config import settings
 from backend.core import BaseAPIException
 
 # Configure logging
