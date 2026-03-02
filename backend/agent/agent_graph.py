@@ -110,6 +110,7 @@ class ReActAgent:
         ollama_base_url: str = "http://localhost:11434",
         groq_fallback_to_ollama: bool = True,
         ollama_fallback_model: str = "llama3.1:latest",
+        user_id: Optional[str] = None,
     ):
         self.model_name = model_name
         self.max_iterations = max_iterations
@@ -117,6 +118,7 @@ class ReActAgent:
         self.MAX_HISTORY = max_history
         self.provider = provider.lower()
         self.groq_fallback_to_ollama = groq_fallback_to_ollama
+        self.user_id = user_id
         
         # Create LLM instances based on provider
         self.llm_plain = self._create_llm(
@@ -141,8 +143,8 @@ class ReActAgent:
             ollama_fallback_model=ollama_fallback_model,
         )
         
-        # Get tools
-        self.tools = get_all_tools()
+        # Get tools with per-user context
+        self.tools = get_all_tools(user_id=user_id)
         
         # Bind tools to LLM - ONLY used in allow_tools path
         self.llm_with_tools = self.llm.bind_tools(self.tools)
@@ -885,6 +887,7 @@ def create_agent(
     ollama_base_url: str = "http://localhost:11434",
     groq_fallback_to_ollama: bool = True,
     ollama_fallback_model: str = "llama3.1:latest",
+    user_id: Optional[str] = None,
 ) -> ReActAgent:
     """Factory function to create agent with provider-aware LLM"""
     return ReActAgent(
@@ -896,4 +899,5 @@ def create_agent(
         ollama_base_url=ollama_base_url,
         groq_fallback_to_ollama=groq_fallback_to_ollama,
         ollama_fallback_model=ollama_fallback_model,
+        user_id=user_id,
     )

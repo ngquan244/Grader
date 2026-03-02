@@ -1,6 +1,6 @@
 """
 File Service
-Handles file upload and management
+Handles file upload and management with per-user isolation
 """
 import shutil
 import logging
@@ -14,27 +14,31 @@ from backend.utils import (
     ensure_directory,
     clear_directory,
     is_valid_image,
-    safe_filename
+    safe_filename,
+    get_user_upload_dir,
 )
 
 logger = logging.getLogger(__name__)
 
 
 class FileService:
-    """Service for file upload and management"""
+    """Service for file upload and management (per-user isolated)"""
     
-    def __init__(self):
-        self.images_dir = settings.PROJECT_ROOT / "kaggle" / "Filled-temp"
-        ensure_directory(self.images_dir)
+    def _get_images_dir(self, user_id: str) -> Path:
+        """Get the per-user images directory, creating it if needed."""
+        return get_user_upload_dir(user_id)
     
     async def upload_images(
         self,
         files: List[UploadFile],
+        user_id: str,
         clear_existing: bool = True
     ) -> Tuple[List[str], int]:
-        """Upload exam images"""
+        """Upload exam images to the user's workspace"""
+        images_dir = self._get_images_dir(user_id)
+        
         if clear_existing:
-            clear_directory(self.images_dir)
+            clear_directory(images_dir)
         
         uploaded = []
         for file in files:
@@ -53,19 +57,20 @@ class FileService:
             
             # Save file
             filename = safe_filename(file.filename)
-            dest_path = self.images_dir / filename
+            dest_path = images_dir / filename
             
             with open(dest_path, "wb") as buffer:
                 buffer.write(content)
             
             uploaded.append(filename)
-            logger.info(f"Uploaded image: {filename}")
+            logger.info(f"Uploaded image: {filename} (user: {user_id})")
         
         return uploaded, len(uploaded)
     
-    def get_upload_status(self) -> dict:
-        """Get current upload status"""
-        images = list(self.images_dir.glob("*")) if self.images_dir.exists() else []
+    def get_upload_status(self, user_id: str) -> dict:
+        """Get current upload status for a user"""
+        images_dir = self._get_images_dir(user_id)
+        images = list(images_dir.glob("*")) if images_dir.exists() else []
         
         return {
             "images": {
@@ -74,10 +79,11 @@ class FileService:
             }
         }
     
-    def clear_images(self) -> int:
-        """Clear all uploaded images"""
-        return clear_directory(self.images_dir)
+    def clear_images(self, user_id: str) -> int:
+        """Clear all uploaded images for a user"""
+        images_dir = self._get_images_dir(user_id)
+        return clear_directory(images_dir)
 
 
-# Singleton instance
+# Singleton instance (stateless — safe to share)
 file_service = FileService()

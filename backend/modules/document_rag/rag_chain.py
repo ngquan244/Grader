@@ -137,7 +137,9 @@ class RAGChain:
         self,
         question: str,
         k: Optional[int] = None,
-        return_context: bool = False
+        return_context: bool = False,
+        target_file_hashes: Optional[List[str]] = None,
+        user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Execute RAG query.
@@ -146,6 +148,8 @@ class RAGChain:
             question: User's question
             k: Number of documents to retrieve
             return_context: Whether to include retrieved context in response
+            target_file_hashes: File hashes to scope the retrieval
+            user_id: User ID to scope the retrieval
             
         Returns:
             Dictionary with:
@@ -156,7 +160,12 @@ class RAGChain:
         logger.info(f"RAG Query: {question}")
         
         # Step 1: Retrieve relevant documents
-        documents = self.retriever.retrieve(question, k=k)
+        # Pass target_file_hashes and user_id if retriever supports them
+        retrieve_kwargs: Dict[str, Any] = {"k": k} if k else {}
+        if hasattr(self.retriever, 'resolve_target_file_hashes'):
+            retrieve_kwargs["target_file_hashes"] = target_file_hashes
+            retrieve_kwargs["user_id"] = user_id
+        documents = self.retriever.retrieve(question, **retrieve_kwargs)
         
         if not documents:
             return {

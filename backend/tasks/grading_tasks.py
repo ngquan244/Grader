@@ -32,25 +32,30 @@ def grade_batch(
     user_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Execute batch grading on all images in Filled-temp folder.
+    Execute batch grading on all images in user's upload folder.
     
     Args:
         job_id: Job ID for tracking
+        user_id: User ID for per-user workspace isolation (required)
     """
     from backend.core.config import settings
     from backend.grader import create_processor
+    from backend.utils import get_user_upload_dir, get_user_result_path
     
     job_service, db_session = get_sync_job_service()
     job_uuid = uuid.UUID(job_id)
     
     try:
+        if not user_id:
+            raise ValueError("user_id is required for grade_batch task")
+        
         job_service.start_job(job_uuid, "Initializing grader")
         
         kaggle_dir = settings.PROJECT_ROOT / "kaggle"
-        filled_dir = kaggle_dir / "Filled-temp"
-        output_path = str(settings.PROJECT_ROOT / "final_result.json")
+        filled_dir = get_user_upload_dir(user_id)
+        output_path = str(get_user_result_path(user_id))
         
-        # Create processor
+        # Create processor with per-user output path
         processor = create_processor(
             template_path=str(kaggle_dir / "Template" / "temp.jpg"),
             student_json_path=str(kaggle_dir / "Input Materials" / "student_coords.json"),
@@ -65,7 +70,7 @@ def grade_batch(
         if total_images == 0:
             result = {
                 "success": False,
-                "error": "No images found in Filled-temp folder",
+                "error": "No images found in user's upload folder",
                 "total_images": 0,
             }
             job_service.fail_job(job_uuid, result["error"])
@@ -118,16 +123,21 @@ def grade_single(
         job_id: Job ID for tracking
         image_data: Raw image bytes
         filename: Original filename
+        user_id: User ID for per-user workspace isolation (required)
     """
     import cv2
     import numpy as np
     from backend.core.config import settings
     from backend.grader import create_processor
+    from backend.utils import get_user_result_path
     
     job_service, db_session = get_sync_job_service()
     job_uuid = uuid.UUID(job_id)
     
     try:
+        if not user_id:
+            raise ValueError("user_id is required for grade_single task")
+        
         job_service.start_job(job_uuid, f"Grading {filename}")
         
         # Decode image
@@ -139,13 +149,14 @@ def grade_single(
             job_service.fail_job(job_uuid, result["error"])
             return result
         
-        # Create processor
+        # Create processor with per-user output path
         kaggle_dir = settings.PROJECT_ROOT / "kaggle"
+        output_path = str(get_user_result_path(user_id))
         processor = create_processor(
             template_path=str(kaggle_dir / "Template" / "temp.jpg"),
             student_json_path=str(kaggle_dir / "Input Materials" / "student_coords.json"),
             answer_json_path=str(kaggle_dir / "Input Materials" / "answer.json"),
-            output_path=str(settings.PROJECT_ROOT / "final_result.json"),
+            output_path=output_path,
         )
         
         # Process image

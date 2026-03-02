@@ -16,7 +16,9 @@ router = APIRouter()
 @router.post("/images", response_model=UploadResponse)
 async def upload_exam_images(user: CurrentUser, files: List[UploadFile] = File(...)):
     """Upload exam images for grading"""
-    uploaded_files, count = await file_service.upload_images(files)
+    uploaded_files, count = await file_service.upload_images(
+        files, user_id=str(user.id)
+    )
     
     return UploadResponse(
         success=count > 0,
@@ -29,13 +31,13 @@ async def upload_exam_images(user: CurrentUser, files: List[UploadFile] = File(.
 @router.get("/status")
 async def get_upload_status(user: CurrentUser):
     """Get current upload status"""
-    return file_service.get_upload_status()
+    return file_service.get_upload_status(user_id=str(user.id))
 
 
 @router.delete("/images")
 async def clear_uploaded_images(user: CurrentUser):
     """Clear all uploaded images"""
-    count = file_service.clear_images()
+    count = file_service.clear_images(user_id=str(user.id))
     return {
         "message": f"Đã xóa {count} ảnh",
         "success": True,

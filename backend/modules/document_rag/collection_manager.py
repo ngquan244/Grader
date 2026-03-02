@@ -44,6 +44,7 @@ class CollectionMetadata:
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
     chunk_count: int = 0
     is_indexed: bool = False
+    user_id: Optional[str] = None  # Owner user ID for per-user isolation
 
 
 class CollectionNameGenerator:
@@ -145,6 +146,13 @@ class CollectionRegistry:
             logger.warning(f"Could not load collection registry: {e}")
             self._registry = {}
     
+    @staticmethod
+    def _make_key(file_hash: str, user_id: Optional[str] = None) -> str:
+        """Create composite registry key: '{user_id}:{file_hash}' or '{file_hash}' for legacy."""
+        if user_id:
+            return f"{user_id}:{file_hash}"
+        return file_hash
+
     def _save(self):
         """Save registry to disk."""
         try:
@@ -159,6 +167,7 @@ class CollectionRegistry:
                         'updated_at': meta.updated_at,
                         'chunk_count': meta.chunk_count,
                         'is_indexed': meta.is_indexed,
+                        'user_id': meta.user_id,
                     }
                     for key, meta in self._registry.items()
                 }
@@ -166,10 +175,15 @@ class CollectionRegistry:
         except Exception as e:
             logger.error(f"Could not save collection registry: {e}")
     
-    def get(self, file_hash: str) -> Optional[CollectionMetadata]:
-        """Get collection metadata by file hash."""
+    def get(self, file_hash: str, user_id: Optional[str] = None) -> Optional[CollectionMetadata]:
+        """Get collection metadata by file hash (optionally scoped to user)."""
         with self._lock:
-            return self._registry.get(file_hash)
+            key = self._make_key(file_hash, user_id)
+            result = self._registry.get(key)
+            if result is None and user_id:
+                # Fallback: try legacy key (no user_id) for backward compat
+                result = self._registry.get(file_hash)
+            return result
     
     def register(
         self,
@@ -177,11 +191,13 @@ class CollectionRegistry:
         filename: str,
         collection_name: str,
         course_id: Optional[int] = None,
-        chunk_count: int = 0
+        chunk_count: int = 0,
+        user_id: Optional[str] = None,
     ) -> CollectionMetadata:
         """Register a new or updated collection."""
         with self._lock:
-            existing = self._registry.get(file_hash)
+            key = self._make_key(file_hash, user_id)
+            existing = self._registry.get(key)
             if existing:
                 existing.updated_at = datetime.now().isoformat()
                 existing.chunk_count = chunk_count
@@ -195,44 +211,75 @@ class CollectionRegistry:
                 filename=filename,
                 course_id=course_id,
                 chunk_count=chunk_count,
-                is_indexed=True
+                is_indexed=True,
+                user_id=user_id,
             )
-            self._registry[file_hash] = meta
+            self._registry[key] = meta
             self._save()
             return meta
     
-    def unregister(self, file_hash: str) -> bool:
-        """Remove a collection from registry."""
+    def unregister(self, file_hash: str, user_id: Optional[str] = None) -> bool:
+        """Remove a collection entry from registry for a specific user."""
         with self._lock:
-            if file_hash in self._registry:
-                del self._registry[file_hash]
+            key = self._make_key(file_hash, user_id)
+            if key in self._registry:
+                del self._registry[key]
                 self._save()
                 return True
             return False
     
-    def is_indexed(self, file_hash: str) -> bool:
-        """Check if a file is already indexed."""
+    def count_references(self, file_hash: str) -> int:
+        """Count how many registry entries reference the same file_hash (across users)."""
         with self._lock:
-            meta = self._registry.get(file_hash)
-            return meta is not None and meta.is_indexed
+            return sum(1 for meta in self._registry.values() if meta.file_hash == file_hash)
     
-    def get_collection_name(self, file_hash: str) -> Optional[str]:
+    def is_indexed(self, file_hash: str, user_id: Optional[str] = None) -> bool:
+        """Check if a file is already indexed (optionally for a specific user)."""
+        with self._lock:
+            key = self._make_key(file_hash, user_id)
+            meta = self._registry.get(key)
+            if meta is not None:
+                return meta.is_indexed
+            # Fallback: check legacy key
+            if user_id:
+                meta = self._registry.get(file_hash)
+                return meta is not None and meta.is_indexed
+            return False
+    
+    def get_collection_name(self, file_hash: str, user_id: Optional[str] = None) -> Optional[str]:
         """Get collection name for a file hash."""
         with self._lock:
-            meta = self._registry.get(file_hash)
+            key = self._make_key(file_hash, user_id)
+            meta = self._registry.get(key)
+            if meta is None and user_id:
+                meta = self._registry.get(file_hash)
             return meta.collection_name if meta else None
     
-    def get_all(self) -> List[CollectionMetadata]:
-        """Get all registered collections."""
+    def get_all(self, user_id: Optional[str] = None) -> List[CollectionMetadata]:
+        """Get all registered collections, optionally filtered by user."""
         with self._lock:
-            return list(self._registry.values())
+            if user_id is None:
+                return list(self._registry.values())
+            return [
+                meta for meta in self._registry.values()
+                if meta.user_id == user_id or meta.user_id is None  # include legacy entries
+            ]
     
-    def get_by_filenames(self, filenames: List[str]) -> List[CollectionMetadata]:
-        """Get collections for specific filenames."""
+    def get_by_user(self, user_id: str) -> List[CollectionMetadata]:
+        """Get all collections belonging to a specific user."""
+        with self._lock:
+            return [
+                meta for meta in self._registry.values()
+                if meta.user_id == user_id
+            ]
+    
+    def get_by_filenames(self, filenames: List[str], user_id: Optional[str] = None) -> List[CollectionMetadata]:
+        """Get collections for specific filenames, optionally scoped to user."""
         with self._lock:
             return [
                 meta for meta in self._registry.values()
                 if meta.filename in filenames
+                and (user_id is None or meta.user_id == user_id or meta.user_id is None)
             ]
     
     def get_by_course_id(self, course_id: int) -> List[CollectionMetadata]:
@@ -243,10 +290,18 @@ class CollectionRegistry:
                 if meta.course_id == course_id
             ]
     
-    def clear(self):
-        """Clear all registry entries."""
+    def clear(self, user_id: Optional[str] = None):
+        """Clear registry entries. If user_id given, only clear that user's entries."""
         with self._lock:
-            self._registry.clear()
+            if user_id is None:
+                self._registry.clear()
+            else:
+                keys_to_remove = [
+                    key for key, meta in self._registry.items()
+                    if meta.user_id == user_id
+                ]
+                for key in keys_to_remove:
+                    del self._registry[key]
             self._save()
 
 
@@ -442,7 +497,8 @@ class PerFileCollectionManager:
         filename: str,
         documents: List[Document],
         course_id: Optional[int] = None,
-        replace_existing: bool = True
+        replace_existing: bool = True,
+        user_id: Optional[str] = None,
     ) -> int:
         """
         Add documents to a file's collection.
@@ -453,6 +509,7 @@ class PerFileCollectionManager:
             documents: List of Document objects to add
             course_id: Optional Canvas course ID
             replace_existing: If True, clear existing docs before adding
+            user_id: Optional user ID for per-user registry tracking
             
         Returns:
             Number of documents added
@@ -496,7 +553,8 @@ class PerFileCollectionManager:
                 filename=filename,
                 collection_name=collection_name,
                 course_id=course_id,
-                chunk_count=len(documents)
+                chunk_count=len(documents),
+                user_id=user_id,
             )
             
             logger.info(f"Successfully added {len(documents)} documents to {collection_name}")
@@ -630,12 +688,12 @@ class PerFileCollectionManager:
             search_kwargs=search_kwargs
         )
     
-    def is_indexed(self, file_hash: str) -> bool:
-        """Check if a file is already indexed."""
-        return self.registry.is_indexed(file_hash)
+    def is_indexed(self, file_hash: str, user_id: Optional[str] = None) -> bool:
+        """Check if a file is already indexed (optionally for a specific user)."""
+        return self.registry.is_indexed(file_hash, user_id=user_id)
     
-    def get_indexed_files(self) -> List[Dict[str, Any]]:
-        """Get list of all indexed files."""
+    def get_indexed_files(self, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get list of indexed files, optionally filtered by user."""
         return [
             {
                 'filename': meta.filename,
@@ -644,9 +702,10 @@ class PerFileCollectionManager:
                 'course_id': meta.course_id,
                 'chunk_count': meta.chunk_count,
                 'indexed_at': meta.created_at,
-                'updated_at': meta.updated_at
+                'updated_at': meta.updated_at,
+                'user_id': meta.user_id,
             }
-            for meta in self.registry.get_all()
+            for meta in self.registry.get_all(user_id=user_id)
         ]
     
     def get_collection_stats(self, file_hash: str) -> Dict[str, Any]:
@@ -676,17 +735,20 @@ class PerFileCollectionManager:
         
         return stats
     
-    def delete_collection(self, file_hash: str) -> bool:
+    def delete_collection(self, file_hash: str, user_id: Optional[str] = None) -> bool:
         """
         Delete a file's collection.
+        If user_id is given, only removes that user's registry entry.
+        Actual ChromaDB collection is only deleted when no users reference it.
         
         Args:
             file_hash: MD5 hash of the file
+            user_id: Optional user who owns this entry
             
         Returns:
             True if deleted successfully (or marked for cleanup)
         """
-        meta = self.registry.get(file_hash)
+        meta = self.registry.get(file_hash, user_id=user_id)
         if not meta:
             logger.warning(f"Cannot delete collection: file_hash {file_hash} not found in registry")
             return False
@@ -696,8 +758,14 @@ class PerFileCollectionManager:
         
         with lock:
             # 1. First, unregister from registry (most important - prevents listing)
-            self.registry.unregister(file_hash)
-            logger.info(f"Unregistered collection from registry: {collection_name}")
+            self.registry.unregister(file_hash, user_id=user_id)
+            logger.info(f"Unregistered collection from registry: {collection_name} (user={user_id})")
+            
+            # 2. Only delete actual ChromaDB data if no other users reference this hash
+            remaining_refs = self.registry.count_references(file_hash)
+            if remaining_refs > 0:
+                logger.info(f"Collection {collection_name} still referenced by {remaining_refs} user(s), keeping data")
+                return True
             
             # 2. Remove from in-memory cache (releases references)
             if collection_name in self._collections:
@@ -743,7 +811,8 @@ class PerFileCollectionManager:
     def get_all_document_content(
         self,
         file_hash: Optional[str] = None,
-        max_docs: int = 50
+        max_docs: int = 50,
+        user_id: Optional[str] = None,
     ) -> List[str]:
         """
         Get document content from collections.
@@ -752,6 +821,7 @@ class PerFileCollectionManager:
             file_hash: If provided, get content from specific file only.
                       If None, get content from all indexed files.
             max_docs: Maximum number of documents to retrieve.
+            user_id: Optional user ID to scope to user's files only.
             
         Returns:
             List of document content strings
@@ -762,8 +832,8 @@ class PerFileCollectionManager:
             # Get content from specific file
             file_hashes = [file_hash]
         else:
-            # Get content from all indexed files
-            file_hashes = [meta.file_hash for meta in self.registry.get_all()]
+            # Get content from all indexed files (optionally filtered by user)
+            file_hashes = [meta.file_hash for meta in self.registry.get_all(user_id=user_id)]
         
         for fh in file_hashes:
             if len(contents) >= max_docs:
@@ -793,16 +863,27 @@ class PerFileCollectionManager:
         
         return contents
 
-    def reset_all(self) -> bool:
+    def reset_all(self, user_id: Optional[str] = None) -> bool:
         """
         Delete all collections and reset registry.
+        If user_id is given, only reset that user's data.
         
         Returns:
             True if reset successful
         """
-        logger.warning("Resetting all collections")
+        if user_id:
+            logger.warning(f"Resetting collections for user {user_id}")
+        else:
+            logger.warning("Resetting all collections")
         
         try:
+            if user_id:
+                # Only remove user's registry entries; delete ChromaDB data only if no other refs
+                user_entries = self.registry.get_by_user(user_id)
+                for meta in user_entries:
+                    self.delete_collection(meta.file_hash, user_id=user_id)
+                return True
+            
             # Clear all cached collections
             for collection_name in list(self._collections.keys()):
                 try:

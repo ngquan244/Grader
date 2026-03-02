@@ -20,14 +20,11 @@ from pydantic import BaseModel
 from backend.auth.dependencies import CurrentUser, AdminUser
 from backend.modules.document_rag import RAGService
 from backend.core.config import settings
+from backend.utils import get_user_rag_dir
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-# Upload directory for RAG documents
-RAG_UPLOAD_DIR = settings.DATA_DIR / "rag_uploads"
-RAG_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ===== Request/Response Models =====
@@ -116,15 +113,16 @@ async def upload_document(user: CurrentUser, file: UploadFile = File(...)):
     
     This endpoint only saves the file. Use /build-index to index it.
     """
-    logger.info(f"Uploading document: {file.filename}")
+    logger.info(f"Uploading document: {file.filename} (user={user.id})")
     
     # Validate file type
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
     
     try:
-        # Save uploaded file
-        file_path = RAG_UPLOAD_DIR / file.filename
+        # Per-user upload directory
+        user_upload_dir = get_user_rag_dir(str(user.id))
+        file_path = user_upload_dir / file.filename
         
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -150,16 +148,17 @@ async def build_index(user: CurrentUser, filename: str = Form(...)):
     Args:
         filename: Name of the uploaded file to index
     """
-    logger.info(f"Building index for: {filename}")
+    logger.info(f"Building index for: {filename} (user={user.id})")
     
-    file_path = RAG_UPLOAD_DIR / filename
+    user_upload_dir = get_user_rag_dir(str(user.id))
+    file_path = user_upload_dir / filename
     
     if not file_path.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {filename}")
     
     try:
         rag_service = get_rag_service()
-        result = rag_service.ingest_document(str(file_path))
+        result = rag_service.ingest_document(str(file_path), user_id=str(user.id))
         
         return IngestResponse(
             success=result.get("success", False),
@@ -184,15 +183,16 @@ async def upload_and_index(user: CurrentUser, file: UploadFile = File(...)):
     
     Combines upload and build-index in one operation.
     """
-    logger.info(f"Upload and index: {file.filename}")
+    logger.info(f"Upload and index: {file.filename} (user={user.id})")
     
     # Validate file type
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
     
     try:
-        # Save uploaded file
-        file_path = RAG_UPLOAD_DIR / file.filename
+        # Per-user upload directory
+        user_upload_dir = get_user_rag_dir(str(user.id))
+        file_path = user_upload_dir / file.filename
         
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -201,7 +201,7 @@ async def upload_and_index(user: CurrentUser, file: UploadFile = File(...)):
         
         # Index the document
         rag_service = get_rag_service()
-        result = rag_service.ingest_document(str(file_path))
+        result = rag_service.ingest_document(str(file_path), user_id=str(user.id))
         
         return IngestResponse(
             success=result.get("success", False),
@@ -234,7 +234,7 @@ async def download_and_index(request: DownloadAndIndexRequest, user: CurrentUser
     """
     import httpx
     
-    logger.info(f"Download and index: {request.filename} from URL")
+    logger.info(f"Download and index: {request.filename} from URL (user={user.id})")
     
     # Validate filename
     if not request.filename.lower().endswith('.pdf'):
@@ -255,13 +255,14 @@ async def download_and_index(request: DownloadAndIndexRequest, user: CurrentUser
             safe_filename += '.pdf'
         
         # Save file
-        file_path = RAG_UPLOAD_DIR / safe_filename
+        user_upload_dir = get_user_rag_dir(str(user.id))
+        file_path = user_upload_dir / safe_filename
         
         # Ensure unique filename
         counter = 1
         base_name = file_path.stem
         while file_path.exists():
-            file_path = RAG_UPLOAD_DIR / f"{base_name}_{counter}.pdf"
+            file_path = user_upload_dir / f"{base_name}_{counter}.pdf"
             counter += 1
         
         with open(file_path, "wb") as f:
@@ -271,7 +272,7 @@ async def download_and_index(request: DownloadAndIndexRequest, user: CurrentUser
         
         # Index the document
         rag_service = get_rag_service()
-        result = rag_service.ingest_document(str(file_path))
+        result = rag_service.ingest_document(str(file_path), user_id=str(user.id))
         
         return IngestResponse(
             success=result.get("success", False),
@@ -321,7 +322,8 @@ async def query_documents(request: QueryRequest, user: CurrentUser):
             k=request.k,
             return_context=request.return_context,
             file_hashes=request.file_hashes,
-            selected_documents=request.selected_documents
+            selected_documents=request.selected_documents,
+            user_id=str(user.id)
         )
         
         return QueryResponse(
@@ -344,7 +346,7 @@ async def get_index_stats(user: CurrentUser):
     """
     try:
         rag_service = get_rag_service()
-        stats = rag_service.get_index_stats()
+        stats = rag_service.get_index_stats(user_id=str(user.id))
         
         return IndexStatsResponse(
             success=True,
@@ -357,17 +359,15 @@ async def get_index_stats(user: CurrentUser):
 
 
 @router.post("/reset")
-async def reset_index(admin: AdminUser):
+async def reset_index(user: CurrentUser):
     """
-    Reset the document index (delete all indexed documents).
-    
-    WARNING: This will delete all indexed documents!
+    Reset the document index for the current user.
     """
-    logger.warning("Resetting document index")
+    logger.warning(f"Resetting document index for user={user.id}")
     
     try:
         rag_service = get_rag_service()
-        result = rag_service.reset_index()
+        result = rag_service.reset_index(user_id=str(user.id))
         
         return result
         
@@ -418,11 +418,12 @@ async def get_rag_config(user: CurrentUser):
 @router.get("/uploaded-files")
 async def list_uploaded_files(user: CurrentUser):
     """
-    List all uploaded PDF files.
+    List all uploaded PDF files for the current user.
     """
     try:
+        user_upload_dir = get_user_rag_dir(str(user.id))
         files = []
-        for file_path in RAG_UPLOAD_DIR.glob("*.pdf"):
+        for file_path in user_upload_dir.glob("*.pdf"):
             stat = file_path.stat()
             files.append({
                 "filename": file_path.name,
@@ -449,7 +450,7 @@ async def delete_uploaded_file(filename: str, user: CurrentUser):
     Note: This does not remove it from the index.
     Use /reset to clear the index.
     """
-    file_path = RAG_UPLOAD_DIR / filename
+    file_path = get_user_rag_dir(str(user.id)) / filename
     
     if not file_path.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {filename}")
@@ -512,7 +513,7 @@ async def generate_quiz_from_documents(request: GenerateQuizRequest, user: Curre
         rag_service = get_rag_service()
         
         # Check if index has documents
-        stats = rag_service.get_index_stats()
+        stats = rag_service.get_index_stats(user_id=str(user.id))
         if stats.get("total_documents", 0) == 0:
             raise HTTPException(
                 status_code=400, 
@@ -526,7 +527,8 @@ async def generate_quiz_from_documents(request: GenerateQuizRequest, user: Curre
             num_questions=request.num_questions,
             difficulty=request.difficulty,
             language=request.language,
-            selected_documents=request.selected_documents
+            selected_documents=request.selected_documents,
+            user_id=str(user.id)
         )
         
         if not result.get("success"):
@@ -607,7 +609,7 @@ async def extract_topics_from_documents(user: CurrentUser):
         rag_service = get_rag_service()
         
         # Check if index has documents
-        stats = rag_service.get_index_stats()
+        stats = rag_service.get_index_stats(user_id=str(user.id))
         if stats.get("total_documents", 0) == 0:
             return {
                 "success": False,
@@ -616,7 +618,7 @@ async def extract_topics_from_documents(user: CurrentUser):
             }
         
         # Extract topics
-        result = rag_service.extract_topics()
+        result = rag_service.extract_topics(user_id=str(user.id))
         
         return result
         
@@ -699,7 +701,7 @@ async def get_document_topics(filename: str, user: CurrentUser):
     """
     try:
         rag_service = get_rag_service()
-        result = rag_service.get_document_topics(filename)
+        result = rag_service.get_document_topics(filename, user_id=str(user.id))
         
         if not result.get("success"):
             raise HTTPException(
@@ -742,7 +744,7 @@ async def update_document_topics(filename: str, request: UpdateTopicsRequest, us
         # Convert string topics to dict format
         topics_dict = [{"name": topic, "description": ""} for topic in request.topics if topic.strip()]
         
-        result = rag_service.update_document_topics(filename, topics_dict)
+        result = rag_service.update_document_topics(filename, topics_dict, user_id=str(user.id))
         
         if not result.get("success"):
             raise HTTPException(
@@ -772,7 +774,7 @@ async def list_indexed_documents(user: CurrentUser):
     """
     try:
         rag_service = get_rag_service()
-        result = rag_service.get_indexed_documents_with_topics()
+        result = rag_service.get_indexed_documents_with_topics(user_id=str(user.id))
         documents = result.get("documents", [])
         
         # Format for frontend - use actual filename for topic lookup
@@ -932,7 +934,7 @@ async def async_build_index(
     
     Returns a job_id immediately. Poll /api/jobs/{job_id} for status.
     """
-    file_path = RAG_UPLOAD_DIR / filename
+    file_path = get_user_rag_dir(str(user.id)) / filename
     
     if not file_path.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {filename}")
@@ -945,12 +947,13 @@ async def async_build_index(
             user_id=user.id,
             job_type=JobType.BUILD_INDEX,
             payload={"filename": filename, "file_path": str(file_path)},
-            idempotency_key=f"build_index:{filename}",
+            idempotency_key=f"build_index:{user.id}:{filename}",
         )
         
         # Queue task
         result = tasks.build_index.apply_async(
             args=[str(job.id), str(file_path)],
+            kwargs={"user_id": str(user.id)},
         )
         
         # Update with Celery task ID
@@ -985,7 +988,8 @@ async def async_upload_and_index(
     
     try:
         # Save file synchronously (fast)
-        file_path = RAG_UPLOAD_DIR / file.filename
+        user_upload_dir = get_user_rag_dir(str(user.id))
+        file_path = user_upload_dir / file.filename
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
@@ -1001,6 +1005,7 @@ async def async_upload_and_index(
         # Queue task
         result = tasks.ingest_document.apply_async(
             args=[str(job.id), str(file_path)],
+            kwargs={"user_id": str(user.id)},
         )
         
         await job_service.update_celery_task_id(job.id, result.id)
@@ -1047,7 +1052,7 @@ async def async_query_documents(
         
         result = tasks.query_documents.apply_async(
             args=[str(job.id), request.question],
-            kwargs={"k": request.k, "return_context": request.return_context},
+            kwargs={"k": request.k, "return_context": request.return_context, "user_id": str(user.id)},
         )
         
         await job_service.update_celery_task_id(job.id, result.id)
@@ -1098,6 +1103,7 @@ async def async_generate_quiz(
             "difficulty": request.difficulty,
             "language": request.language,
             "selected_documents": request.selected_documents,
+            "user_id": str(user.id),
         }
         
         job = await job_service.create_job(
@@ -1147,6 +1153,7 @@ async def async_extract_topics(
         
         result = tasks.extract_topics.apply_async(
             args=[str(job.id)],
+            kwargs={"user_id": str(user.id)},
         )
         
         await job_service.update_celery_task_id(job.id, result.id)

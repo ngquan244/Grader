@@ -379,7 +379,9 @@ Return ONLY valid JSON, no additional text.""")
         num_questions: int = 5,
         difficulty: str = "medium",
         language: str = "vi",
-        k: int = 10
+        k: int = 10,
+        target_file_hashes: Optional[List[str]] = None,
+        user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Generate quiz questions based on a topic.
@@ -390,6 +392,8 @@ Return ONLY valid JSON, no additional text.""")
             difficulty: Difficulty level - "easy", "medium", or "hard"
             language: "vi" for Vietnamese prompt, "en" for English
             k: Number of documents to retrieve for context
+            target_file_hashes: File hashes to scope retrieval
+            user_id: User ID to scope retrieval
             
         Returns:
             Dictionary with quiz questions and metadata
@@ -397,7 +401,11 @@ Return ONLY valid JSON, no additional text.""")
         logger.info(f"Generating quiz: topic='{topic}', num_questions={num_questions}, difficulty={difficulty}")
         
         # Step 1: Retrieve relevant documents
-        documents = self.retriever.retrieve(topic, k=k)
+        retrieve_kwargs: Dict[str, Any] = {"k": k}
+        if hasattr(self.retriever, 'resolve_target_file_hashes'):
+            retrieve_kwargs["target_file_hashes"] = target_file_hashes
+            retrieve_kwargs["user_id"] = user_id
+        documents = self.retriever.retrieve(topic, **retrieve_kwargs)
         
         if not documents:
             logger.warning("No documents retrieved for topic")
@@ -497,7 +505,9 @@ Return ONLY valid JSON, no additional text.""")
         num_questions: int = 10,
         difficulty: str = "medium",
         language: str = "vi",
-        k: int = 8
+        k: int = 8,
+        target_file_hashes: Optional[List[str]] = None,
+        user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Generate quiz questions based on multiple topics.
@@ -511,6 +521,8 @@ Return ONLY valid JSON, no additional text.""")
             difficulty: Difficulty level - "easy", "medium", or "hard"
             language: "vi" for Vietnamese prompt, "en" for English
             k: Number of documents to retrieve per topic
+            target_file_hashes: File hashes to scope retrieval
+            user_id: User ID to scope retrieval
             
         Returns:
             Dictionary with quiz questions and metadata
@@ -530,8 +542,13 @@ Return ONLY valid JSON, no additional text.""")
         all_sources = []
         k_per_topic = max(3, k // len(topics))  # Distribute k across topics
         
+        retrieve_kwargs_base: Dict[str, Any] = {}
+        if hasattr(self.retriever, 'resolve_target_file_hashes'):
+            retrieve_kwargs_base["target_file_hashes"] = target_file_hashes
+            retrieve_kwargs_base["user_id"] = user_id
+        
         for topic in topics:
-            documents = self.retriever.retrieve(topic, k=k_per_topic)
+            documents = self.retriever.retrieve(topic, k=k_per_topic, **retrieve_kwargs_base)
             if documents:
                 all_documents.extend(documents)
                 logger.info(f"Retrieved {len(documents)} documents for topic: {topic}")

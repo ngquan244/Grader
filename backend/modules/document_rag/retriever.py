@@ -220,41 +220,35 @@ class MultiCollectionRetriever:
         self.k = k or rag_config.RETRIEVER_K
         self.fetch_k = fetch_k or rag_config.RETRIEVER_FETCH_K
         self.lambda_mult = lambda_mult or rag_config.RETRIEVER_LAMBDA_MULT
-        
-        # Target file hashes to query (empty = query all)
-        self._target_file_hashes: List[str] = []
     
-    def set_target_files(self, file_hashes: List[str]):
+    def resolve_target_file_hashes(
+        self,
+        target_file_hashes: Optional[List[str]] = None,
+        user_id: Optional[str] = None,
+    ) -> List[str]:
         """
-        Set which files to query.
+        Resolve which file hashes to query.
         
         Args:
-            file_hashes: List of file hashes to query (empty = query all)
+            target_file_hashes: Explicit list of file hashes (takes priority)
+            user_id: If given and no target_file_hashes, return all files for this user
+            
+        Returns:
+            List of file hashes to query
         """
-        self._target_file_hashes = file_hashes
-        logger.info(f"Set target files for query: {len(file_hashes)} files")
-    
-    def clear_target_files(self):
-        """Clear file selection (will query all files)."""
-        self._target_file_hashes = []
-    
-    def get_target_file_hashes(self) -> List[str]:
-        """
-        Get the list of file hashes to query.
+        if target_file_hashes:
+            return target_file_hashes
         
-        If no specific files are selected, returns all indexed file hashes.
-        """
-        if self._target_file_hashes:
-            return self._target_file_hashes
-        
-        # Return all indexed files
-        return [meta.file_hash for meta in self.collection_manager.registry.get_all()]
+        # Return all indexed files for the user
+        return [meta.file_hash for meta in self.collection_manager.registry.get_all(user_id=user_id)]
     
     def retrieve(
         self,
         query: str,
         k: Optional[int] = None,
-        search_type: Optional[str] = None
+        search_type: Optional[str] = None,
+        target_file_hashes: Optional[List[str]] = None,
+        user_id: Optional[str] = None,
     ) -> List[Document]:
         """
         Retrieve relevant documents from target collections.
@@ -263,6 +257,8 @@ class MultiCollectionRetriever:
             query: Search query
             k: Number of documents to retrieve per collection
             search_type: Search type to use
+            target_file_hashes: Explicit list of file hashes to query
+            user_id: User ID to scope the query (used when target_file_hashes is empty)
             
         Returns:
             List of relevant Document objects from all target collections
@@ -270,17 +266,17 @@ class MultiCollectionRetriever:
         k = k or self.k
         search_type = search_type or self.search_type
         
-        target_hashes = self.get_target_file_hashes()
+        resolved_hashes = self.resolve_target_file_hashes(target_file_hashes, user_id)
         
-        if not target_hashes:
+        if not resolved_hashes:
             logger.warning("No files to query - index is empty")
             return []
         
-        logger.info(f"Retrieving from {len(target_hashes)} collections, k={k}")
+        logger.info(f"Retrieving from {len(resolved_hashes)} collections, k={k}, user={user_id}")
         
         all_documents = []
         
-        for file_hash in target_hashes:
+        for file_hash in resolved_hashes:
             try:
                 docs = self.collection_manager.query_collection(
                     file_hash=file_hash,
@@ -292,7 +288,7 @@ class MultiCollectionRetriever:
             except Exception as e:
                 logger.warning(f"Error querying collection for {file_hash}: {e}")
         
-        logger.info(f"Total retrieved: {len(all_documents)} documents from {len(target_hashes)} collections")
+        logger.info(f"Total retrieved: {len(all_documents)} documents from {len(resolved_hashes)} collections")
         
         # Log retrieved documents if debug enabled
         if rag_config.ENABLE_DEBUG_LOGGING and all_documents:
@@ -300,17 +296,24 @@ class MultiCollectionRetriever:
         
         return all_documents
     
-    def invoke(self, query: str) -> List[Document]:
+    def invoke(
+        self,
+        query: str,
+        target_file_hashes: Optional[List[str]] = None,
+        user_id: Optional[str] = None,
+    ) -> List[Document]:
         """
         Langchain-compatible invoke method.
         
         Args:
             query: Search query
+            target_file_hashes: Explicit list of file hashes to query
+            user_id: User ID to scope the query
             
         Returns:
             List of relevant Document objects
         """
-        return self.retrieve(query)
+        return self.retrieve(query, target_file_hashes=target_file_hashes, user_id=user_id)
     
     def _log_retrieved_documents(self, documents: List[Document]):
         """Log retrieved documents for debugging."""

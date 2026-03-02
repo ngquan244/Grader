@@ -57,7 +57,7 @@ const UploadPanel: React.FC = () => {
           Upload ảnh bài thi
         </h3>
         <p style={{ color: '#64748b', fontSize: '0.875rem', marginBottom: '1rem' }}>
-          Ảnh sẽ được lưu vào thư mục kaggle/Filled-temp/
+          Ảnh sẽ được lưu vào workspace riêng của bạn
         </p>
 
         <div

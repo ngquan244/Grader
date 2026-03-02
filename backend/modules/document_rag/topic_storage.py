@@ -19,6 +19,7 @@ class TopicStorage:
     """
     Persistent storage for document topics.
     Topics are extracted once during indexing and stored for quick retrieval.
+    Supports per-user isolation via composite keys '{user_id}:{file_hash}'.
     """
     
     def __init__(self, storage_dir: Optional[str] = None):
@@ -37,6 +38,13 @@ class TopicStorage:
         
         # Load existing topics
         self._load()
+    
+    @staticmethod
+    def _make_key(file_hash: str, user_id: Optional[str] = None) -> str:
+        """Create composite key: '{user_id}:{file_hash}' or '{file_hash}' for legacy."""
+        if user_id:
+            return f"{user_id}:{file_hash}"
+        return file_hash
     
     def _load(self):
         """Load topics from disk."""
@@ -62,7 +70,8 @@ class TopicStorage:
         self,
         file_hash: str,
         filename: str,
-        topics: List[Dict[str, str]]
+        topics: List[Dict[str, str]],
+        user_id: Optional[str] = None,
     ):
         """
         Save topics for a document.
@@ -71,77 +80,106 @@ class TopicStorage:
             file_hash: MD5 hash of the document
             filename: Original filename
             topics: List of topic dictionaries with 'name' and 'description'
+            user_id: Optional user ID for per-user scoping
         """
-        self._topics[file_hash] = {
+        key = self._make_key(file_hash, user_id)
+        self._topics[key] = {
             "filename": filename,
             "topics": topics,
-            "extracted_at": datetime.now().isoformat()
+            "extracted_at": datetime.now().isoformat(),
+            "user_id": user_id,
         }
         self._save()
-        logger.info(f"Saved {len(topics)} topics for {filename}")
+        logger.info(f"Saved {len(topics)} topics for {filename} (user={user_id})")
     
-    def get_topics(self, file_hash: str) -> Optional[List[Dict[str, str]]]:
+    def get_topics(self, file_hash: str, user_id: Optional[str] = None) -> Optional[List[Dict[str, str]]]:
         """
         Get topics for a document.
         
         Args:
             file_hash: MD5 hash of the document
+            user_id: Optional user ID for per-user scoping
             
         Returns:
             List of topics or None if not found
         """
-        if file_hash in self._topics:
+        key = self._make_key(file_hash, user_id)
+        if key in self._topics:
+            return self._topics[key].get("topics", [])
+        # Fallback: try legacy key (no user_id)
+        if user_id and file_hash in self._topics:
             return self._topics[file_hash].get("topics", [])
         return None
     
-    def get_topics_by_filename(self, filename: str) -> Optional[List[Dict[str, str]]]:
+    def get_topics_by_filename(
+        self, filename: str, user_id: Optional[str] = None
+    ) -> Optional[List[Dict[str, str]]]:
         """
-        Get topics by filename.
+        Get topics by filename, optionally scoped to user.
         
         Args:
             filename: Document filename
+            user_id: Optional user ID for per-user scoping
             
         Returns:
             List of topics or None if not found
         """
-        for file_hash, data in self._topics.items():
+        for key, data in self._topics.items():
             if data.get("filename") == filename:
-                return data.get("topics", [])
+                entry_user = data.get("user_id")
+                if user_id is None or entry_user == user_id or entry_user is None:
+                    return data.get("topics", [])
         return None
     
-    def has_topics(self, file_hash: str) -> bool:
+    def has_topics(self, file_hash: str, user_id: Optional[str] = None) -> bool:
         """Check if topics exist for a document."""
-        return file_hash in self._topics
+        key = self._make_key(file_hash, user_id)
+        if key in self._topics:
+            return True
+        if user_id and file_hash in self._topics:
+            return True
+        return False
     
-    def get_all_documents(self) -> List[Dict[str, Any]]:
+    def get_all_documents(self, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        Get list of all documents with topics.
+        Get list of all documents with topics, optionally filtered by user.
         
         Returns:
             List of document info dictionaries
         """
         documents = []
-        for file_hash, data in self._topics.items():
+        for key, data in self._topics.items():
+            entry_user = data.get("user_id")
+            if user_id is not None and entry_user is not None and entry_user != user_id:
+                continue
+            # Extract file_hash from composite key
+            if ":" in key:
+                file_hash = key.split(":", 1)[1]
+            else:
+                file_hash = key
             documents.append({
                 "file_hash": file_hash,
                 "filename": data.get("filename", "unknown"),
                 "topic_count": len(data.get("topics", [])),
-                "extracted_at": data.get("extracted_at")
+                "extracted_at": data.get("extracted_at"),
+                "user_id": entry_user,
             })
         return documents
     
-    def remove_document(self, file_hash: str) -> bool:
+    def remove_document(self, file_hash: str, user_id: Optional[str] = None) -> bool:
         """
         Remove topics for a document.
         
         Args:
             file_hash: MD5 hash of the document
+            user_id: Optional user ID to scope removal
             
         Returns:
             True if removed, False if not found
         """
-        if file_hash in self._topics:
-            del self._topics[file_hash]
+        key = self._make_key(file_hash, user_id)
+        if key in self._topics:
+            del self._topics[key]
             self._save()
             return True
         return False
@@ -149,7 +187,8 @@ class TopicStorage:
     def update_topics_by_filename(
         self,
         filename: str,
-        topics: List[Dict[str, str]]
+        topics: List[Dict[str, str]],
+        user_id: Optional[str] = None,
     ) -> bool:
         """
         Update topics for a document by filename.
@@ -157,24 +196,35 @@ class TopicStorage:
         Args:
             filename: Document filename
             topics: New list of topic dictionaries with 'name' and optionally 'description'
+            user_id: Optional user ID to scope update
             
         Returns:
             True if updated, False if not found
         """
-        for file_hash, data in self._topics.items():
+        for key, data in self._topics.items():
             if data.get("filename") == filename:
-                self._topics[file_hash]["topics"] = topics
-                self._topics[file_hash]["updated_at"] = datetime.now().isoformat()
-                self._save()
-                logger.info(f"Updated {len(topics)} topics for {filename}")
-                return True
+                entry_user = data.get("user_id")
+                if user_id is None or entry_user == user_id or entry_user is None:
+                    self._topics[key]["topics"] = topics
+                    self._topics[key]["updated_at"] = datetime.now().isoformat()
+                    self._save()
+                    logger.info(f"Updated {len(topics)} topics for {filename}")
+                    return True
         return False
     
-    def clear(self):
-        """Clear all stored topics."""
-        self._topics = {}
+    def clear(self, user_id: Optional[str] = None):
+        """Clear stored topics. If user_id given, only clear that user's topics."""
+        if user_id is None:
+            self._topics = {}
+        else:
+            keys_to_remove = [
+                key for key, data in self._topics.items()
+                if data.get("user_id") == user_id
+            ]
+            for key in keys_to_remove:
+                del self._topics[key]
         self._save()
-        logger.info("Cleared all stored topics")
+        logger.info(f"Cleared stored topics (user={user_id})")
 
 
 # Global instance

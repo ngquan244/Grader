@@ -26,12 +26,13 @@ async def send_message(request: ChatRequest, user: CurrentUser):
         for msg in request.history
     ]
     
-    # Invoke agent
+    # Invoke agent with user context
     result = agent_service.invoke(
         message=request.message,
         history=history,
         model=request.model,
-        max_iterations=request.max_iterations
+        max_iterations=request.max_iterations,
+        user_id=str(user.id),
     )
     
     # Format response

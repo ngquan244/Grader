@@ -86,6 +86,7 @@ def generate_quiz(
             language=language,
             k=k,
             selected_documents=selected_documents,
+            user_id=user_id,
         )
         
         job_service.update_progress(job_uuid, 90, "Formatting results")
@@ -200,6 +201,7 @@ def rag_query(
             question=question,
             k=k,
             return_context=return_context,
+            user_id=user_id,
         )
         
         if result.get("success"):
@@ -244,7 +246,7 @@ def extract_document_topics(
         else:
             rag_service = _get_rag_service()
         
-        result = rag_service.extract_topics()
+        result = rag_service.extract_topics(user_id=user_id)
         
         job_service.complete_job(job_uuid, result)
         return result

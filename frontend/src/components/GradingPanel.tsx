@@ -69,7 +69,7 @@ const GradingPanel: React.FC = () => {
       {/* Execute Grading Section */}
       <div className="grading-section">
         <h3>Chấm điểm bài thi</h3>
-        <p>Chấm điểm các bài thi trong thư mục kaggle/Filled-temp/</p>
+        <p>Chấm điểm các bài thi đã upload</p>
         <button
           className="btn-primary btn-large"
           onClick={executeGrading}

@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from .base import logger
 
-__all__ = ["DocumentQueryTool", "DocumentQueryInput"]
+__all__ = ["DocumentQueryTool", "DocumentQueryInput", "get_document_query_tool"]
 
 
 class DocumentQueryInput(BaseModel):
@@ -41,11 +41,12 @@ class DocumentQueryTool(BaseTool):
     - "Nội dung chính của tài liệu là gì?"
 
     Tool sẽ:
-    1. Tìm kiếm các đoạn văn liên quan trong tất cả tài liệu đã upload
+    1. Tìm kiếm các đoạn văn liên quan trong tài liệu đã upload của người dùng
     2. Trả lời câu hỏi dựa trên nội dung tìm được
     3. Kèm trích dẫn nguồn (tên file, trang)
     """
     args_schema: Type[BaseModel] = DocumentQueryInput
+    user_id: str = ""
 
     def _run(self, question: str) -> str:
         """
@@ -65,8 +66,10 @@ class DocumentQueryTool(BaseTool):
             rag = RAGService.get_instance()
             rag._ensure_initialized()
 
+            uid = self.user_id or None
+
             # Check if any documents are indexed
-            stats = rag.get_index_stats()
+            stats = rag.get_index_stats(user_id=uid)
             total_docs = stats.get("total_documents", 0)
             if total_docs == 0:
                 return json.dumps({
@@ -75,8 +78,8 @@ class DocumentQueryTool(BaseTool):
                     "status": "no_documents"
                 }, ensure_ascii=False, indent=2)
 
-            # Query across all indexed documents (no file filter → search all)
-            result = rag.query(question)
+            # Query across user's indexed documents
+            result = rag.query(question, user_id=uid)
 
             if not result:
                 return json.dumps({
@@ -114,3 +117,8 @@ class DocumentQueryTool(BaseTool):
     async def _arun(self, question: str) -> str:
         """Async version — delegates to sync _run."""
         return self._run(question)
+
+
+def get_document_query_tool(user_id: str = "") -> DocumentQueryTool:
+    """Factory that returns a DocumentQueryTool scoped to a specific user."""
+    return DocumentQueryTool(user_id=user_id)

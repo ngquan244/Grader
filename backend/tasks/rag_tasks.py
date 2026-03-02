@@ -77,6 +77,7 @@ def ingest_document(
             file_path=file_path,
             skip_if_exists=skip_if_exists,
             extract_topics=extract_topics,
+            user_id=user_id,
         )
         
         if result.get("success"):
@@ -130,7 +131,11 @@ def build_index(
         job_service.start_job(job_uuid, f"Building per-file index for: {filename}")
         
         # Construct file path
-        rag_upload_dir = settings.DATA_DIR / "rag_uploads"
+        if user_id:
+            from backend.utils import get_user_rag_dir
+            rag_upload_dir = get_user_rag_dir(user_id)
+        else:
+            rag_upload_dir = settings.DATA_DIR / "rag_uploads"
         file_path = rag_upload_dir / filename
         
         if not file_path.exists():
@@ -141,7 +146,7 @@ def build_index(
         # Ingest document into per-file collection
         # This uses the new PerFileCollectionManager - no global locks!
         rag_service = _get_rag_service()
-        result = rag_service.ingest_document(str(file_path))
+        result = rag_service.ingest_document(str(file_path), user_id=user_id)
         
         if result.get("success"):
             # Log the collection name for debugging
@@ -207,6 +212,7 @@ def query_documents(
             return_context=return_context,
             file_hashes=file_hashes,
             selected_documents=selected_documents,
+            user_id=user_id,
         )
         
         if result.get("success"):
@@ -246,7 +252,7 @@ def extract_topics(
         job_service.start_job(job_uuid, "Extracting topics")
         
         rag_service = _get_rag_service()
-        result = rag_service.extract_topics()
+        result = rag_service.extract_topics(user_id=user_id)
         
         job_service.complete_job(job_uuid, result)
         return result

@@ -103,6 +103,7 @@ data/rag_uploads/
 data/chroma/
 data/canvas_downloads/
 data/canvas_rag_uploads/
+data/user_workspaces/
 final_result.json
 test_fresh.json
 test_result.json

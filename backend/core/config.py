@@ -181,6 +181,26 @@ class Settings(BaseSettings):
     def MODELS_DIR(self) -> Path:
         return self.PROJECT_ROOT / "models"
     
+    @property
+    def USER_WORKSPACES_DIR(self) -> Path:
+        return self.DATA_DIR / "user_workspaces"
+    
+    def get_user_filled_dir(self, user_id: str) -> Path:
+        """Get per-user directory for uploaded exam images."""
+        return self.USER_WORKSPACES_DIR / user_id / "filled"
+    
+    def get_user_results_dir(self, user_id: str) -> Path:
+        """Get per-user directory for grading results."""
+        return self.USER_WORKSPACES_DIR / user_id / "results"
+    
+    def get_user_result_file(self, user_id: str) -> Path:
+        """Get per-user grading result JSON file path."""
+        return self.get_user_results_dir(user_id) / "result.json"
+
+    def get_user_rag_upload_dir(self, user_id: str) -> Path:
+        """Get per-user directory for RAG document uploads."""
+        return self.DATA_DIR / "rag_uploads" / user_id
+    
     @model_validator(mode='after')
     def warn_dev_secrets(self) -> 'Settings':
         """Warn if using development secrets in non-dev environment."""
@@ -283,3 +303,4 @@ settings = get_settings()
 settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
 settings.LOGS_DIR.mkdir(parents=True, exist_ok=True)
 settings.EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+settings.USER_WORKSPACES_DIR.mkdir(parents=True, exist_ok=True)

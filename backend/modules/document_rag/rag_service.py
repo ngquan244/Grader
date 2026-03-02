@@ -99,9 +99,6 @@ class RAGService:
         self._quiz_generator: Optional[QuizGenerator] = None
         self._llm_provider: Optional[BaseLLM] = None
         
-        # Track currently selected files for querying
-        self._selected_file_hashes: List[str] = []
-        
         # Lazy initialization flag
         self._initialized = False
     
@@ -161,7 +158,8 @@ class RAGService:
         self,
         file_path: str,
         skip_if_exists: bool = True,
-        extract_topics: bool = True
+        extract_topics: bool = True,
+        user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Ingest a PDF document into the vector store.
@@ -170,13 +168,14 @@ class RAGService:
             file_path: Path to PDF file
             skip_if_exists: Skip if document already indexed
             extract_topics: Extract and save topics after indexing
+            user_id: User ID for per-user scoping
             
         Returns:
             Dictionary with ingestion results
         """
         self._ensure_initialized()
         
-        logger.info(f"Ingesting document into per-file collection: {file_path}")
+        logger.info(f"Ingesting document into per-file collection: {file_path} (user={user_id})")
         
         try:
             # Check if file exists
@@ -193,7 +192,7 @@ class RAGService:
             filename = file_meta["filename"]
             
             # Check for duplicates using per-file collection manager
-            if skip_if_exists and self._collection_manager.is_indexed(file_hash):
+            if skip_if_exists and self._collection_manager.is_indexed(file_hash, user_id=user_id):
                 logger.info(f"Document already indexed in per-file collection: {file_path}")
                 collection_name = self._collection_manager.get_collection_name(file_hash)
                 return {
@@ -204,7 +203,7 @@ class RAGService:
                     "collection_name": collection_name,
                     "chunks_added": 0,
                     "already_indexed": True,
-                    "has_topics": topic_storage.has_topics(file_hash)
+                    "has_topics": topic_storage.has_topics(file_hash, user_id=user_id)
                 }
             
             # Load PDF
@@ -227,7 +226,8 @@ class RAGService:
                 filename=filename,
                 documents=chunks,
                 course_id=None,  # Regular upload, not Canvas
-                replace_existing=True  # Idempotent: re-indexing replaces old data
+                replace_existing=True,  # Idempotent: re-indexing replaces old data
+                user_id=user_id
             )
             
             collection_name = self._collection_manager.get_collection_name(file_hash)
@@ -244,7 +244,8 @@ class RAGService:
                         topic_storage.save_topics(
                             file_hash=file_hash,
                             filename=filename,
-                            topics=topics_extracted
+                            topics=topics_extracted,
+                            user_id=user_id
                         )
                         logger.info(f"Saved {len(topics_extracted)} topics for {filename}")
                 except Exception as e:
@@ -300,7 +301,8 @@ class RAGService:
         k: Optional[int] = None,
         return_context: bool = False,
         file_hashes: Optional[List[str]] = None,
-        selected_documents: Optional[List[str]] = None
+        selected_documents: Optional[List[str]] = None,
+        user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Query the document knowledge base.
@@ -311,6 +313,7 @@ class RAGService:
             return_context: Include retrieved context in response
             file_hashes: Optional list of file hashes to query (per-file collections)
             selected_documents: Optional list of filenames to query
+            user_id: User ID for per-user scoping
             
         Returns:
             Dictionary with:
@@ -320,20 +323,20 @@ class RAGService:
         """
         self._ensure_initialized()
         
-        logger.info(f"Processing query: {question}")
+        logger.info(f"Processing query: {question} (user={user_id})")
         
         # Determine which collections to query
         target_hashes = file_hashes or []
         
         # If filenames provided, resolve to file hashes
         if selected_documents and not target_hashes:
-            for meta in self._collection_manager.registry.get_all():
+            for meta in self._collection_manager.registry.get_all(user_id=user_id):
                 if meta.filename in selected_documents:
                     target_hashes.append(meta.file_hash)
         
-        # If no specific files selected, query all indexed files
+        # If no specific files selected, query all indexed files for this user
         if not target_hashes:
-            target_hashes = [meta.file_hash for meta in self._collection_manager.registry.get_all()]
+            target_hashes = [meta.file_hash for meta in self._collection_manager.registry.get_all(user_id=user_id)]
         
         # Check if there are indexed documents
         if not target_hashes:
@@ -347,13 +350,13 @@ class RAGService:
         logger.info(f"Querying {len(target_hashes)} collections")
         
         try:
-            # Set the target file hashes for the multi-retriever
-            self._multi_retriever.set_target_files(target_hashes)
-            
+            # Pass target_file_hashes directly — no mutable state
             result = self._rag_chain.query(
                 question=question,
                 k=k,
-                return_context=return_context
+                return_context=return_context,
+                target_file_hashes=target_hashes,
+                user_id=user_id
             )
             
             result["success"] = True
@@ -369,9 +372,12 @@ class RAGService:
                 "error": str(e)
             }
     
-    def get_index_stats(self) -> Dict[str, Any]:
+    def get_index_stats(self, user_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Get statistics about the document index.
+        
+        Args:
+            user_id: If given, only return stats for this user's documents
         
         Returns:
             Dictionary with index statistics (aggregated across all per-file collections)
@@ -379,7 +385,7 @@ class RAGService:
         self._ensure_initialized()
         
         # Get stats from per-file collection manager
-        indexed_files = self._collection_manager.get_indexed_files()
+        indexed_files = self._collection_manager.get_indexed_files(user_id=user_id)
         total_chunks = sum(f.get("chunk_count", 0) for f in indexed_files)
         
         return {
@@ -391,24 +397,28 @@ class RAGService:
             "embedding_model": rag_config.EMBEDDING_MODEL
         }
     
-    def reset_index(self) -> Dict[str, Any]:
+    def reset_index(self, user_id: Optional[str] = None) -> Dict[str, Any]:
         """
-        Reset the document index (delete all per-file collections).
+        Reset the document index.
+        If user_id given, only reset that user's collections.
+        
+        Args:
+            user_id: If given, only reset this user's data
         
         Returns:
             Dictionary with reset status
         """
         self._ensure_initialized()
         
-        logger.warning("Resetting all per-file document collections")
+        logger.warning(f"Resetting per-file document collections (user={user_id})")
         
         try:
-            # Reset all per-file collections
-            success = self._collection_manager.reset_all()
+            # Reset per-file collections
+            success = self._collection_manager.reset_all(user_id=user_id)
             
             # Also clear stored topics
-            topic_storage.clear()
-            logger.info("Cleared stored topics")
+            topic_storage.clear(user_id=user_id)
+            logger.info(f"Cleared stored topics (user={user_id})")
             
             if success:
                 return {
@@ -559,27 +569,21 @@ class RAGService:
         difficulty: str = "medium",
         language: str = "vi",
         k: int = 10,
-        selected_documents: List[str] = None
+        selected_documents: List[str] = None,
+        user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Generate quiz questions from the document knowledge base.
-        
-        Supports both single topic (legacy) and multiple topics.
         
         Args:
             topic: Single topic or description (legacy support)
             topics: List of topics for quiz generation (new)
             num_questions: Number of questions to generate (1-30)
-            difficulty: Difficulty level - "easy", "medium", or "hard"
+            difficulty: Difficulty level
             language: "vi" for Vietnamese, "en" for English
             k: Number of documents to retrieve for context per topic
             selected_documents: Optional list of document filenames to retrieve from
-            
-        Returns:
-            Dictionary with:
-            - success: Whether generation succeeded
-            - questions: List of quiz questions
-            - error: Error message if any
+            user_id: User ID for per-user scoping
         """
         self._ensure_initialized()
         
@@ -601,7 +605,7 @@ class RAGService:
         num_questions = max(1, min(30, num_questions))
         
         # Check if index has documents
-        stats = self.get_index_stats()
+        stats = self.get_index_stats(user_id=user_id)
         if stats["total_documents"] == 0:
             return {
                 "success": False,
@@ -610,6 +614,14 @@ class RAGService:
             }
         
         try:
+            # Resolve target file hashes from selected_documents
+            target_hashes = None
+            if selected_documents:
+                target_hashes = []
+                for meta in self._collection_manager.registry.get_all(user_id=user_id):
+                    if meta.filename in selected_documents:
+                        target_hashes.append(meta.file_hash)
+            
             # If multiple topics, use the new multi-topic method
             if len(topic_list) > 1:
                 result = self._quiz_generator.generate_quiz_multi_topics(
@@ -617,7 +629,9 @@ class RAGService:
                     num_questions=num_questions,
                     difficulty=difficulty,
                     language=language,
-                    k=k
+                    k=k,
+                    target_file_hashes=target_hashes,
+                    user_id=user_id
                 )
             else:
                 # Single topic - use existing method
@@ -626,7 +640,9 @@ class RAGService:
                     num_questions=num_questions,
                     difficulty=difficulty,
                     language=language,
-                    k=k
+                    k=k,
+                    target_file_hashes=target_hashes,
+                    user_id=user_id
                 )
             
             return result
@@ -639,22 +655,19 @@ class RAGService:
                 "error": f"Lỗi khi tạo quiz: {str(e)}"
             }
     
-    def extract_topics(self, max_topics: int = 10) -> Dict[str, Any]:
+    def extract_topics(self, max_topics: int = 10, user_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Extract suggested topics from indexed documents (legacy method).
-        This calls LLM to extract topics dynamically.
         
         Args:
             max_topics: Maximum number of topics to extract
-            
-        Returns:
-            Dictionary with topics
+            user_id: User ID for per-user scoping
         """
         self._ensure_initialized()
         
-        logger.info("Extracting topics from indexed documents")
+        logger.info(f"Extracting topics from indexed documents (user={user_id})")
         
-        stats = self.get_index_stats()
+        stats = self.get_index_stats(user_id=user_id)
         if stats["total_documents"] == 0:
             return {
                 "success": False,
@@ -674,20 +687,17 @@ class RAGService:
                 "message": f"Lỗi: {str(e)}"
             }
     
-    def get_document_topics(self, filename: str) -> Dict[str, Any]:
+    def get_document_topics(self, filename: str, user_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Get pre-extracted topics for a specific document.
-        No LLM call needed - returns cached topics from indexing.
         
         Args:
             filename: Document filename
-            
-        Returns:
-            Dictionary with topics for the document
+            user_id: User ID for per-user scoping
         """
-        logger.info(f"Getting topics for document: {filename}")
+        logger.info(f"Getting topics for document: {filename} (user={user_id})")
         
-        topics = topic_storage.get_topics_by_filename(filename)
+        topics = topic_storage.get_topics_by_filename(filename, user_id=user_id)
         
         if topics is not None:
             return {
@@ -699,7 +709,7 @@ class RAGService:
         
         # Topics not found - try to extract them now
         logger.info(f"No cached topics, extracting for: {filename}")
-        result = self.extract_topics_for_document(filename)
+        result = self.extract_topics_for_document(filename, user_id=user_id)
         
         if result.get("success"):
             return result
@@ -711,23 +721,21 @@ class RAGService:
             "message": "Không tìm thấy topics cho tài liệu này. Có thể cần index lại."
         }
     
-    def extract_topics_for_document(self, filename: str) -> Dict[str, Any]:
+    def extract_topics_for_document(self, filename: str, user_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Extract and cache topics for a specific document.
         
         Args:
             filename: Document filename
-            
-        Returns:
-            Dictionary with extracted topics
+            user_id: User ID for per-user scoping
         """
         self._ensure_initialized()
         
-        logger.info(f"Extracting topics for document: {filename}")
+        logger.info(f"Extracting topics for document: {filename} (user={user_id})")
         
         try:
             # Find the file_hash for this filename from collection registry
-            indexed_files = self._collection_manager.get_indexed_files()
+            indexed_files = self._collection_manager.get_indexed_files(user_id=user_id)
             file_hash = None
             for file_info in indexed_files:
                 if file_info.get("filename") == filename:
@@ -745,7 +753,8 @@ class RAGService:
             # Get document content from per-file collection manager (specific file)
             all_docs = self._collection_manager.get_all_document_content(
                 file_hash=file_hash,
-                max_docs=50
+                max_docs=50,
+                user_id=user_id
             )
             
             if not all_docs:
@@ -772,7 +781,8 @@ class RAGService:
                 topic_storage.save_topics(
                     file_hash=file_hash,
                     filename=filename,
-                    topics=topics
+                    topics=topics,
+                    user_id=user_id
                 )
                 
                 return {
@@ -799,22 +809,21 @@ class RAGService:
                 "message": str(e)
             }
     
-    def get_indexed_documents_with_topics(self) -> Dict[str, Any]:
+    def get_indexed_documents_with_topics(self, user_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Get list of all indexed documents with their topic counts.
-        Returns documents from topic_storage and also from indexed files.
         
-        Returns:
-            Dictionary with document list
+        Args:
+            user_id: User ID for per-user scoping
         """
         self._ensure_initialized()
         
         # Get documents that already have topics
-        docs_with_topics = topic_storage.get_all_documents()
+        docs_with_topics = topic_storage.get_all_documents(user_id=user_id)
         docs_dict = {d["filename"]: d for d in docs_with_topics}
         
         # Get indexed files from per-file collection manager (not legacy vectorstore)
-        indexed_files = self._collection_manager.get_indexed_files()
+        indexed_files = self._collection_manager.get_indexed_files(user_id=user_id)
         
         # Merge: add files that don't have topics yet
         for file_info in indexed_files:
@@ -834,20 +843,18 @@ class RAGService:
             "count": len(documents)
         }
     
-    def update_document_topics(self, filename: str, topics: List[Dict[str, str]]) -> Dict[str, Any]:
+    def update_document_topics(self, filename: str, topics: List[Dict[str, str]], user_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Update topics for a specific document.
         
         Args:
             filename: Document filename
-            topics: List of topic dictionaries with 'name' and optionally 'description'
-            
-        Returns:
-            Dictionary with success status
+            topics: List of topic dictionaries
+            user_id: User ID for per-user scoping
         """
-        logger.info(f"Updating topics for document: {filename}, topics: {topics}")
+        logger.info(f"Updating topics for document: {filename}, topics: {topics} (user={user_id})")
         
-        success = topic_storage.update_topics_by_filename(filename, topics)
+        success = topic_storage.update_topics_by_filename(filename, topics, user_id=user_id)
         
         if success:
             return {
