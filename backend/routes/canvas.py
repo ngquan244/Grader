@@ -3,6 +3,7 @@ Canvas LMS API Routes
 Proxy endpoints for Canvas REST API with file download, MD5 deduplication, and QTI import
 """
 import base64
+import logging
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 from typing import Optional
@@ -15,6 +16,8 @@ from backend.services.canvas_service import (
     download_files_batch,
     import_qti_to_canvas,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -228,9 +231,10 @@ async def import_qti_bank(
     try:
         qti_zip_content = base64.b64decode(request.qti_zip_base64)
     except Exception as e:
+        logger.warning("Invalid base64 zip input: %s", e)
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid base64 encoded zip file: {str(e)}"
+            detail="Dữ liệu base64 không hợp lệ"
         )
     
     if len(qti_zip_content) == 0:
@@ -335,7 +339,8 @@ async def async_download_single_file(
         )
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error queuing file download")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 @router.post("/async/download/batch")
@@ -383,7 +388,8 @@ async def async_download_batch(
         )
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error queuing batch download")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 @router.post("/async/import-qti-bank")
@@ -409,7 +415,8 @@ async def async_import_qti_bank(
         if len(qti_zip_content) == 0:
             raise ValueError("Empty content")
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid base64 zip: {e}")
+        logger.warning("Invalid base64 zip input: %s", e)
+        raise HTTPException(status_code=400, detail="Dữ liệu base64 không hợp lệ")
     
     try:
         job_service = JobService(db)
@@ -447,4 +454,5 @@ async def async_import_qti_bank(
         )
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error queuing QTI import")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")

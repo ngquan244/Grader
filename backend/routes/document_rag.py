@@ -137,8 +137,8 @@ async def upload_document(user: CurrentUser, file: UploadFile = File(...)):
         )
         
     except Exception as e:
-        logger.error(f"Error uploading file: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error uploading file")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 @router.post("/build-index", response_model=IngestResponse)
@@ -174,8 +174,8 @@ async def build_index(user: CurrentUser, filename: str = Form(...)):
         )
         
     except Exception as e:
-        logger.error(f"Error building index: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error building index")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 @router.post("/upload-and-index", response_model=IngestResponse)
@@ -218,8 +218,8 @@ async def upload_and_index(user: CurrentUser, file: UploadFile = File(...)):
         )
         
     except Exception as e:
-        logger.error(f"Error in upload-and-index: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error in upload-and-index")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 class DownloadAndIndexRequest(BaseModel):
@@ -290,14 +290,14 @@ async def download_and_index(request: DownloadAndIndexRequest, user: CurrentUser
         )
         
     except httpx.HTTPStatusError as e:
-        logger.error(f"HTTP error downloading file: {e}")
-        raise HTTPException(status_code=502, detail=f"Failed to download file: HTTP {e.response.status_code}")
+        logger.exception("HTTP error downloading file")
+        raise HTTPException(status_code=502, detail="Lỗi tải file từ server")
     except httpx.RequestError as e:
         logger.error(f"Network error downloading file: {e}")
         raise HTTPException(status_code=502, detail="Network error during download")
     except Exception as e:
-        logger.error(f"Error in download-and-index: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error in download-and-index")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 @router.post("/query", response_model=QueryResponse)
@@ -341,8 +341,8 @@ async def query_documents(request: QueryRequest, user: CurrentUser):
         )
         
     except Exception as e:
-        logger.error(f"Error processing query: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error processing query")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 @router.get("/stats", response_model=IndexStatsResponse)
@@ -361,8 +361,8 @@ async def get_index_stats(user: CurrentUser):
         )
         
     except Exception as e:
-        logger.error(f"Error getting stats: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error getting stats")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 @router.post("/reset")
@@ -380,8 +380,8 @@ async def reset_index(user: CurrentUser):
         return result
         
     except Exception as e:
-        logger.error(f"Error resetting index: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error resetting index")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 @router.get("/ollama-status")
@@ -396,11 +396,11 @@ async def check_ollama_status(user: CurrentUser):
         return status
         
     except Exception as e:
-        logger.error(f"Error checking Ollama status: {e}")
+        logger.exception("Error checking Ollama status")
         return {
             "connected": False,
-            "error": str(e),
-            "message": f"Error checking Ollama: {str(e)}"
+            "error": "Connection check failed",
+            "message": "Không thể kết nối tới Ollama"
         }
 
 
@@ -419,8 +419,8 @@ async def get_rag_config(user: CurrentUser):
         }
         
     except Exception as e:
-        logger.error(f"Error getting config: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error getting config")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 @router.get("/uploaded-files")
@@ -446,8 +446,8 @@ async def list_uploaded_files(user: CurrentUser):
         }
         
     except Exception as e:
-        logger.error(f"Error listing files: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error listing files")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 @router.delete("/uploaded-files/{filename}")
@@ -472,8 +472,8 @@ async def delete_uploaded_file(filename: str, user: CurrentUser):
         }
         
     except Exception as e:
-        logger.error(f"Error deleting file: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error deleting file")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 # ============================================================================
@@ -575,8 +575,8 @@ async def generate_quiz_from_documents(request: GenerateQuizRequest, user: Curre
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error generating quiz: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error generating quiz")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 class ExportQuizRequest(BaseModel):
@@ -634,8 +634,8 @@ async def extract_topics_from_documents(user: CurrentUser):
         return result
         
     except Exception as e:
-        logger.error(f"Error extracting topics: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error extracting topics")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 @router.post("/export-quiz-qti")
@@ -698,8 +698,8 @@ async def export_quiz_to_qti(request: ExportQuizRequest, user: CurrentUser):
         )
         
     except Exception as e:
-        logger.error(f"Error exporting quiz to QTI: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error exporting quiz to QTI")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 # ==================== TOPIC MANAGEMENT ENDPOINTS ====================
@@ -737,8 +737,8 @@ async def get_document_topics(filename: str, user: CurrentUser):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting topics for {filename}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error getting topics for {filename}")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 class UpdateTopicsRequest(BaseModel):
@@ -780,8 +780,8 @@ async def update_document_topics(filename: str, request: UpdateTopicsRequest, us
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error updating topics for {filename}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error updating topics for {filename}")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 @router.get("/indexed-documents")
@@ -814,8 +814,8 @@ async def list_indexed_documents(user: CurrentUser):
         }
         
     except Exception as e:
-        logger.error(f"Error listing indexed documents: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error listing indexed documents")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 # ============================================================================
@@ -872,8 +872,8 @@ async def set_llm_provider(request: SetLLMProviderRequest, admin: AdminUser):
         )
         
     except Exception as e:
-        logger.error(f"Error setting LLM provider: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error setting LLM provider")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 @router.get("/llm-provider")
@@ -891,8 +891,8 @@ async def get_llm_provider_info(user: CurrentUser):
         return result
         
     except Exception as e:
-        logger.error(f"Error getting LLM provider info: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error getting LLM provider info")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 @router.get("/llm-status")
@@ -910,11 +910,11 @@ async def check_llm_status(user: CurrentUser):
         return status
         
     except Exception as e:
-        logger.error(f"Error checking LLM status: {e}")
+        logger.exception("Error checking LLM status")
         return {
             "connected": False,
-            "error": str(e),
-            "message": f"Error checking LLM status: {str(e)}"
+            "error": "Connection check failed",
+            "message": "Không thể kết nối tới LLM provider"
         }
 
 
@@ -988,8 +988,8 @@ async def async_build_index(
         )
         
     except Exception as e:
-        logger.error(f"Error queueing build-index job: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error queueing build-index job")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 @router.post("/async/upload-and-index", response_model=AsyncJobResponse)
@@ -1039,8 +1039,8 @@ async def async_upload_and_index(
         )
         
     except Exception as e:
-        logger.error(f"Error in async upload-and-index: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error in async upload-and-index")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 @router.post("/async/query", response_model=AsyncJobResponse)
@@ -1086,8 +1086,8 @@ async def async_query_documents(
         )
         
     except Exception as e:
-        logger.error(f"Error queueing query job: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error queueing query job")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 @router.post("/async/generate-quiz", response_model=AsyncJobResponse)
@@ -1148,8 +1148,8 @@ async def async_generate_quiz(
         )
         
     except Exception as e:
-        logger.error(f"Error queueing quiz generation: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error queueing quiz generation")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 @router.post("/async/extract-topics", response_model=AsyncJobResponse)
@@ -1187,5 +1187,5 @@ async def async_extract_topics(
         )
         
     except Exception as e:
-        logger.error(f"Error queueing topic extraction: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error queueing topic extraction")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")

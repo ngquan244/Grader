@@ -142,6 +142,26 @@ class Settings(BaseSettings):
     ENCRYPTION_KEY: str = _DEV_ENCRYPTION_KEY  # Override in .env for production
     
     # ==========================================================================
+    # Signup Configuration
+    # ==========================================================================
+    SIGNUP_MODE: str = "open"  # "open" | "invite" | "closed"
+    SIGNUP_INVITE_CODE: str = ""  # Fallback env-var code (min 16 chars)
+    INVITE_SECRET: str = ""  # HMAC key for hashing DB invite codes (min 32 chars)
+
+    # Signup rate-limit: same structure as login
+    SIGNUP_RATE_LIMIT_MAX_ATTEMPTS: int = 5
+    SIGNUP_RATE_LIMIT_WINDOW_SECONDS: int = 600  # 10-minute window
+    SIGNUP_LOCKOUT_DURATION_SECONDS: int = 1800  # 30-minute lockout
+
+    @field_validator("SIGNUP_MODE")
+    @classmethod
+    def validate_signup_mode(cls, v: str) -> str:
+        allowed = {"open", "invite", "closed"}
+        if v not in allowed:
+            raise ValueError(f"SIGNUP_MODE must be one of {allowed}, got '{v}'")
+        return v
+    
+    # ==========================================================================
     # Password Hashing Configuration
     # ==========================================================================
     PASSWORD_HASH_ALGORITHM: str = "argon2"  # argon2 | bcrypt
@@ -202,27 +222,71 @@ class Settings(BaseSettings):
         return self.DATA_DIR / "rag_uploads" / user_id
     
     @model_validator(mode='after')
-    def warn_dev_secrets(self) -> 'Settings':
-        """Warn if using development secrets in non-dev environment."""
-        if self.ENVIRONMENT != "development":
-            if self.JWT_SECRET_KEY == _DEV_JWT_SECRET:
-                warnings.warn(
-                    "Using development JWT_SECRET_KEY in non-development environment! "
-                    "Set JWT_SECRET_KEY in your .env file.",
-                    UserWarning
+    def validate_secrets(self) -> 'Settings':
+        """
+        Enforce production secrets.
+        - development: warn only (local dev keeps working).
+        - staging / production: raise ValueError → app refuses to start.
+        """
+        _dev_secrets = {
+            "JWT_SECRET_KEY": (self.JWT_SECRET_KEY, _DEV_JWT_SECRET),
+            "JWT_REFRESH_SECRET_KEY": (self.JWT_REFRESH_SECRET_KEY, _DEV_JWT_REFRESH_SECRET),
+            "ENCRYPTION_KEY": (self.ENCRYPTION_KEY, _DEV_ENCRYPTION_KEY),
+        }
+        _default_db_password = "grader_secret_password"
+
+        if self.ENVIRONMENT == "development":
+            # Soft warnings — local dev keeps working
+            for name, (current, dev_default) in _dev_secrets.items():
+                if current == dev_default:
+                    warnings.warn(
+                        f"Using development {name} — set {name} in .env before deploying.",
+                        UserWarning,
+                    )
+        else:
+            # Hard fail — production / staging must not use dev defaults
+            insecure: list[str] = []
+            for name, (current, dev_default) in _dev_secrets.items():
+                if current == dev_default:
+                    insecure.append(name)
+            if self.POSTGRES_PASSWORD == _default_db_password:
+                insecure.append("POSTGRES_PASSWORD")
+            if insecure:
+                raise ValueError(
+                    f"FATAL: Insecure default values detected for: {', '.join(insecure)}. "
+                    f"Set them in your .env file before running in "
+                    f"ENVIRONMENT={self.ENVIRONMENT}."
                 )
-            if self.JWT_REFRESH_SECRET_KEY == _DEV_JWT_REFRESH_SECRET:
-                warnings.warn(
-                    "Using development JWT_REFRESH_SECRET_KEY in non-development environment! "
-                    "Set JWT_REFRESH_SECRET_KEY in your .env file.",
-                    UserWarning
+
+            # CORS: ensure origins have been explicitly set (no localhost-only)
+            _all_local = all(
+                "localhost" in o or "127.0.0.1" in o
+                for o in self.CORS_ORIGINS
+            )
+            if _all_local:
+                raise ValueError(
+                    "CORS_ORIGINS contains only localhost origins. "
+                    "Set CORS_ORIGINS in .env for production, e.g.: "
+                    'CORS_ORIGINS=["https://grader.example.com"]'
                 )
-            if self.ENCRYPTION_KEY == _DEV_ENCRYPTION_KEY:
+
+        # Signup invite code validation (all environments)
+        if self.SIGNUP_MODE == "invite" and len(self.SIGNUP_INVITE_CODE) < 16:
+            # Only warn — DB-managed codes are the primary mechanism now
+            if not self.INVITE_SECRET:
                 warnings.warn(
-                    "Using development ENCRYPTION_KEY in non-development environment! "
-                    "Set ENCRYPTION_KEY in your .env file.",
-                    UserWarning
+                    "SIGNUP_MODE=invite but no INVITE_SECRET set and "
+                    "SIGNUP_INVITE_CODE < 16 chars. Set INVITE_SECRET for "
+                    "DB-managed codes or SIGNUP_INVITE_CODE for env-var fallback.",
+                    UserWarning,
                 )
+
+        # INVITE_SECRET validation
+        if self.INVITE_SECRET and len(self.INVITE_SECRET) < 32:
+            raise ValueError(
+                "INVITE_SECRET must be at least 32 characters. "
+                'Generate one with: python -c "import secrets; print(secrets.token_urlsafe(48))"'
+            )
         return self
     
     # ==========================================================================

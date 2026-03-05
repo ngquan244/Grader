@@ -15,6 +15,11 @@ from .rag_document import (
     RAGDocumentTopic,
     RAGSourceType,
 )
+from .invite_code import (
+    AppSetting,
+    InviteCode,
+    InviteCodeUsage,
+)
 
 __all__ = [
     "User",
@@ -36,4 +41,7 @@ __all__ = [
     "RAGCollection",
     "RAGDocumentTopic",
     "RAGSourceType",
+    "AppSetting",
+    "InviteCode",
+    "InviteCodeUsage",
 ]

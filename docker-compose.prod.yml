@@ -2,6 +2,19 @@
 # Docker Compose Production Overrides
 # =============================================================================
 # Usage: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# First-time SSL setup:
+#   1. Set PRODUCTION_DOMAIN in .env
+#   2. Point DNS to your server
+#   3. Start with HTTP-only nginx first to get certs:
+#      cp docker/nginx/nginx.dev.conf docker/nginx/nginx.conf.tmp
+#      docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#   4. Run certbot:
+#      docker-compose -f docker-compose.yml -f docker-compose.prod.yml \
+#        run --rm certbot certonly --webroot -w /var/www/certbot \
+#        -d ${PRODUCTION_DOMAIN} --agree-tos -m admin@${PRODUCTION_DOMAIN}
+#   5. Restore HTTPS nginx config and restart:
+#      docker-compose -f docker-compose.yml -f docker-compose.prod.yml restart nginx
 # =============================================================================
 
 services:
@@ -34,6 +47,56 @@ services:
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD}
 
   # ===========================================================================
+  # Nginx Reverse Proxy + TLS Termination
+  # ===========================================================================
+  nginx:
+    image: nginx:alpine
+    container_name: grader_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - PRODUCTION_DOMAIN=${PRODUCTION_DOMAIN}
+    volumes:
+      # Nginx template — envsubst replaces ${PRODUCTION_DOMAIN} at startup
+      - ./docker/nginx/nginx.conf:/etc/nginx/templates/default.conf.template:ro
+      # Let's Encrypt certificates + webroot
+      - certbot_certs:/etc/letsencrypt:ro
+      - certbot_webroot:/var/www/certbot:ro
+      # Frontend production build (mount your built files here)
+      - ./frontend/dist:/usr/share/nginx/html:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - grader_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # ===========================================================================
+  # Certbot — Let's Encrypt certificate management
+  # ===========================================================================
+  certbot:
+    image: certbot/certbot
+    container_name: grader_certbot
+    volumes:
+      - certbot_certs:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+    # Only run on-demand: docker-compose run --rm certbot renew
+    profiles:
+      - ssl
+
+  # ===========================================================================
   # FastAPI Backend Application
   # ===========================================================================
   backend:
@@ -51,11 +114,15 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - JWT_REFRESH_SECRET_KEY=${JWT_REFRESH_SECRET_KEY}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - CORS_ORIGINS=["https://${PRODUCTION_DOMAIN}"]
+      - SIGNUP_MODE=${SIGNUP_MODE:-invite}
+      - SIGNUP_INVITE_CODE=${SIGNUP_INVITE_CODE}
     
-    ports:
-      - "8000:8000"
+    # Backend is NOT exposed externally — nginx proxies to it
+    ports: []
     
     depends_on:
       postgres:
@@ -81,3 +148,14 @@ services:
     
     networks:
       - grader_network
+
+# =============================================================================
+# Additional Named Volumes for Production
+# =============================================================================
+volumes:
+  certbot_certs:
+    driver: local
+    name: grader_certbot_certs
+  certbot_webroot:
+    driver: local
+    name: grader_certbot_webroot

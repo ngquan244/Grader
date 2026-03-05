@@ -88,7 +88,8 @@ async def export_quiz_csv(
             token, base_url, course_id, quiz_id
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.warning("Invalid quiz export request: %s", e)
+        raise HTTPException(status_code=400, detail="Dữ liệu đầu vào không hợp lệ")
 
     return PlainTextResponse(
         content=csv_content,
@@ -111,7 +112,8 @@ async def export_quiz_excel(
             token, base_url, course_id, quiz_id
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.warning("Invalid quiz excel export request: %s", e)
+        raise HTTPException(status_code=400, detail="Dữ liệu đầu vào không hợp lệ")
 
     return Response(
         content=xlsx_bytes,
@@ -133,7 +135,8 @@ async def export_course_csv(
             token, base_url, course_id
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.warning("Invalid course export request: %s", e)
+        raise HTTPException(status_code=400, detail="Dữ liệu đầu vào không hợp lệ")
 
     return PlainTextResponse(
         content=csv_content,
@@ -155,7 +158,8 @@ async def export_course_excel(
             token, base_url, course_id
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.warning("Invalid course excel export request: %s", e)
+        raise HTTPException(status_code=400, detail="Dữ liệu đầu vào không hợp lệ")
 
     return Response(
         content=xlsx_bytes,

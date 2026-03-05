@@ -154,8 +154,8 @@ async def get_canvas_document_topics(filename: str, user: CurrentUser):
                 filename, user_id=str(user.id), db_session=db,
             )
     except Exception as e:
-        logger.error(f"Error getting Canvas document topics: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error getting Canvas document topics")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 @router.put("/topics")
@@ -175,8 +175,8 @@ async def update_canvas_document_topics(request: CanvasUpdateTopicsRequest, user
         
         return result
     except Exception as e:
-        logger.error(f"Error updating Canvas document topics: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error updating Canvas document topics")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 @router.get("/files")
@@ -200,8 +200,8 @@ async def list_indexed_canvas_documents(user: CurrentUser):
                 user_id=str(user.id), db_session=db,
             )
     except Exception as e:
-        logger.error(f"Error listing indexed Canvas documents: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error listing indexed Canvas documents")
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 @router.get("/stats")

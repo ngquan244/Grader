@@ -83,12 +83,15 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down Teaching Assistant Grader API...")
 
 
+# Swagger / ReDoc: only available in development
+_is_dev = settings.ENVIRONMENT == "development"
+
 app = FastAPI(
     title="Teaching Assistant Grader API",
     description="API cho hệ thống chấm điểm bài thi tự động với AI Agent",
     version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url="/docs" if _is_dev else None,
+    redoc_url="/redoc" if _is_dev else None,
     lifespan=lifespan
 )
 
@@ -153,13 +156,15 @@ app.mount("/static/exports", StaticFiles(directory=str(settings.EXPORTS_DIR)), n
 @app.get("/")
 async def root():
     """API root endpoint"""
-    return {
+    info = {
         "name": "Teaching Assistant Grader API",
         "version": "1.0.0",
         "status": "running",
-        "docs": "/docs",
-        "redoc": "/redoc"
     }
+    if _is_dev:
+        info["docs"] = "/docs"
+        info["redoc"] = "/redoc"
+    return info
 
 
 @app.get("/health")

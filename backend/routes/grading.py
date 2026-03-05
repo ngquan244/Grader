@@ -56,7 +56,7 @@ async def execute_grading(user: CurrentUser):
         }
     except Exception as e:
         logger.exception("Grading execution failed")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 @router.post("/grade-single")
@@ -84,7 +84,7 @@ async def grade_single_image(user: CurrentUser, file: UploadFile = File(...)):
         raise
     except Exception as e:
         logger.exception("Single image grading failed")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 @router.post("/summary", response_model=GradingResponse)

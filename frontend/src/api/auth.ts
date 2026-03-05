@@ -34,8 +34,13 @@ export interface SignupRequest {
   email: string;
   name: string;
   password: string;
+  invite_code?: string;
   canvas_access_token?: string;
   canvas_domain?: string;
+}
+
+export interface SignupStatusResponse {
+  mode: 'open' | 'invite' | 'closed';
 }
 
 export interface LoginResponse {
@@ -78,6 +83,14 @@ export interface ApiError {
 // =============================================================================
 // API Functions
 // =============================================================================
+
+/**
+ * Get signup mode (public — no auth required)
+ */
+export async function getSignupStatus(): Promise<SignupStatusResponse> {
+  const response = await apiClient.get<SignupStatusResponse>('/api/auth/signup-status');
+  return response.data;
+}
 
 /**
  * Register a new user account

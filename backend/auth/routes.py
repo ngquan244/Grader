@@ -2,15 +2,19 @@
 Authentication API routes.
 Handles signup, login, logout, token refresh, and user profile endpoints.
 """
+import hmac
 import logging
 from datetime import datetime, timezone
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Request, status
+from fastapi.exceptions import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
 from backend.services.auth_service import AuthService
+from backend.services import app_settings_service
+from backend.services.invite_code_service import InviteCodeService
 from backend.core.config import settings
 from backend.core.security import (
     create_access_token,
@@ -38,12 +42,26 @@ from backend.auth.rate_limiter import (
     is_login_locked_out,
     record_failed_login,
     reset_login_attempts,
+    is_signup_locked_out,
+    record_failed_signup,
+    reset_signup_attempts,
 )
 from backend.core.exceptions import UnauthorizedException
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+
+# ─── Public: signup mode status (so frontend knows what to show) ─────────────
+@router.get(
+    "/signup-status",
+    summary="Get current signup mode",
+    description="Returns the current signup mode so the frontend can adapt the UI.",
+)
+async def signup_status(db: AsyncSession = Depends(get_db)):
+    mode = await app_settings_service.get_signup_mode(db)
+    return {"mode": mode}
 
 
 @router.post(
@@ -56,6 +74,7 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 )
 async def signup(
     request: SignupRequest,
+    raw_request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> SignupResponse:
     """
@@ -64,9 +83,86 @@ async def signup(
     - **email**: User email (must be unique)
     - **name**: User display name
     - **password**: Password (min 8 chars, must include uppercase, lowercase, digit, special char)
+    - **invite_code**: Invite code (required when SIGNUP_MODE=invite)
     - **canvas_access_token**: Optional Canvas LMS access token
     - **canvas_domain**: Canvas LMS domain (default: canvas.instructure.com)
     """
+    client_ip = raw_request.client.host if raw_request.client else "unknown"
+
+    # ── Rate limit ───────────────────────────────────────────────────
+    locked, remaining_secs = await is_signup_locked_out(client_ip)
+    if locked:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Quá nhiều lần đăng ký. Vui lòng thử lại sau {remaining_secs} giây.",
+        )
+
+    # ── Signup mode gate ─────────────────────────────────────────────
+    signup_mode = await app_settings_service.get_signup_mode(db)
+
+    if signup_mode == "closed":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Đăng ký tài khoản hiện đang tắt. Vui lòng liên hệ quản trị viên.",
+        )
+
+    # Track whether a DB invite code was used (for recording usage after user creation)
+    _matched_invite_code_id = None
+
+    if signup_mode == "invite":
+        code = (request.invite_code or "").strip()
+        if not code:
+            await record_failed_signup(client_ip)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Mã mời không hợp lệ.",
+            )
+
+        # Try DB-managed codes first (if INVITE_SECRET is configured)
+        db_code_matched = False
+        if settings.INVITE_SECRET:
+            from backend.services.invite_code_service import _hmac_hash
+            from sqlalchemy import select
+            from backend.database.models.invite_code import InviteCode
+
+            code_hash = _hmac_hash(code)
+            result = await db.execute(
+                select(InviteCode).where(InviteCode.code_hash == code_hash)
+            )
+            invite = result.scalar_one_or_none()
+            if invite is not None:
+                if not invite.is_usable:
+                    await record_failed_signup(client_ip)
+                    if not invite.is_active:
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Mã mời đã bị vô hiệu hóa.",
+                        )
+                    if invite.is_expired:
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Mã mời đã hết hạn.",
+                        )
+                    if invite.is_exhausted:
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Mã mời đã đạt giới hạn sử dụng.",
+                        )
+                db_code_matched = True
+                _matched_invite_code_id = invite.id
+
+        # Fallback: env-var invite code
+        if not db_code_matched:
+            if not settings.SIGNUP_INVITE_CODE or not hmac.compare_digest(
+                code, settings.SIGNUP_INVITE_CODE
+            ):
+                await record_failed_signup(client_ip)
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Mã mời không hợp lệ.",
+                )
+
+    # ── Create user ──────────────────────────────────────────────────
     auth_service = AuthService(db)
     
     user = await auth_service.signup(
@@ -76,7 +172,22 @@ async def signup(
         canvas_access_token=request.canvas_access_token,
         canvas_domain=request.canvas_domain,
     )
-    
+
+    # ── Record invite code usage (with row lock) ─────────────────────
+    if _matched_invite_code_id is not None:
+        svc = InviteCodeService(db)
+        try:
+            await svc.validate_and_use(
+                plaintext_code=(request.invite_code or "").strip(),
+                user_id=user.id,
+            )
+        except Exception:
+            logger.warning(
+                "Failed to record invite code usage for user %s (code_id=%s). "
+                "User was still created.",
+                user.id, _matched_invite_code_id,
+            )
+
     # Generate tokens directly (no need to call login again)
     access_token = create_access_token(
         user_id=str(user.id),
@@ -84,6 +195,9 @@ async def signup(
         role=user.role.value,
     )
     refresh_token = create_refresh_token(str(user.id))
+
+    # Reset signup rate limit on success
+    await reset_signup_attempts(client_ip)
     
     return SignupResponse(
         user=UserResponse.model_validate(user),

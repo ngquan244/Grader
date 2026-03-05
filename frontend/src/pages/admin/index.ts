@@ -5,3 +5,4 @@ export { default as AdminJobs } from './AdminJobs';
 export { default as AdminPanels } from './AdminPanels';
 export { default as AdminModels } from './AdminModels';
 export { default as AdminTools } from './AdminTools';
+export { default as AdminInviteCodes } from './AdminInviteCodes';

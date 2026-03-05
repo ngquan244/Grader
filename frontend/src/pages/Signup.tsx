@@ -5,7 +5,8 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Loader2, Mail, Lock, User, Key, AlertCircle, GraduationCap, Eye, EyeOff, CheckCircle, UserPlus, ArrowRight } from 'lucide-react';
+import { getSignupStatus } from '../api/auth';
+import { Loader2, Mail, Lock, User, Key, AlertCircle, GraduationCap, Eye, EyeOff, CheckCircle, UserPlus, ArrowRight, ShieldCheck } from 'lucide-react';
 import type { AxiosError } from 'axios';
 import './Auth.css';
 
@@ -14,6 +15,7 @@ interface FormData {
   name: string;
   password: string;
   confirmPassword: string;
+  inviteCode: string;
   canvasAccessToken: string;
 }
 
@@ -22,6 +24,7 @@ interface FormErrors {
   name?: string;
   password?: string;
   confirmPassword?: string;
+  inviteCode?: string;
   canvasAccessToken?: string;
   general?: string;
 }
@@ -36,6 +39,7 @@ const SignupPage: React.FC = () => {
     name: '',
     password: '',
     confirmPassword: '',
+    inviteCode: '',
     canvasAccessToken: '',
   });
   
@@ -44,6 +48,8 @@ const SignupPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [shakeError, setShakeError] = useState(false);
   const [hasEntered, setHasEntered] = useState(false);
+  const [signupMode, setSignupMode] = useState<'open' | 'invite' | 'closed'>('open');
+  const [modeLoading, setModeLoading] = useState(true);
 
   // Memoize star positions so they don't respawn on every re-render
   const stars = useMemo(
@@ -59,6 +65,14 @@ const SignupPage: React.FC = () => {
 
   useEffect(() => {
     emailInputRef.current?.focus();
+  }, []);
+
+  // Fetch signup mode on mount
+  useEffect(() => {
+    getSignupStatus()
+      .then((res) => setSignupMode(res.mode))
+      .catch(() => setSignupMode('open'))  // fallback
+      .finally(() => setModeLoading(false));
   }, []);
 
   /**
@@ -119,6 +133,10 @@ const SignupPage: React.FC = () => {
     } else if (formData.password !== formData.confirmPassword) {
       newErrors.confirmPassword = 'Passwords do not match';
     }
+
+    if (signupMode === 'invite' && !formData.inviteCode.trim()) {
+      newErrors.inviteCode = 'Vui lòng nhập mã mời';
+    }
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -162,6 +180,7 @@ const SignupPage: React.FC = () => {
         email: formData.email.trim().toLowerCase(),
         name: formData.name.trim(),
         password: formData.password,
+        invite_code: formData.inviteCode.trim() || undefined,
         canvas_access_token: formData.canvasAccessToken.trim() || undefined,
       });
       
@@ -192,6 +211,45 @@ const SignupPage: React.FC = () => {
   };
 
   const disabled = isLoading || isSubmitting;
+
+  // ── Loading signup mode ────────────────────────────────────────────
+  if (modeLoading) {
+    return (
+      <div className="auth-container">
+        <div className="auth-card" style={{ textAlign: 'center', padding: '3rem' }}>
+          <Loader2 size={32} className="spin" />
+        </div>
+      </div>
+    );
+  }
+
+  // ── Signup is closed ───────────────────────────────────────────────
+  if (signupMode === 'closed') {
+    return (
+      <div className="auth-container">
+        <div className="auth-bg-decoration">
+          <div className="auth-bg-circle auth-bg-circle-1" />
+          <div className="auth-bg-circle auth-bg-circle-2" />
+          <div className="auth-bg-circle auth-bg-circle-3" />
+        </div>
+        <div className="auth-card">
+          <div className="auth-header">
+            <div className="auth-logo">
+              <GraduationCap size={36} strokeWidth={1.5} />
+            </div>
+            <h1>Đăng ký tạm tắt</h1>
+            <p>Hiện tại hệ thống không mở đăng ký. Vui lòng liên hệ quản trị viên để được cấp tài khoản.</p>
+          </div>
+          <div className="auth-footer-action">
+            <Link to="/login" className="auth-secondary-button">
+              Đăng nhập
+              <ArrowRight size={16} />
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="auth-container">
@@ -376,6 +434,28 @@ const SignupPage: React.FC = () => {
             </div>
             {errors.confirmPassword && <span className="field-error" role="alert">{errors.confirmPassword}</span>}
           </div>
+
+          {/* Invite Code field (only when mode=invite) */}
+          {signupMode === 'invite' && (
+            <div className="form-group">
+              <label htmlFor="inviteCode">Mã mời</label>
+              <div className={`input-wrapper ${errors.inviteCode ? 'error' : ''} ${formData.inviteCode ? 'has-value' : ''}`}>
+                <ShieldCheck size={18} className="input-icon" />
+                <input
+                  id="inviteCode"
+                  name="inviteCode"
+                  type="text"
+                  placeholder="Nhập mã mời từ quản trị viên"
+                  value={formData.inviteCode}
+                  onChange={handleChange}
+                  disabled={disabled}
+                  autoComplete="off"
+                  aria-invalid={!!errors.inviteCode}
+                />
+              </div>
+              {errors.inviteCode && <span className="field-error" role="alert">{errors.inviteCode}</span>}
+            </div>
+          )}
 
           {/* Canvas Access Token field (optional) */}
           <div className="form-group">

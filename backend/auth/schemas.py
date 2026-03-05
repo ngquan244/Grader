@@ -55,6 +55,7 @@ class SignupRequest(BaseModel):
     email: EmailStr = Field(..., description="User email address")
     name: str = Field(..., min_length=1, max_length=255, description="User display name")
     password: str = Field(..., min_length=8, max_length=128, description="Password (min 8 chars)")
+    invite_code: Optional[str] = Field(None, description="Invite code (required when signup mode is 'invite')")
     canvas_access_token: Optional[str] = Field(None, description="Canvas LMS access token")
     canvas_domain: str = Field(
         default="https://canvas.instructure.com",
