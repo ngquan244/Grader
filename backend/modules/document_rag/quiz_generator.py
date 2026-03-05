@@ -43,7 +43,7 @@ class QuizOutput(BaseModel):
 
 QUIZ_GENERATION_PROMPT = """Bạn là một giáo viên chuyên nghiệp trong việc soạn đề thi trắc nghiệm chất lượng cao.
 
-NHIỆM VỤ: Tạo {num_questions} câu hỏi trắc nghiệm dựa trên nội dung tài liệu được cung cấp.
+NHIỆM VỤ: Tạo CHÍNH XÁC {num_questions} câu hỏi trắc nghiệm dựa trên nội dung tài liệu được cung cấp.
 
 NỘI DUNG TÀI LIỆU (CONTEXT):
 {context}
@@ -62,17 +62,19 @@ QUY TẮC BẮT BUỘC:
    - easy: Câu hỏi đơn giản, kiểm tra ghi nhớ cơ bản
    - medium: Câu hỏi yêu cầu hiểu và áp dụng kiến thức
    - hard: Câu hỏi phân tích, so sánh, tổng hợp thông tin
-7. Tránh câu hỏi trùng lặp ý nghĩa
+7. BẮT BUỘC tạo CHÍNH XÁC {num_questions} câu. Đếm lại số câu trước khi trả về.
 
-HƯỚNG DẪN TẠO CÂU HỎI CHẤT LƯỢNG:
-- Câu hỏi kiểm tra hiểu biết, không chỉ ghi nhớ
+GUARDRAIL CHẤT LƯỢNG:
+- Mỗi câu phải bám vào ít nhất 1 chi tiết/khái niệm CỤ THỂ trong context
+- KHÔNG được lặp lại cùng một ý/khái niệm quá 2 câu
+- Đa dạng hóa dạng câu hỏi: định nghĩa, ví dụ, so sánh, ứng dụng, ngoại lệ, quan hệ nhân quả
+- Nếu một chủ đề đã hết ý, khai thác khía cạnh khác của context
 - Đáp án đúng phải chính xác theo tài liệu
-- Giải thích ngắn gọn, trích dẫn từ context nếu có thể
-- Nếu context không đủ để tạo {num_questions} câu, tạo tối đa số câu có thể
+- Giải thích ngắn gọn (1-2 câu), trích dẫn từ context nếu có thể
 
 XỬ LÝ TRƯỜNG HỢP ĐẶC BIỆT:
 - Nếu Context KHÔNG chứa thông tin về "{topic}": trả về quiz rỗng với message giải thích
-- Nếu Context không đủ thông tin: tạo ít câu hơn, KHÔNG bịa
+- Nếu Context quá ít để tạo đủ {num_questions} câu KHÁC NHAU: tạo tối đa số câu có thể, KHÔNG tạo câu rác/lặp
 
 ĐỊNH DẠNG OUTPUT (JSON):
 {{
@@ -90,7 +92,7 @@ XỬ LÝ TRƯỜNG HỢP ĐẶC BIỆT:
 CHÚ Ý: Chỉ trả về JSON, không thêm text khác. Đảm bảo JSON hợp lệ."""
 
 
-QUIZ_GENERATION_PROMPT_V2 = """You are an expert quiz creator. Create {num_questions} multiple-choice questions based ONLY on the provided document content.
+QUIZ_GENERATION_PROMPT_V2 = """You are an expert quiz creator. Create EXACTLY {num_questions} multiple-choice questions based ONLY on the provided document content.
 
 DOCUMENT CONTENT:
 {context}
@@ -108,7 +110,15 @@ STRICT RULES:
    - medium: Questions requiring understanding and application
    - hard: Complex questions requiring analysis and synthesis
 5. Questions should test understanding, not just memorization
-6. If content is insufficient, create fewer questions rather than inventing facts
+6. You MUST create EXACTLY {num_questions} questions. Count them before returning.
+
+QUALITY GUARDRAILS:
+- Each question must reference at least 1 specific detail/concept from the content
+- Do NOT repeat the same concept/idea in more than 2 questions
+- Diversify question types: definition, example, comparison, application, exception, cause-effect
+- If one topic area is exhausted, explore different aspects of the content
+- Keep explanations brief (1-2 sentences)
+- If content is truly insufficient for {num_questions} UNIQUE questions, create the maximum possible WITHOUT creating filler/duplicate questions
 
 OUTPUT FORMAT (JSON only, no markdown):
 {{
@@ -125,6 +135,76 @@ OUTPUT FORMAT (JSON only, no markdown):
 
 If the topic is not found in the document, return:
 {{"quiz": [], "message": "Không tìm thấy nội dung về '{topic}' trong tài liệu"}}
+
+Return ONLY valid JSON, no additional text."""
+
+
+# ===== Supplement Prompt Templates (for retry when missing questions) =====
+
+QUIZ_SUPPLEMENT_PROMPT_VI = """Bạn cần tạo thêm {additional_count} câu hỏi trắc nghiệm BỔ SUNG.
+
+NỘI DUNG TÀI LIỆU (CONTEXT):
+{context}
+
+CHỦ ĐỀ: {topic}
+ĐỘ KHÓ: {difficulty}
+
+CÁC CÂU HỎI ĐÃ CÓ (KHÔNG ĐƯỢC LẶP LẠI Ý):
+{existing_questions}
+
+QUY TẮC:
+1. Tạo CHÍNH XÁC {additional_count} câu hỏi MỚI, KHÁC với các câu đã có
+2. Mỗi câu có đúng 4 đáp án: A, B, C, D
+3. CHỈ dùng thông tin trong context, KHÔNG bịa
+4. Khai thác các khía cạnh/chi tiết CHƯA được hỏi
+5. Giải thích ngắn gọn (1 câu)
+
+ĐỊNH DẠNG OUTPUT (JSON):
+{{
+  "quiz": [
+    {{
+      "question": "Câu hỏi?",
+      "options": ["Đáp án A", "Đáp án B", "Đáp án C", "Đáp án D"],
+      "correct_answer": "A",
+      "explanation": "Giải thích ngắn"
+    }}
+  ],
+  "message": ""
+}}
+
+CHÚ Ý: Chỉ trả về JSON, không thêm text khác."""
+
+
+QUIZ_SUPPLEMENT_PROMPT_EN = """You need to create {additional_count} ADDITIONAL multiple-choice questions.
+
+DOCUMENT CONTENT:
+{context}
+
+TOPIC: {topic}
+DIFFICULTY: {difficulty}
+
+EXISTING QUESTIONS (DO NOT REPEAT):
+{existing_questions}
+
+RULES:
+1. Create EXACTLY {additional_count} NEW questions, DIFFERENT from existing ones
+2. Each question has exactly 4 options: A, B, C, D
+3. Based ONLY on the provided content
+4. Explore aspects/details NOT yet covered
+5. Keep explanations brief (1 sentence)
+
+OUTPUT FORMAT (JSON only):
+{{
+  "quiz": [
+    {{
+      "question": "Question?",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "correct_answer": "A",
+      "explanation": "Brief explanation"
+    }}
+  ],
+  "message": ""
+}}
 
 Return ONLY valid JSON, no additional text."""
 
@@ -170,6 +250,8 @@ class QuizGenerator:
         # Prompt templates
         self.prompt_vi = ChatPromptTemplate.from_template(QUIZ_GENERATION_PROMPT)
         self.prompt_en = ChatPromptTemplate.from_template(QUIZ_GENERATION_PROMPT_V2)
+        self.supplement_prompt_vi = ChatPromptTemplate.from_template(QUIZ_SUPPLEMENT_PROMPT_VI)
+        self.supplement_prompt_en = ChatPromptTemplate.from_template(QUIZ_SUPPLEMENT_PROMPT_EN)
         
         # Initialize if provider not passed
         if self._llm_provider is None:
@@ -386,6 +468,9 @@ Return ONLY valid JSON, no additional text.""")
         """
         Generate quiz questions based on a topic.
         
+        Uses a robust pipeline: dynamic token sizing → truncation detection →
+        partial JSON salvage → supplement retry → batch plan B.
+        
         Args:
             topic: Topic or description of what to quiz about
             num_questions: Number of questions to generate
@@ -427,77 +512,15 @@ Return ONLY valid JSON, no additional text.""")
                 "sources": []
             }
         
-        # Step 3: Select prompt based on language
-        prompt = self.prompt_vi if language == "vi" else self.prompt_en
-        
-        # Step 4: Generate quiz using JSON-mode LLM
-        chain = prompt | self.llm_json
-        
-        try:
-            logger.info("Generating quiz with LLM...")
-            
-            response = chain.invoke({
-                "context": context,
-                "topic": topic,
-                "num_questions": num_questions,
-                "difficulty": difficulty
-            })
-            
-            # Parse response
-            content = response.content if hasattr(response, 'content') else str(response)
-            logger.info(f"Raw LLM response: {content[:500]}...")
-            
-            # Parse JSON
-            quiz_data = self._parse_quiz_response(content)
-            
-            if not quiz_data:
-                logger.error(f"Failed to parse quiz data from response")
-                return {
-                    "success": False,
-                    "questions": [],
-                    "message": "Không thể parse kết quả từ LLM",
-                    "sources": self.retriever.extract_citations(documents),
-                    "raw_response": content
-                }
-            
-            logger.info(f"Parsed quiz_data keys: {quiz_data.keys()}")
-            logger.info(f"Number of quiz items: {len(quiz_data.get('quiz', []))}")
-            
-            # Check for error message from LLM
-            if quiz_data.get("message") and not quiz_data.get("quiz"):
-                return {
-                    "success": False,
-                    "questions": [],
-                    "message": quiz_data["message"],
-                    "sources": self.retriever.extract_citations(documents)
-                }
-            
-            # Format quiz questions
-            formatted_quiz = self._format_quiz(quiz_data.get("quiz", []))
-            
-            logger.info(f"Generated {len(formatted_quiz)} questions")
-            
-            if len(formatted_quiz) > 0:
-                logger.info(f"Sample question 1: {formatted_quiz[0]}")
-            
-            return {
-                "success": True,
-                "questions": formatted_quiz,
-                "message": quiz_data.get("message", ""),
-                "sources": self.retriever.extract_citations(documents),
-                "num_questions_requested": num_questions,
-                "num_questions_generated": len(formatted_quiz)
-            }
-            
-        except Exception as e:
-            logger.error(f"Error generating quiz: {e}")
-            return {
-                "success": False,
-                "questions": [],
-                "message": f"Lỗi khi tạo quiz: {str(e)}",
-                "sources": self.retriever.extract_citations(documents),
-                "error": str(e)
-            }
+        # Step 3: Generate quiz using core method with retry/salvage/batch logic
+        return self._generate_quiz_core(
+            context=context,
+            topic=topic,
+            num_questions=num_questions,
+            difficulty=difficulty,
+            language=language,
+            documents=documents,
+        )
     
     def generate_quiz_multi_topics(
         self,
@@ -587,72 +610,20 @@ Return ONLY valid JSON, no additional text.""")
         # Step 3: Create combined topic string
         topics_str = ", ".join(topics)
         
-        # Step 4: Select prompt based on language
-        prompt = self.prompt_vi if language == "vi" else self.prompt_en
+        # Step 4: Generate quiz using core method with retry/salvage/batch logic
+        result = self._generate_quiz_core(
+            context=context,
+            topic=topics_str,
+            num_questions=num_questions,
+            difficulty=difficulty,
+            language=language,
+            documents=unique_documents,
+        )
         
-        # Step 5: Generate quiz using JSON-mode LLM
-        chain = prompt | self.llm_json
+        if result.get("success"):
+            result["topics_used"] = topics
         
-        try:
-            logger.info(f"Generating multi-topic quiz with LLM for topics: {topics_str}")
-            
-            response = chain.invoke({
-                "context": context,
-                "topic": topics_str,
-                "num_questions": num_questions,
-                "difficulty": difficulty
-            })
-            
-            # Parse response
-            content = response.content if hasattr(response, 'content') else str(response)
-            logger.info(f"Raw LLM response: {content[:500]}...")
-            
-            # Parse JSON
-            quiz_data = self._parse_quiz_response(content)
-            
-            if not quiz_data:
-                logger.error(f"Failed to parse quiz data from response")
-                return {
-                    "success": False,
-                    "questions": [],
-                    "message": "Không thể parse kết quả từ LLM",
-                    "sources": self.retriever.extract_citations(unique_documents),
-                    "raw_response": content
-                }
-            
-            # Check for error message from LLM
-            if quiz_data.get("message") and not quiz_data.get("quiz"):
-                return {
-                    "success": False,
-                    "questions": [],
-                    "message": quiz_data["message"],
-                    "sources": self.retriever.extract_citations(unique_documents)
-                }
-            
-            # Format quiz questions
-            formatted_quiz = self._format_quiz(quiz_data.get("quiz", []))
-            
-            logger.info(f"Generated {len(formatted_quiz)} questions for {len(topics)} topics")
-            
-            return {
-                "success": True,
-                "questions": formatted_quiz,
-                "message": quiz_data.get("message", ""),
-                "sources": self.retriever.extract_citations(unique_documents),
-                "num_questions_requested": num_questions,
-                "num_questions_generated": len(formatted_quiz),
-                "topics_used": topics
-            }
-            
-        except Exception as e:
-            logger.error(f"Error generating multi-topic quiz: {e}")
-            return {
-                "success": False,
-                "questions": [],
-                "message": f"Lỗi khi tạo quiz: {str(e)}",
-                "sources": self.retriever.extract_citations(unique_documents),
-                "error": str(e)
-            }
+        return result
     
     def _parse_quiz_response(self, content: str) -> Optional[Dict]:
         """Parse JSON response from LLM."""
@@ -743,6 +714,449 @@ Return ONLY valid JSON, no additional text.""")
                 continue
         
         return formatted
+    
+    # ===== Robust Quiz Generation Helpers =====
+    
+    def _get_finish_reason(self, response) -> Optional[str]:
+        """Extract finish_reason from LLM response metadata."""
+        try:
+            if hasattr(response, 'response_metadata'):
+                metadata = response.response_metadata
+                # Groq/OpenAI format
+                if 'finish_reason' in metadata:
+                    return metadata['finish_reason']
+                # Some providers nest it in choices
+                if 'choices' in metadata and metadata['choices']:
+                    return metadata['choices'][0].get('finish_reason')
+            return None
+        except Exception:
+            return None
+    
+    def _salvage_partial_json(self, content: str) -> Optional[Dict]:
+        """
+        Try to salvage quiz questions from truncated JSON output.
+        
+        Uses bracket-matching to find complete question objects
+        even when the overall JSON is broken due to token limit truncation.
+        """
+        logger.warning("Attempting to salvage partial JSON from truncated output...")
+        
+        # Find the quiz array start
+        quiz_start = content.find('"quiz"')
+        if quiz_start == -1:
+            logger.warning("No 'quiz' key found in truncated output")
+            return None
+        
+        array_start = content.find('[', quiz_start)
+        if array_start == -1:
+            logger.warning("No quiz array found in truncated output")
+            return None
+        
+        # Extract individual complete question objects using bracket matching
+        questions = []
+        i = array_start + 1
+        
+        while i < len(content):
+            # Skip whitespace and commas
+            while i < len(content) and content[i] in ' \t\n\r,':
+                i += 1
+            
+            if i >= len(content) or content[i] == ']':
+                break
+            
+            if content[i] == '{':
+                # Find matching closing brace using depth counter
+                depth = 0
+                start = i
+                found_match = False
+                
+                for j in range(i, len(content)):
+                    if content[j] == '{':
+                        depth += 1
+                    elif content[j] == '}':
+                        depth -= 1
+                        if depth == 0:
+                            # Found a complete object
+                            obj_str = content[start:j + 1]
+                            try:
+                                q = json.loads(obj_str)
+                                if q.get("question") and q.get("options"):
+                                    questions.append(q)
+                            except json.JSONDecodeError:
+                                pass
+                            i = j + 1
+                            found_match = True
+                            break
+                
+                if not found_match:
+                    # No matching brace - rest is truncated
+                    break
+            else:
+                break
+        
+        if questions:
+            logger.info(f"Salvaged {len(questions)} complete questions from truncated output")
+            return {"quiz": questions, "message": "partial_salvage"}
+        
+        logger.warning("No complete question objects found in truncated output")
+        return None
+    
+    def _get_reduced_prompt(self, language: str) -> ChatPromptTemplate:
+        """Get prompt variant that instructs shorter explanations to save output tokens."""
+        if language == "vi":
+            template = QUIZ_GENERATION_PROMPT.replace(
+                "Giải thích ngắn gọn (1-2 câu), trích dẫn từ context nếu có thể",
+                "Giải thích CỰC KỲ ngắn gọn (TỐI ĐA 5-8 từ). Ưu tiên ĐỦ SỐ LƯỢNG câu hỏi."
+            )
+        else:
+            template = QUIZ_GENERATION_PROMPT_V2.replace(
+                "Keep explanations brief (1-2 sentences)",
+                "Keep explanations EXTREMELY brief (MAX 5-8 words). Prioritize reaching the required question count."
+            )
+        return ChatPromptTemplate.from_template(template)
+    
+    def _generate_supplement_questions(
+        self,
+        context: str,
+        topic: str,
+        difficulty: str,
+        language: str,
+        existing_questions: List[Dict],
+        additional_count: int,
+    ) -> List[Dict]:
+        """
+        Generate additional questions to supplement an incomplete quiz.
+        
+        Args:
+            context: Document content
+            topic: Quiz topic
+            difficulty: Difficulty level
+            language: Language for prompt
+            existing_questions: Already generated questions (to avoid duplicates)
+            additional_count: Number of additional questions needed
+            
+        Returns:
+            List of formatted supplement questions
+        """
+        logger.info(f"Generating {additional_count} supplement questions...")
+        
+        # Format existing questions as text for the prompt
+        existing_text = "\n".join([
+            f"{i + 1}. {q['question']}"
+            for i, q in enumerate(existing_questions)
+        ])
+        
+        prompt = self.supplement_prompt_vi if language == "vi" else self.supplement_prompt_en
+        
+        # Use moderate max_tokens for supplement
+        supplement_max_tokens = max(2048, additional_count * 400 + 200)
+        llm_json = self._llm_provider.get_llm(json_mode=True, max_tokens=supplement_max_tokens)
+        chain = prompt | llm_json
+        
+        try:
+            response = chain.invoke({
+                "context": context,
+                "topic": topic,
+                "difficulty": difficulty,
+                "existing_questions": existing_text,
+                "additional_count": additional_count,
+            })
+            
+            content = response.content if hasattr(response, 'content') else str(response)
+            logger.info(f"Supplement response length: {len(content)} chars")
+            
+            quiz_data = self._parse_quiz_response(content)
+            
+            if quiz_data and quiz_data.get("quiz"):
+                supplement = self._format_quiz(quiz_data["quiz"])
+                logger.info(f"Got {len(supplement)} supplement questions")
+                return supplement
+            
+            # Try salvage if parse failed
+            quiz_data = self._salvage_partial_json(content)
+            if quiz_data and quiz_data.get("quiz"):
+                supplement = self._format_quiz(quiz_data["quiz"])
+                logger.info(f"Salvaged {len(supplement)} supplement questions")
+                return supplement
+            
+            logger.warning("Supplement generation returned no valid questions")
+            return []
+            
+        except Exception as e:
+            logger.error(f"Error generating supplement questions: {e}")
+            return []
+    
+    def _generate_quiz_batched(
+        self,
+        context: str,
+        topic: str,
+        num_questions: int,
+        difficulty: str,
+        language: str,
+    ) -> List[Dict]:
+        """
+        Generate quiz in batches when single call fails to produce enough questions.
+        
+        Splits the request into 2 batches, generates separately, and merges results.
+        Used as a fallback (Plan B) when the primary generation is significantly short.
+        
+        Args:
+            context: Document content
+            topic: Quiz topic
+            num_questions: Total questions needed
+            difficulty: Difficulty level
+            language: Language for prompt
+            
+        Returns:
+            List of formatted and deduplicated questions
+        """
+        logger.info(f"Batch generation: splitting {num_questions} questions into 2 batches")
+        
+        batch1_count = (num_questions + 1) // 2  # Ceiling division
+        batch2_count = num_questions - batch1_count
+        
+        prompt = self.prompt_vi if language == "vi" else self.prompt_en
+        batch_max_tokens = max(4096, batch1_count * 400 + 200)
+        
+        all_questions = []
+        
+        for batch_num, batch_count in enumerate([batch1_count, batch2_count], 1):
+            try:
+                logger.info(f"Batch {batch_num}: generating {batch_count} questions...")
+                
+                llm_json = self._llm_provider.get_llm(json_mode=True, max_tokens=batch_max_tokens)
+                chain = prompt | llm_json
+                
+                response = chain.invoke({
+                    "context": context,
+                    "topic": topic,
+                    "num_questions": batch_count,
+                    "difficulty": difficulty,
+                })
+                
+                content = response.content if hasattr(response, 'content') else str(response)
+                quiz_data = self._parse_quiz_response(content)
+                
+                if not quiz_data:
+                    quiz_data = self._salvage_partial_json(content)
+                
+                if quiz_data and quiz_data.get("quiz"):
+                    batch_questions = self._format_quiz(quiz_data["quiz"])
+                    all_questions.extend(batch_questions)
+                    logger.info(f"Batch {batch_num}: got {len(batch_questions)} questions")
+                else:
+                    logger.warning(f"Batch {batch_num}: no valid questions returned")
+                    
+            except Exception as e:
+                logger.error(f"Batch {batch_num} failed: {e}")
+        
+        # Deduplicate by checking question text similarity
+        seen_questions = set()
+        unique_questions = []
+        for q in all_questions:
+            q_text = q["question"].strip().lower()[:100]
+            if q_text not in seen_questions:
+                seen_questions.add(q_text)
+                unique_questions.append(q)
+        
+        logger.info(f"Batch generation complete: {len(unique_questions)} unique questions")
+        return unique_questions
+    
+    def _generate_quiz_core(
+        self,
+        context: str,
+        topic: str,
+        num_questions: int,
+        difficulty: str,
+        language: str,
+        documents: list,
+    ) -> Dict[str, Any]:
+        """
+        Core quiz generation with robust retry, salvage, and batching logic.
+        
+        Pipeline:
+        1. Calculate dynamic max_tokens based on num_questions
+        2. Call LLM with appropriate prompt
+        3. Check finish_reason for truncation
+        4. If truncated: retry with reduced explanation + higher max_tokens
+        5. If still failing: salvage partial JSON
+        6. After formatting, if count < requested:
+           a. If >= 70%: supplement retry for missing questions
+           b. If < 70%: batch plan B (split into 2 calls)
+        7. Always retry after salvage to fill missing questions
+        
+        Args:
+            context: Formatted document context
+            topic: Quiz topic or combined topics string
+            num_questions: Number of questions to generate
+            difficulty: Difficulty level
+            language: "vi" or "en"
+            documents: Retrieved documents (for citation extraction)
+            
+        Returns:
+            Dictionary with quiz questions and metadata
+        """
+        sources = self.retriever.extract_citations(documents)
+        
+        # Select prompt based on language
+        prompt = self.prompt_vi if language == "vi" else self.prompt_en
+        
+        # Dynamic max_tokens: ~350-400 tokens per question + JSON overhead
+        estimated_tokens = num_questions * 400 + 200
+        dynamic_max_tokens = max(4096, estimated_tokens)
+        
+        # Get LLM with appropriate max_tokens
+        llm_json = self._llm_provider.get_llm(json_mode=True, max_tokens=dynamic_max_tokens)
+        chain = prompt | llm_json
+        
+        try:
+            logger.info(f"Generating quiz with LLM (max_tokens={dynamic_max_tokens})...")
+            
+            response = chain.invoke({
+                "context": context,
+                "topic": topic,
+                "num_questions": num_questions,
+                "difficulty": difficulty
+            })
+            
+            # Extract response content
+            content = response.content if hasattr(response, 'content') else str(response)
+            logger.info(f"Raw LLM response length: {len(content)} chars")
+            logger.info(f"Raw LLM response: {content[:500]}...")
+            
+            # Check for truncation
+            finish_reason = self._get_finish_reason(response)
+            was_truncated = finish_reason == "length"
+            
+            if was_truncated:
+                logger.warning("LLM output was truncated (finish_reason=length)")
+            
+            # Phase 1: Parse response
+            quiz_data = self._parse_quiz_response(content)
+            
+            # Phase 2: If parse failed and was truncated, try salvage
+            if not quiz_data and was_truncated:
+                quiz_data = self._salvage_partial_json(content)
+            
+            # Phase 3: If parse still failed, retry with reduced explanation + higher max_tokens
+            if not quiz_data:
+                logger.warning("Parse failed, retrying with reduced explanation prompt...")
+                retry_max_tokens = dynamic_max_tokens + 2048
+                llm_json_retry = self._llm_provider.get_llm(json_mode=True, max_tokens=retry_max_tokens)
+                
+                reduced_prompt = self._get_reduced_prompt(language)
+                chain_retry = reduced_prompt | llm_json_retry
+                
+                try:
+                    response_retry = chain_retry.invoke({
+                        "context": context,
+                        "topic": topic,
+                        "num_questions": num_questions,
+                        "difficulty": difficulty
+                    })
+                    content_retry = response_retry.content if hasattr(response_retry, 'content') else str(response_retry)
+                    quiz_data = self._parse_quiz_response(content_retry)
+                    
+                    if not quiz_data:
+                        quiz_data = self._salvage_partial_json(content_retry)
+                except Exception as retry_err:
+                    logger.error(f"Retry with reduced prompt also failed: {retry_err}")
+            
+            # If all parsing attempts failed, return error
+            if not quiz_data:
+                return {
+                    "success": False,
+                    "questions": [],
+                    "message": "Không thể parse kết quả từ LLM sau nhiều lần thử",
+                    "sources": sources,
+                    "raw_response": content[:1000]
+                }
+            
+            # Check for error message from LLM (e.g., topic not found)
+            if quiz_data.get("message") and not quiz_data.get("quiz"):
+                return {
+                    "success": False,
+                    "questions": [],
+                    "message": quiz_data["message"],
+                    "sources": sources
+                }
+            
+            # Phase 4: Format quiz questions
+            formatted_quiz = self._format_quiz(quiz_data.get("quiz", []))
+            num_generated = len(formatted_quiz)
+            is_partial_salvage = quiz_data.get("message") == "partial_salvage"
+            
+            logger.info(f"Generated {num_generated}/{num_questions} questions (salvaged={is_partial_salvage})")
+            
+            # Phase 5: Handle insufficient questions
+            if num_generated < num_questions and num_generated > 0:
+                missing = num_questions - num_generated
+                
+                # Try supplement retry first (for small gaps or salvage results)
+                if missing <= num_questions * 0.3 or is_partial_salvage:
+                    logger.info(f"Supplement retry: requesting {missing} additional questions...")
+                    supplement = self._generate_supplement_questions(
+                        context=context,
+                        topic=topic,
+                        difficulty=difficulty,
+                        language=language,
+                        existing_questions=formatted_quiz,
+                        additional_count=missing,
+                    )
+                    if supplement:
+                        formatted_quiz.extend(supplement)
+                        logger.info(f"After supplement: {len(formatted_quiz)}/{num_questions} questions")
+                
+                # If still significantly short (< 70%), try batch plan B
+                if len(formatted_quiz) < num_questions * 0.7:
+                    logger.info(f"Batch plan B: only {len(formatted_quiz)}/{num_questions}, trying batched generation...")
+                    batched_result = self._generate_quiz_batched(
+                        context=context,
+                        topic=topic,
+                        num_questions=num_questions,
+                        difficulty=difficulty,
+                        language=language,
+                    )
+                    if batched_result and len(batched_result) > len(formatted_quiz):
+                        formatted_quiz = batched_result
+                        logger.info(f"After batching: {len(formatted_quiz)}/{num_questions} questions")
+            
+            # Phase 6: Renumber questions sequentially
+            for i, q in enumerate(formatted_quiz):
+                q["question_number"] = i + 1
+            
+            # Build result
+            final_count = len(formatted_quiz)
+            warning = ""
+            if final_count < num_questions:
+                warning = f"Chỉ tạo được {final_count}/{num_questions} câu hỏi do context không đủ nội dung"
+            
+            if final_count > 0:
+                logger.info(f"Sample question 1: {formatted_quiz[0]}")
+            
+            result = {
+                "success": True,
+                "questions": formatted_quiz,
+                "message": warning or quiz_data.get("message", "") if quiz_data.get("message") != "partial_salvage" else warning,
+                "sources": sources,
+                "num_questions_requested": num_questions,
+                "num_questions_generated": final_count,
+            }
+            
+            if warning:
+                result["warning"] = warning
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error generating quiz: {e}")
+            return {
+                "success": False,
+                "questions": [],
+                "message": f"Lỗi khi tạo quiz: {str(e)}",
+                "sources": sources,
+                "error": str(e)
+            }
     
     def generate_quiz_text(
         self,

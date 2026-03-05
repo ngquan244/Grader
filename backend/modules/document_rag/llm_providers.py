@@ -47,7 +47,7 @@ class BaseLLM(ABC):
         pass
     
     @abstractmethod
-    def _create_llm(self, json_mode: bool = False) -> BaseChatModel:
+    def _create_llm(self, json_mode: bool = False, max_tokens: Optional[int] = None) -> BaseChatModel:
         """Create and return the underlying LangChain chat model"""
         pass
     
@@ -58,18 +58,19 @@ class BaseLLM(ABC):
             self._llm = self._create_llm()
         return self._llm
     
-    def get_llm(self, json_mode: bool = False) -> BaseChatModel:
+    def get_llm(self, json_mode: bool = False, max_tokens: Optional[int] = None) -> BaseChatModel:
         """
-        Get LLM instance with optional JSON mode.
+        Get LLM instance with optional JSON mode and custom max_tokens.
         
         Args:
             json_mode: If True, configure LLM to output JSON
+            max_tokens: Override max output tokens (for dynamic sizing)
             
         Returns:
             LangChain chat model instance
         """
-        if json_mode:
-            return self._create_llm(json_mode=True)
+        if json_mode or max_tokens is not None:
+            return self._create_llm(json_mode=json_mode, max_tokens=max_tokens)
         return self.llm
     
     def invoke(self, prompt: Union[str, list]) -> AIMessage:
@@ -125,13 +126,18 @@ class OllamaLLM(BaseLLM):
     def provider_name(self) -> str:
         return LLMProvider.OLLAMA.value
     
-    def _create_llm(self, json_mode: bool = False) -> BaseChatModel:
+    def _create_llm(self, json_mode: bool = False, max_tokens: Optional[int] = None) -> BaseChatModel:
         """Create ChatOllama instance"""
+        # For Ollama, max_tokens maps to increased num_ctx (context window = input + output)
+        num_ctx = self.num_ctx
+        if max_tokens is not None:
+            num_ctx = max(self.num_ctx, max_tokens + 4096)  # Ensure room for input + output
+        
         kwargs = {
             "model": self.model,
             "temperature": self.temperature,
             "base_url": self.base_url,
-            "num_ctx": self.num_ctx,
+            "num_ctx": num_ctx,
         }
         
         if json_mode:
@@ -173,7 +179,7 @@ class GroqLLM(BaseLLM):
         temperature: float = 0.3,
         api_key: Optional[str] = None,
         base_url: str = "https://api.groq.com/openai/v1",
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
         fallback_to_ollama: bool = True,
         ollama_config: Optional[Dict[str, Any]] = None,
         **kwargs
@@ -205,14 +211,14 @@ class GroqLLM(BaseLLM):
     def provider_name(self) -> str:
         return LLMProvider.GROQ.value
     
-    def _create_llm(self, json_mode: bool = False) -> BaseChatModel:
+    def _create_llm(self, json_mode: bool = False, max_tokens: Optional[int] = None) -> BaseChatModel:
         """Create ChatOpenAI instance configured for Groq"""
         kwargs = {
             "model": self.model,
             "temperature": self.temperature,
             "api_key": self.api_key,
             "base_url": self.base_url,
-            "max_tokens": self.max_tokens,
+            "max_tokens": max_tokens or self.max_tokens,
         }
         
         if json_mode:
@@ -388,7 +394,7 @@ class LLMFactory:
             temperature=kwargs.get("temperature", rag_config.OLLAMA_TEMPERATURE),
             api_key=rag_config.GROQ_API_KEY,
             base_url=kwargs.get("base_url", rag_config.GROQ_BASE_URL),
-            max_tokens=kwargs.get("max_tokens", 4096),
+            max_tokens=kwargs.get("max_tokens", 8192),
             fallback_to_ollama=rag_config.GROQ_FALLBACK_TO_OLLAMA,
             ollama_config=ollama_config,
         )

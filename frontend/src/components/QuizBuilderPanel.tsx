@@ -21,6 +21,10 @@ import {
   Send,
   Sparkles,
   Eye,
+  Pencil,
+  Check,
+  Plus,
+  X,
 } from 'lucide-react';
 import PanelHelpButton from './PanelHelpButton';
 import { canvasQuizApi } from '../api/canvasQuiz';
@@ -60,6 +64,10 @@ const QuizBuilderPanel: React.FC<QuizBuilderPanelProps> = ({
   // ---- Questions in builder ----
   const [builderQuestions, setBuilderQuestions] = useState<QuizBuilderQuestion[]>([]);
   const [expandedQ, setExpandedQ] = useState<number | null>(null);
+
+  // ---- Inline editing ----
+  const [editingQ, setEditingQ] = useState<number | null>(null);
+  const [editDraft, setEditDraft] = useState<QuizBuilderQuestion | null>(null);
 
   // ---- Quiz settings ----
   const [quizSettings, setQuizSettings] = useState<CanvasQuizCreate>({
@@ -125,6 +133,76 @@ const QuizBuilderPanel: React.FC<QuizBuilderPanelProps> = ({
   // ---- Remove a question ----
   const removeQuestion = (idx: number) => {
     setBuilderQuestions((prev) => prev.filter((_, i) => i !== idx));
+    if (editingQ === idx) { setEditingQ(null); setEditDraft(null); }
+  };
+
+  // ---- Inline editing helpers ----
+  const startEditing = (idx: number) => {
+    const q = builderQuestions[idx];
+    setEditingQ(idx);
+    setEditDraft({
+      question: stripHtml(q.question),
+      options: { ...q.options },
+      correct: { ...q.correct },
+    });
+    setExpandedQ(idx);
+  };
+
+  const cancelEditing = () => {
+    setEditingQ(null);
+    setEditDraft(null);
+  };
+
+  const saveEditing = () => {
+    if (editingQ === null || !editDraft) return;
+    setBuilderQuestions((prev) =>
+      prev.map((q, i) => (i === editingQ ? { ...editDraft } : q)),
+    );
+    setEditingQ(null);
+    setEditDraft(null);
+  };
+
+  const updateDraftQuestion = (text: string) => {
+    setEditDraft((prev) => (prev ? { ...prev, question: text } : null));
+  };
+
+  const updateDraftOption = (letter: string, text: string) => {
+    setEditDraft((prev) =>
+      prev ? { ...prev, options: { ...prev.options, [letter]: text } } : null,
+    );
+  };
+
+  const toggleDraftCorrect = (letter: string) => {
+    setEditDraft((prev) => {
+      if (!prev) return null;
+      const newCorrect = { ...prev.correct };
+      if (newCorrect[letter]) {
+        delete newCorrect[letter];
+      } else {
+        newCorrect[letter] = prev.options[letter] || '';
+      }
+      return { ...prev, correct: newCorrect };
+    });
+  };
+
+  const removeDraftOption = (letter: string) => {
+    setEditDraft((prev) => {
+      if (!prev) return null;
+      const newOptions = { ...prev.options };
+      const newCorrect = { ...prev.correct };
+      delete newOptions[letter];
+      delete newCorrect[letter];
+      return { ...prev, options: newOptions, correct: newCorrect };
+    });
+  };
+
+  const addDraftOption = () => {
+    setEditDraft((prev) => {
+      if (!prev) return null;
+      const usedLetters = Object.keys(prev.options);
+      const next = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').find((l) => !usedLetters.includes(l)) || 'Z';
+      return { ...prev, options: { ...prev.options, [next]: '' } };
+    });
   };
 
   // ---- Create quiz ----
@@ -494,6 +572,7 @@ const QuizBuilderPanel: React.FC<QuizBuilderPanelProps> = ({
             <div className="qb-question-list">
               {builderQuestions.map((q, idx) => {
                 const isExpanded = expandedQ === idx;
+                const isEditing = editingQ === idx;
                 const correctKeys = Object.keys(q.correct ?? {});
                 return (
                   <div
@@ -510,6 +589,16 @@ const QuizBuilderPanel: React.FC<QuizBuilderPanelProps> = ({
                         {stripHtml(q.question).length > 100 ? '…' : ''}
                       </span>
                       <div className="qb-q-actions">
+                        <button
+                          className="qb-btn qb-btn-icon"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (isEditing) { cancelEditing(); } else { startEditing(idx); }
+                          }}
+                          title={isEditing ? 'Hủy chỉnh sửa' : 'Chỉnh sửa'}
+                        >
+                          {isEditing ? <X size={13} /> : <Pencil size={13} />}
+                        </button>
                         <button
                           className="qb-btn qb-btn-icon qb-btn-danger"
                           onClick={(e) => {
@@ -528,40 +617,112 @@ const QuizBuilderPanel: React.FC<QuizBuilderPanelProps> = ({
                     <div
                       className="qb-question-detail-wrapper"
                       style={{
-                        maxHeight: isExpanded ? '500px' : '0px',
+                        maxHeight: isExpanded ? '800px' : '0px',
                         opacity: isExpanded ? 1 : 0,
                       }}
                     >
-                      <div className="qb-question-detail">
-                        <div
-                          className="qb-q-full-text"
-                          dangerouslySetInnerHTML={{ __html: q.question }}
-                        />
-                        <ul className="qb-opts">
-                          {Object.entries(q.options ?? {}).map(
-                            ([letter, text]) => {
-                              const isCorrect = correctKeys.includes(letter);
+                      {isEditing && editDraft ? (
+                        /* ===== EDIT MODE ===== */
+                        <div className="qb-question-detail qb-edit-mode">
+                          <label className="qb-edit-label">Câu hỏi</label>
+                          <textarea
+                            className="qb-edit-textarea"
+                            value={editDraft.question}
+                            onChange={(e) => updateDraftQuestion(e.target.value)}
+                            rows={3}
+                          />
+
+                          <label className="qb-edit-label" style={{ marginTop: 12 }}>Đáp án</label>
+                          <ul className="qb-opts qb-opts-edit">
+                            {Object.entries(editDraft.options).map(([letter, text]) => {
+                              const isDraftCorrect = !!editDraft.correct[letter];
                               return (
-                                <li
-                                  key={letter}
-                                  className={`qb-opt ${isCorrect ? 'correct' : ''}`}
-                                >
-                                  <span className={`qb-opt-letter ${isCorrect ? 'correct' : ''}`}>
+                                <li key={letter} className={`qb-opt qb-opt-editable ${isDraftCorrect ? 'correct' : ''}`}>
+                                  <button
+                                    type="button"
+                                    className={`qb-opt-toggle ${isDraftCorrect ? 'correct' : ''}`}
+                                    onClick={() => toggleDraftCorrect(letter)}
+                                    title={isDraftCorrect ? 'Bỏ đáp án đúng' : 'Đặt làm đáp án đúng'}
+                                  >
                                     {letter}
-                                  </span>
-                                  <span className="qb-opt-text">{text}</span>
-                                  {isCorrect && (
-                                    <CheckCircle
-                                      size={14}
-                                      className="qb-correct-icon"
-                                    />
+                                  </button>
+                                  <input
+                                    type="text"
+                                    className="qb-edit-input"
+                                    value={text}
+                                    onChange={(e) => updateDraftOption(letter, e.target.value)}
+                                    placeholder={`Đáp án ${letter}`}
+                                  />
+                                  {Object.keys(editDraft.options).length > 2 && (
+                                    <button
+                                      type="button"
+                                      className="qb-btn qb-btn-icon qb-btn-danger"
+                                      onClick={() => removeDraftOption(letter)}
+                                      title="Xóa đáp án"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
                                   )}
                                 </li>
                               );
-                            },
+                            })}
+                          </ul>
+
+                          {Object.keys(editDraft.options).length < 6 && (
+                            <button
+                              type="button"
+                              className="qb-btn qb-btn-add-option"
+                              onClick={addDraftOption}
+                            >
+                              <Plus size={14} />
+                              Thêm đáp án
+                            </button>
                           )}
-                        </ul>
-                      </div>
+
+                          <div className="qb-edit-actions">
+                            <button className="qb-btn qb-btn-ghost" onClick={cancelEditing}>
+                              <X size={14} />
+                              Hủy
+                            </button>
+                            <button className="qb-btn qb-btn-save" onClick={saveEditing}>
+                              <Check size={14} />
+                              Lưu
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        /* ===== VIEW MODE ===== */
+                        <div className="qb-question-detail">
+                          <div
+                            className="qb-q-full-text"
+                            dangerouslySetInnerHTML={{ __html: q.question }}
+                          />
+                          <ul className="qb-opts">
+                            {Object.entries(q.options ?? {}).map(
+                              ([letter, text]) => {
+                                const isCorrect = correctKeys.includes(letter);
+                                return (
+                                  <li
+                                    key={letter}
+                                    className={`qb-opt ${isCorrect ? 'correct' : ''}`}
+                                  >
+                                    <span className={`qb-opt-letter ${isCorrect ? 'correct' : ''}`}>
+                                      {letter}
+                                    </span>
+                                    <span className="qb-opt-text">{text}</span>
+                                    {isCorrect && (
+                                      <CheckCircle
+                                        size={14}
+                                        className="qb-correct-icon"
+                                      />
+                                    )}
+                                  </li>
+                                );
+                              },
+                            )}
+                          </ul>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -984,6 +1145,7 @@ const QuizBuilderPanel: React.FC<QuizBuilderPanelProps> = ({
           display: flex;
           flex-direction: column;
           min-width: 0;
+          min-height: 0;
           overflow: hidden;
         }
         .qb-questions-header {
@@ -1057,21 +1219,43 @@ const QuizBuilderPanel: React.FC<QuizBuilderPanelProps> = ({
         .qb-question-list {
           flex: 1;
           overflow-y: auto;
-          padding: 0 20px 16px;
+          min-height: 0;
+          padding: 4px 20px 16px;
           display: flex;
           flex-direction: column;
-          gap: 5px;
+          gap: 6px;
         }
+
+        /* Group separator every 5 questions */
+        .qb-question-card:nth-child(5n+1):not(:first-child) {
+          margin-top: 10px;
+          position: relative;
+        }
+        .qb-question-card:nth-child(5n+1):not(:first-child)::before {
+          content: '';
+          position: absolute;
+          top: -9px;
+          left: 10%;
+          right: 10%;
+          height: 1px;
+          background: linear-gradient(90deg, transparent, rgba(56,189,248,0.12), transparent);
+          pointer-events: none;
+        }
+
         .qb-question-card {
           border-radius: 10px;
           border: 1px solid rgba(255,255,255,0.05);
           background: rgba(255,255,255,0.015);
           overflow: hidden;
           transition: all 0.2s;
+          flex-shrink: 0;
+        }
+        .qb-question-card:nth-child(even) {
+          background: rgba(255,255,255,0.025);
         }
         .qb-question-card:hover {
           border-color: rgba(56,189,248,0.15);
-          background: rgba(255,255,255,0.025);
+          background: rgba(255,255,255,0.035);
         }
         .qb-question-card.expanded {
           border-color: rgba(56,189,248,0.2);
@@ -1081,7 +1265,7 @@ const QuizBuilderPanel: React.FC<QuizBuilderPanelProps> = ({
           display: flex;
           align-items: center;
           gap: 10px;
-          padding: 9px 12px;
+          padding: 10px 14px;
           cursor: pointer;
           user-select: none;
         }
@@ -1172,6 +1356,139 @@ const QuizBuilderPanel: React.FC<QuizBuilderPanelProps> = ({
         }
         .qb-opt-text { flex: 1; }
         .qb-correct-icon { flex-shrink: 0; margin-left: auto; }
+
+        /* ---- Inline Editing ---- */
+        .qb-edit-mode {
+          padding: 10px 14px 16px 50px;
+        }
+        .qb-edit-label {
+          display: block;
+          font-size: 0.72rem;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          color: #64748b;
+          margin-bottom: 6px;
+        }
+        .qb-edit-textarea {
+          width: 100%;
+          min-height: 60px;
+          padding: 10px 12px;
+          border-radius: 8px;
+          border: 1px solid rgba(255,255,255,0.1);
+          background: rgba(255,255,255,0.04);
+          color: #e2e8f0;
+          font-size: 0.83rem;
+          font-family: inherit;
+          line-height: 1.55;
+          resize: vertical;
+          transition: border-color 0.2s, box-shadow 0.2s;
+          outline: none;
+        }
+        .qb-edit-textarea:focus {
+          border-color: rgba(56,189,248,0.4);
+          box-shadow: 0 0 0 2px rgba(56,189,248,0.08);
+        }
+        .qb-opts-edit {
+          gap: 6px !important;
+        }
+        .qb-opt-editable {
+          padding: 0 !important;
+          gap: 0 !important;
+          border: 1px solid rgba(255,255,255,0.06) !important;
+          overflow: hidden;
+        }
+        .qb-opt-editable.correct {
+          border-color: rgba(16,185,129,0.2) !important;
+        }
+        .qb-opt-toggle {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 36px;
+          min-width: 36px;
+          height: 100%;
+          min-height: 38px;
+          border: none;
+          font-weight: 700;
+          font-size: 0.75rem;
+          font-family: inherit;
+          cursor: pointer;
+          transition: all 0.15s;
+          background: rgba(255,255,255,0.04);
+          color: #64748b;
+          border-right: 1px solid rgba(255,255,255,0.06);
+        }
+        .qb-opt-toggle:hover {
+          background: rgba(56,189,248,0.1);
+          color: #38bdf8;
+        }
+        .qb-opt-toggle.correct {
+          background: rgba(16,185,129,0.15);
+          color: #34d399;
+        }
+        .qb-edit-input {
+          flex: 1;
+          border: none;
+          background: transparent;
+          color: #e2e8f0;
+          font-size: 0.8rem;
+          font-family: inherit;
+          padding: 8px 10px;
+          outline: none;
+          min-width: 0;
+        }
+        .qb-edit-input::placeholder {
+          color: #475569;
+        }
+        .qb-btn-add-option {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin-top: 8px;
+          padding: 7px 14px;
+          border-radius: 7px;
+          background: rgba(255,255,255,0.03);
+          border: 1px dashed rgba(255,255,255,0.1);
+          color: #64748b;
+          font-size: 0.78rem;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+        .qb-btn-add-option:hover {
+          background: rgba(56,189,248,0.06);
+          border-color: rgba(56,189,248,0.2);
+          color: #38bdf8;
+        }
+        .qb-edit-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 8px;
+          margin-top: 14px;
+          padding-top: 12px;
+          border-top: 1px solid rgba(255,255,255,0.05);
+        }
+        .qb-btn-save {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 7px 18px;
+          border-radius: 8px;
+          background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
+          color: #fff;
+          font-size: 0.8rem;
+          font-weight: 600;
+          border: none;
+          cursor: pointer;
+          transition: all 0.2s;
+          font-family: inherit;
+        }
+        .qb-btn-save:hover {
+          filter: brightness(1.1);
+          transform: translateY(-1px);
+          box-shadow: 0 3px 12px rgba(16,185,129,0.25);
+        }
 
         /* ---- Footer ---- */
         .qb-footer {
