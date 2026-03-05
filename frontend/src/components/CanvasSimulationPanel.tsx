@@ -291,6 +291,10 @@ const CanvasSimulationPanel: React.FC = () => {
           ))}
         </div>
 
+        {/* Glow Lines */}
+        <div className="csim-glow-line csim-glow-line-1" />
+        <div className="csim-glow-line csim-glow-line-2" />
+
         {/* Header */}
         <div className="csim-hero-header">
           <div className="csim-hero-icon"><Play size={26} /></div>
@@ -750,99 +754,256 @@ const panelCss = `
 .csim-root {
   position: relative;
   height: 100%;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
   background: #080b18;
   display: flex;
   flex-direction: column;
-  padding: 0 0 32px 0;
 }
 
 /* ===== BG ===== */
 .csim-root::before {
   content: '';
-  position: fixed;
+  position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 80% 60% at 20% 10%, rgba(56,189,248,0.10) 0%, transparent 60%),
-    radial-gradient(ellipse 60% 50% at 80% 90%, rgba(16,185,129,0.08) 0%, transparent 60%),
-    radial-gradient(ellipse 50% 40% at 50% 50%, rgba(6,182,212,0.05) 0%, transparent 60%);
+    radial-gradient(ellipse 80% 60% at 20% 10%, rgba(56, 189, 248, 0.10) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 50% at 80% 90%, rgba(139, 92, 246, 0.08) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 40% at 50% 50%, rgba(6, 182, 212, 0.05) 0%, transparent 60%);
   pointer-events: none;
   z-index: 0;
 }
-.csim-bg-decoration { pointer-events: none; z-index: 0; }
-.csim-bg-orb {
-  position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.35; z-index: 0;
+.csim-root::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(56, 189, 248, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56, 189, 248, 0.02) 1px, transparent 1px);
+  background-size: 50px 50px;
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 50%, black 20%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 50%, black 20%, transparent 75%);
+  pointer-events: none;
+  animation: csim-grid-drift 30s linear infinite;
+  z-index: 0;
 }
-.csim-bg-orb-1 { width:400px;height:400px;background:radial-gradient(circle,rgba(56,189,248,0.18)0%,transparent 70%);top:-120px;left:-100px;animation:csim-f1 20s ease-in-out infinite; }
-.csim-bg-orb-2 { width:350px;height:350px;background:radial-gradient(circle,rgba(16,185,129,0.14)0%,transparent 70%);bottom:-80px;right:-60px;animation:csim-f2 24s ease-in-out infinite; }
-.csim-bg-orb-3 { width:250px;height:250px;background:radial-gradient(circle,rgba(6,182,212,0.10)0%,transparent 70%);top:50%;left:50%;transform:translate(-50%,-50%);animation:csim-f3 18s ease-in-out infinite; }
-@keyframes csim-f1{0%,100%{transform:translate(0,0)}50%{transform:translate(30px,20px)}}
-@keyframes csim-f2{0%,100%{transform:translate(0,0)}50%{transform:translate(-25px,-15px)}}
-@keyframes csim-f3{0%,100%{transform:translate(-50%,-50%)}50%{transform:translate(-45%,-55%)}}
-.csim-stars{position:absolute;inset:0;z-index:0;pointer-events:none;}
-.csim-star{position:absolute;background:#fff;border-radius:50%;animation:csim-twinkle var(--duration) var(--delay) ease-in-out infinite;}
-@keyframes csim-twinkle{0%,100%{opacity:0.2}50%{opacity:0.9}}
+@keyframes csim-grid-drift {
+  0% { transform: translate(0, 0); }
+  100% { transform: translate(50px, 50px); }
+}
+.csim-root > * { position: relative; z-index: 1; }
 
-/* ===== Header ===== */
+.csim-bg-decoration { position: absolute; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+.csim-bg-orb { position: absolute; border-radius: 50%; filter: blur(70px); pointer-events: none; }
+.csim-bg-orb-1 {
+  width: 350px; height: 350px;
+  top: -5%; right: -8%;
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.13) 0%, transparent 70%);
+  animation: csim-f1 22s ease-in-out infinite;
+}
+.csim-bg-orb-2 {
+  width: 300px; height: 300px;
+  bottom: 10%; left: -10%;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.10) 0%, transparent 70%);
+  animation: csim-f2 26s ease-in-out infinite;
+}
+.csim-bg-orb-3 {
+  width: 220px; height: 220px;
+  top: 40%; right: 15%;
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.07) 0%, transparent 70%);
+  animation: csim-f3 18s ease-in-out infinite;
+}
+@keyframes csim-f1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(-20px, 15px) scale(1.05); }
+  66% { transform: translate(10px, -10px) scale(0.97); }
+}
+@keyframes csim-f2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(15px, -20px) scale(1.03); }
+  66% { transform: translate(-10px, 10px) scale(0.98); }
+}
+@keyframes csim-f3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-15px, 15px) scale(1.08); }
+}
+
+/* Stars */
+.csim-stars { position: absolute; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+.csim-star {
+  position: absolute;
+  background: #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 0 6px 1px rgba(255, 255, 255, 0.35);
+  opacity: 0;
+  animation: csim-twinkle var(--duration, 4s) ease-in-out var(--delay, 0s) infinite;
+}
+@keyframes csim-twinkle {
+  0%, 100% { opacity: 0; transform: scale(0.5); }
+  50% { opacity: 0.85; transform: scale(1.3); }
+}
+
+/* Glow Lines */
+.csim-glow-line {
+  position: absolute;
+  height: 1px;
+  pointer-events: none;
+  z-index: 0;
+}
+.csim-glow-line-1 {
+  top: 18%;
+  left: 0;
+  width: 45%;
+  background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.30), transparent);
+  animation: csim-glow-slide 8s ease-in-out infinite;
+}
+.csim-glow-line-2 {
+  bottom: 25%;
+  right: 0;
+  width: 38%;
+  background: linear-gradient(90deg, transparent, rgba(167, 139, 250, 0.22), transparent);
+  animation: csim-glow-slide 10s ease-in-out infinite reverse;
+}
+@keyframes csim-glow-slide {
+  0%, 100% { transform: translateX(-20px); opacity: 0.3; }
+  50% { transform: translateX(20px); opacity: 1; }
+}
+
+/* ===== Hero Header ===== */
 .csim-hero-header {
-  position: relative; z-index: 1;
-  display: flex; align-items: center; gap: 16px;
-  padding: 28px 32px 12px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 28px;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(56, 189, 248, 0.2);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 3;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.csim-hero-header::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 5%;
+  width: 90%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.4), rgba(139, 92, 246, 0.3), rgba(34, 211, 238, 0.2), transparent);
 }
 .csim-hero-icon {
-  width: 52px; height: 52px;
-  background: linear-gradient(135deg, rgba(16,185,129,0.25), rgba(56,189,248,0.18));
-  border: 1px solid rgba(16,185,129,0.3);
+  position: relative;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 14px;
-  display: flex; align-items: center; justify-content: center;
-  color: #34d399;
+  background: linear-gradient(135deg, #38bdf8, #0ea5e9);
+  color: white;
+  box-shadow: 0 6px 20px -4px rgba(56, 189, 248, 0.5);
+  flex-shrink: 0;
 }
-.csim-hero-text h2 { margin:0; font-size:1.35rem; color:#f1f5f9; font-weight:700; }
-.csim-hero-text p  { margin:2px 0 0; font-size:0.85rem; color:#94a3b8; }
+.csim-hero-icon::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 18px;
+  border: 1.5px dashed rgba(56, 189, 248, 0.35);
+  animation: csim-icon-orbit 12s linear infinite;
+}
+@keyframes csim-icon-orbit {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.csim-hero-text h2 {
+  font-weight: 700;
+  font-size: 1.3rem;
+  margin: 0;
+  background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 40%, #7dd3fc 80%, #38bdf8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.csim-hero-text p {
+  margin: 4px 0 0 0;
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
 
 /* ===== Tabs ===== */
 .csim-tabs {
-  position: relative; z-index: 1;
-  display: flex; gap: 4px;
-  padding: 8px 32px;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  position: relative;
+  z-index: 2;
+  display: flex;
+  gap: 6px;
+  padding: 5px;
+  margin: 16px 24px 0;
+  background: rgba(22, 33, 55, 0.8);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 14px;
 }
 .csim-tab {
-  display: flex; align-items: center; gap: 6px;
-  padding: 8px 16px;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border: none;
+  border-radius: 10px;
   background: transparent;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  color: #94a3b8;
-  font-size: 0.82rem;
+  color: #64748b;
+  font-size: 0.9rem;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
 }
-.csim-tab:hover { color: #e2e8f0; background: rgba(255,255,255,0.04); }
+.csim-tab:hover {
+  color: #cbd5e1;
+  background: rgba(56, 189, 248, 0.08);
+}
 .csim-tab.active {
-  color: #34d399;
-  background: rgba(16,185,129,0.08);
-  border-color: rgba(16,185,129,0.25);
+  background: linear-gradient(135deg, #38bdf8 0%, #0ea5e9 100%);
+  color: white;
+  box-shadow: 0 2px 12px rgba(56, 189, 248, 0.35);
 }
 
 /* ===== Content ===== */
 .csim-content {
-  position: relative; z-index: 1;
   flex: 1;
-  padding: 16px 32px;
+  overflow-y: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  background: transparent;
+  position: relative;
+  z-index: 2;
 }
+.csim-content::-webkit-scrollbar { width: 8px; }
+.csim-content::-webkit-scrollbar-track { background: transparent; }
+.csim-content::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.2); border-radius: 10px; }
+.csim-content::-webkit-scrollbar-thumb:hover { background: rgba(56, 189, 248, 0.35); }
 .csim-step-panel {
   display: flex; flex-direction: column; gap: 16px;
 }
 
 /* ===== Cards ===== */
 .csim-card {
-  background: rgba(15,23,42,0.65);
-  border: 1px solid rgba(255,255,255,0.06);
-  border-radius: 12px;
-  padding: 20px;
+  background: rgba(22, 33, 55, 0.8);
   backdrop-filter: blur(12px);
+  padding: 24px;
+  border-radius: 16px;
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 1px rgba(56, 189, 248, 0.06);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.csim-card:hover {
+  border-color: rgba(56, 189, 248, 0.35);
+  box-shadow: 0 8px 32px rgba(56, 189, 248, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 0 1px rgba(56, 189, 248, 0.1);
 }
 .csim-card-title {
   display: flex; align-items: center; gap: 8px;

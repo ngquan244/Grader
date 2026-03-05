@@ -18,6 +18,7 @@ import {
   ChevronUp,
   Info,
 } from 'lucide-react';
+import PanelHelpButton from './PanelHelpButton';
 import { canvasQuizApi } from '../api/canvasQuiz';
 import { canvasApi } from '../api/canvas';
 import type {
@@ -413,6 +414,7 @@ const CanvasQuizPanel: React.FC<CanvasQuizPanelProps> = ({
             <h2>Canvas Quiz Builder</h2>
             <p>Tạo quiz trên Canvas từ Question Bank</p>
           </div>
+          <PanelHelpButton panelKey="canvas_quiz" />
           <button className="cqp-btn-hero-refresh" onClick={resetWizard} title="Tạo quiz mới">
             <RefreshCw size={18} />
           </button>
@@ -952,6 +954,7 @@ const panelCss = `
     linear-gradient(90deg, rgba(56, 189, 248, 0.02) 1px, transparent 1px);
   background-size: 50px 50px;
   mask-image: radial-gradient(ellipse 80% 70% at 50% 50%, black 20%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 50%, black 20%, transparent 75%);
   animation: cqp-grid-drift 30s linear infinite;
   pointer-events: none;
   z-index: 0;
@@ -960,71 +963,89 @@ const panelCss = `
   from { transform: translate(0, 0); }
   to { transform: translate(50px, 50px); }
 }
+.cqp-root > * { position: relative; z-index: 1; }
 
 /* Orbs */
-.cqp-bg-decoration { pointer-events: none; z-index: 0; }
+.cqp-bg-decoration { position: absolute; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
 .cqp-bg-orb {
   position: absolute;
   border-radius: 50%;
-  filter: blur(80px);
-  opacity: 0.35;
-  z-index: 0;
+  filter: blur(70px);
+  pointer-events: none;
 }
 .cqp-bg-orb-1 {
-  width: 400px; height: 400px;
-  background: radial-gradient(circle, rgba(56, 189, 248, 0.18) 0%, transparent 70%);
-  top: -120px; left: -100px;
-  animation: cqp-float1 20s ease-in-out infinite;
+  width: 350px; height: 350px;
+  top: -5%; right: -8%;
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.13) 0%, transparent 70%);
+  animation: cqp-float1 22s ease-in-out infinite;
 }
 .cqp-bg-orb-2 {
-  width: 350px; height: 350px;
-  background: radial-gradient(circle, rgba(139, 92, 246, 0.14) 0%, transparent 70%);
-  bottom: -80px; right: -60px;
-  animation: cqp-float2 24s ease-in-out infinite;
+  width: 300px; height: 300px;
+  bottom: 10%; left: -10%;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.10) 0%, transparent 70%);
+  animation: cqp-float2 26s ease-in-out infinite;
 }
 .cqp-bg-orb-3 {
-  width: 250px; height: 250px;
-  background: radial-gradient(circle, rgba(6, 182, 212, 0.10) 0%, transparent 70%);
-  top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
+  width: 220px; height: 220px;
+  top: 40%; right: 15%;
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.07) 0%, transparent 70%);
   animation: cqp-float3 18s ease-in-out infinite;
 }
-@keyframes cqp-float1 { 0%,100%{transform:translate(0,0)} 50%{transform:translate(30px,20px)} }
-@keyframes cqp-float2 { 0%,100%{transform:translate(0,0)} 50%{transform:translate(-25px,-15px)} }
-@keyframes cqp-float3 { 0%,100%{transform:translate(-50%,-50%)} 50%{transform:translate(-45%,-55%)} }
+@keyframes cqp-float1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(-20px, 15px) scale(1.05); }
+  66% { transform: translate(10px, -10px) scale(0.97); }
+}
+@keyframes cqp-float2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(15px, -20px) scale(1.03); }
+  66% { transform: translate(-10px, 10px) scale(0.98); }
+}
+@keyframes cqp-float3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-15px, 15px) scale(1.08); }
+}
 
 /* Stars */
-.cqp-stars { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.cqp-stars { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
 .cqp-star {
   position: absolute;
-  background: white;
+  background: #ffffff;
   border-radius: 50%;
-  animation: cqp-twinkle var(--duration) ease-in-out var(--delay) infinite;
+  box-shadow: 0 0 6px 1px rgba(255, 255, 255, 0.35);
+  opacity: 0;
+  animation: cqp-twinkle var(--duration, 4s) ease-in-out var(--delay, 0s) infinite;
 }
-@keyframes cqp-twinkle { 0%,100%{opacity:0.15} 50%{opacity:0.7} }
+@keyframes cqp-twinkle {
+  0%, 100% { opacity: 0; transform: scale(0.5); }
+  50% { opacity: 0.85; transform: scale(1.3); }
+}
 
 /* Glow lines */
 .cqp-glow-line {
   position: absolute;
   height: 1px;
-  width: 200px;
-  z-index: 0;
   pointer-events: none;
+  z-index: 0;
 }
 .cqp-glow-line-1 {
-  top: 25%;
-  left: -200px;
-  background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.3), transparent);
-  animation: cqp-slide-line 12s linear infinite;
+  top: 18%;
+  left: 0;
+  width: 45%;
+  background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.30), transparent);
+  animation: cqp-glow-slide 8s ease-in-out infinite;
 }
 .cqp-glow-line-2 {
-  top: 75%;
-  right: -200px;
-  background: linear-gradient(90deg, transparent, rgba(139, 92, 246, 0.2), transparent);
-  animation: cqp-slide-line2 15s linear infinite;
+  bottom: 25%;
+  right: 0;
+  width: 38%;
+  background: linear-gradient(90deg, transparent, rgba(167, 139, 250, 0.22), transparent);
+  animation: cqp-glow-slide 10s ease-in-out infinite reverse;
 }
-@keyframes cqp-slide-line { from{left:-200px} to{left:calc(100% + 200px)} }
-@keyframes cqp-slide-line2 { from{right:-200px} to{right:calc(100% + 200px)} }
+@keyframes cqp-glow-slide {
+  0%, 100% { transform: translateX(-20px); opacity: 0.3; }
+  50% { transform: translateX(20px); opacity: 1; }
+}
 
 /* ===== Hero Header ===== */
 .cqp-hero-header {
@@ -1034,30 +1055,60 @@ const panelCss = `
   padding: 20px 28px;
   background: rgba(15, 23, 42, 0.85);
   backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border-bottom: 1px solid rgba(56, 189, 248, 0.2);
-  z-index: 3;
+  flex-shrink: 0;
   position: relative;
+  z-index: 3;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.cqp-hero-header::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 5%;
+  width: 90%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.4), rgba(139, 92, 246, 0.3), rgba(34, 211, 238, 0.2), transparent);
 }
 .cqp-hero-icon {
-  width: 48px; height: 48px;
-  display: flex; align-items: center; justify-content: center;
+  position: relative;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 14px;
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(139, 92, 246, 0.2));
-  color: #38bdf8;
+  background: linear-gradient(135deg, #38bdf8, #0ea5e9);
+  color: white;
+  box-shadow: 0 6px 20px -4px rgba(56, 189, 248, 0.5);
   flex-shrink: 0;
 }
+.cqp-hero-icon::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 18px;
+  border: 1.5px dashed rgba(56, 189, 248, 0.35);
+  animation: cqp-icon-orbit 12s linear infinite;
+}
+@keyframes cqp-icon-orbit {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 .cqp-hero-text h2 {
-  font-size: 1.2rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #38bdf8, #818cf8);
+  font-size: 1.3rem;
+  margin: 0;
+  background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 40%, #7dd3fc 80%, #38bdf8 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  margin: 0;
+  background-clip: text;
 }
 .cqp-hero-text p {
-  font-size: 0.82rem;
-  color: #64748b;
-  margin: 2px 0 0;
+  margin: 4px 0 0 0;
+  font-size: 0.85rem;
+  color: #94a3b8;
 }
 .cqp-btn-hero-refresh {
   margin-left: auto;
@@ -1132,25 +1183,34 @@ const panelCss = `
 .cqp-content {
   flex: 1;
   overflow-y: auto;
-  padding: 20px 28px 28px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
   position: relative;
   z-index: 3;
 }
-.cqp-content::-webkit-scrollbar { width: 6px; }
+.cqp-content::-webkit-scrollbar { width: 8px; }
 .cqp-content::-webkit-scrollbar-track { background: transparent; }
 .cqp-content::-webkit-scrollbar-thumb {
   background: rgba(56, 189, 248, 0.2);
-  border-radius: 3px;
+  border-radius: 10px;
 }
+.cqp-content::-webkit-scrollbar-thumb:hover { background: rgba(56, 189, 248, 0.35); }
 
 /* ===== Cards ===== */
 .cqp-card {
-  background: rgba(22, 33, 55, 0.7);
-  border: 1px solid rgba(56, 189, 248, 0.12);
-  border-radius: 14px;
-  padding: 20px;
-  margin-bottom: 16px;
-  backdrop-filter: blur(8px);
+  background: rgba(22, 33, 55, 0.8);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 16px;
+  padding: 24px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 1px rgba(56, 189, 248, 0.06);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.cqp-card:hover {
+  border-color: rgba(56, 189, 248, 0.35);
+  box-shadow: 0 8px 32px rgba(56, 189, 248, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 0 1px rgba(56, 189, 248, 0.1);
 }
 .cqp-card.review { border-color: rgba(56, 189, 248, 0.25); }
 .cqp-card-title {

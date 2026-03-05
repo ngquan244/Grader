@@ -2091,7 +2091,7 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
           display: flex;
           align-items: center;
           gap: 16px;
-          padding: 16px 24px;
+          padding: 20px 28px;
           background: rgba(15, 23, 42, 0.85);
           backdrop-filter: blur(16px);
           -webkit-backdrop-filter: blur(16px);
@@ -2116,14 +2116,12 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
           display: flex;
           align-items: center;
           justify-content: center;
-          width: 42px;
-          height: 42px;
+          width: 48px;
+          height: 48px;
           background: linear-gradient(135deg, #38bdf8 0%, #0ea5e9 100%);
-          border-radius: 12px;
+          border-radius: 14px;
           color: white;
-          box-shadow:
-            0 6px 20px -4px rgba(56, 189, 248, 0.5),
-            0 0 0 3px rgba(56, 189, 248, 0.08);
+          box-shadow: 0 6px 20px -4px rgba(56, 189, 248, 0.5);
           flex-shrink: 0;
           position: relative;
           transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -2156,7 +2154,7 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
 
         .rag-hero-text h2 {
           margin: 0;
-          font-size: 1.2rem;
+          font-size: 1.3rem;
           font-weight: 700;
           background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 40%, #7dd3fc 80%, #38bdf8 100%);
           background-clip: text;
@@ -2166,8 +2164,8 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
         }
 
         .rag-hero-text p {
-          margin: 2px 0 0 0;
-          font-size: 0.78rem;
+          margin: 4px 0 0 0;
+          font-size: 0.85rem;
           color: #94a3b8;
           font-weight: 400;
         }
@@ -2245,22 +2243,22 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
           display: flex;
           align-items: center;
           justify-content: center;
-          width: 34px;
-          height: 34px;
-          background: rgba(22, 33, 55, 0.75);
-          border: 1px solid rgba(56, 189, 248, 0.22);
-          border-radius: 8px;
-          color: #64748b;
+          width: 40px;
+          height: 40px;
+          background: rgba(15, 23, 42, 0.6);
+          border: 1px solid rgba(56, 189, 248, 0.2);
+          border-radius: 10px;
+          color: #38bdf8;
           cursor: pointer;
           transition: all 0.3s ease;
           flex-shrink: 0;
         }
 
         .btn-hero-refresh:hover {
-          background: rgba(56, 189, 248, 0.1);
+          background: rgba(56, 189, 248, 0.15);
           border-color: rgba(56, 189, 248, 0.4);
           color: #38bdf8;
-          transform: rotate(90deg);
+          transform: rotate(180deg);
           box-shadow: 0 0 12px rgba(56, 189, 248, 0.2);
         }
 

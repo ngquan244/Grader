@@ -284,6 +284,11 @@ const GuidePanel: React.FC = () => {
   if (loading) {
     return (
       <div className="guide-panel">
+        <div className="guide-bg-decoration">
+          <div className="guide-bg-orb guide-bg-orb-1" />
+          <div className="guide-bg-orb guide-bg-orb-2" />
+          <div className="guide-bg-orb guide-bg-orb-3" />
+        </div>
         <div className="guide-loading">
           <Loader2 className="spin" size={36} />
           <p>Đang tải hướng dẫn…</p>
@@ -294,10 +299,28 @@ const GuidePanel: React.FC = () => {
 
   return (
     <div className="guide-panel">
+      {/* BG decorations */}
+      <div className="guide-bg-decoration">
+        <div className="guide-bg-orb guide-bg-orb-1" />
+        <div className="guide-bg-orb guide-bg-orb-2" />
+        <div className="guide-bg-orb guide-bg-orb-3" />
+      </div>
+      <div className="guide-stars">
+        {[...Array(18)].map((_, i) => (
+          <div key={i} className="guide-star" style={{
+            top: `${5 + Math.random() * 90}%`,
+            left: `${Math.random() * 100}%`,
+            animationDelay: `${Math.random() * 3}s`,
+          }} />
+        ))}
+      </div>
+      <div className="guide-glow-line guide-glow-line-1" />
+      <div className="guide-glow-line guide-glow-line-2" />
+
       {/* Header */}
       <div className="guide-header">
         <div className="guide-title">
-          <BookOpen size={28} />
+          <div className="guide-title-icon"><BookOpen size={24} /></div>
           <h1>Hướng dẫn sử dụng</h1>
         </div>
         {isAdmin && activeSection && !editing && (

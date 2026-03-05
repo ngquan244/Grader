@@ -299,6 +299,10 @@ const QuizBuilderPanel: React.FC<QuizBuilderPanelProps> = ({
         ))}
       </div>
 
+      {/* Glow lines */}
+      <div className="qb-glow-line qb-glow-line-1" />
+      <div className="qb-glow-line qb-glow-line-2" />
+
       {/* ---- Header ---- */}
       <div className="qb-header">
         <div className="qb-header-icon">
@@ -783,79 +787,180 @@ const QuizBuilderPanel: React.FC<QuizBuilderPanelProps> = ({
           display: flex;
           flex-direction: column;
           height: 100%;
-          background: linear-gradient(165deg, #0c0e16 0%, #131525 40%, #0f1320 100%);
+          background: #080b18;
           color: #e2e8f0;
           font-family: 'Inter', system-ui, -apple-system, sans-serif;
           overflow: hidden;
         }
+
+        /* ---- Ambient gradient ---- */
+        .qb-panel::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background:
+            radial-gradient(ellipse 80% 60% at 20% 10%, rgba(56, 189, 248, 0.10) 0%, transparent 60%),
+            radial-gradient(ellipse 60% 50% at 80% 90%, rgba(139, 92, 246, 0.08) 0%, transparent 60%),
+            radial-gradient(ellipse 50% 40% at 50% 50%, rgba(6, 182, 212, 0.05) 0%, transparent 60%);
+          pointer-events: none;
+          z-index: 0;
+        }
+        .qb-panel::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background-image:
+            linear-gradient(rgba(56, 189, 248, 0.02) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(56, 189, 248, 0.02) 1px, transparent 1px);
+          background-size: 50px 50px;
+          mask-image: radial-gradient(ellipse 80% 70% at 50% 50%, black 20%, transparent 75%);
+          -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 50%, black 20%, transparent 75%);
+          pointer-events: none;
+          animation: qb-grid-drift 30s linear infinite;
+          z-index: 0;
+        }
+        @keyframes qb-grid-drift {
+          0% { transform: translate(0, 0); }
+          100% { transform: translate(50px, 50px); }
+        }
+        .qb-panel > * { position: relative; z-index: 1; }
 
         /* ---- Decorative background ---- */
         .qb-bg-orbs { position: absolute; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
         .qb-orb {
           position: absolute;
           border-radius: 50%;
-          filter: blur(80px);
-          opacity: 0.07;
-          animation: qb-float 20s ease-in-out infinite;
+          filter: blur(70px);
+          pointer-events: none;
         }
-        .qb-orb-1 { width: 400px; height: 400px; top: -100px; right: -80px; background: #818cf8; animation-delay: 0s; }
-        .qb-orb-2 { width: 300px; height: 300px; bottom: -60px; left: -50px; background: #38bdf8; animation-delay: -7s; }
-        .qb-orb-3 { width: 250px; height: 250px; top: 40%; left: 50%; background: #a78bfa; animation-delay: -14s; }
+        .qb-orb-1 {
+          width: 350px; height: 350px;
+          top: -5%; right: -8%;
+          background: radial-gradient(circle, rgba(56, 189, 248, 0.13) 0%, transparent 70%);
+          animation: qb-float 22s ease-in-out infinite;
+        }
+        .qb-orb-2 {
+          width: 300px; height: 300px;
+          bottom: 10%; left: -10%;
+          background: radial-gradient(circle, rgba(139, 92, 246, 0.10) 0%, transparent 70%);
+          animation: qb-float 26s ease-in-out infinite reverse;
+        }
+        .qb-orb-3 {
+          width: 220px; height: 220px;
+          top: 40%; right: 15%;
+          background: radial-gradient(circle, rgba(34, 211, 238, 0.07) 0%, transparent 70%);
+          animation: qb-float3 18s ease-in-out infinite;
+        }
 
-        .qb-stars { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
+        .qb-stars { position: absolute; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
         .qb-star {
           position: absolute;
           border-radius: 50%;
-          background: #fff;
+          background: #ffffff;
+          box-shadow: 0 0 6px 1px rgba(255, 255, 255, 0.35);
           opacity: 0;
           animation: qb-twinkle var(--dur, 4s) ease-in-out infinite;
         }
         @keyframes qb-float {
           0%, 100% { transform: translate(0, 0) scale(1); }
-          33% { transform: translate(30px, -20px) scale(1.05); }
-          66% { transform: translate(-20px, 20px) scale(0.95); }
+          33% { transform: translate(-20px, 15px) scale(1.05); }
+          66% { transform: translate(10px, -10px) scale(0.97); }
+        }
+        @keyframes qb-float3 {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          50% { transform: translate(-15px, 15px) scale(1.08); }
         }
         @keyframes qb-twinkle {
-          0%, 100% { opacity: 0; }
-          50% { opacity: 0.4; }
+          0%, 100% { opacity: 0; transform: scale(0.5); }
+          50% { opacity: 0.85; transform: scale(1.3); }
         }
 
-        /* All content above background */
-        .qb-header, .qb-result, .qb-body, .qb-footer {
-          position: relative;
-          z-index: 1;
+        /* Glow lines */
+        .qb-glow-line {
+          position: absolute;
+          height: 1px;
+          pointer-events: none;
+          z-index: 0;
+        }
+        .qb-glow-line-1 {
+          top: 18%;
+          left: 0;
+          width: 45%;
+          background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.30), transparent);
+          animation: qb-glow-slide 8s ease-in-out infinite;
+        }
+        .qb-glow-line-2 {
+          bottom: 25%;
+          right: 0;
+          width: 38%;
+          background: linear-gradient(90deg, transparent, rgba(167, 139, 250, 0.22), transparent);
+          animation: qb-glow-slide 10s ease-in-out infinite reverse;
+        }
+        @keyframes qb-glow-slide {
+          0%, 100% { transform: translateX(-20px); opacity: 0.3; }
+          50% { transform: translateX(20px); opacity: 1; }
         }
 
         /* ---- Header ---- */
         .qb-header {
           display: flex;
           align-items: center;
-          gap: 14px;
-          padding: 18px 24px 14px;
-          border-bottom: 1px solid rgba(255,255,255,0.05);
+          gap: 16px;
+          padding: 20px 28px;
+          background: rgba(15, 23, 42, 0.85);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          border-bottom: 1px solid rgba(56, 189, 248, 0.2);
+          flex-shrink: 0;
+          position: relative;
+          z-index: 3;
+          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        }
+        .qb-header::after {
+          content: '';
+          position: absolute;
+          bottom: -1px;
+          left: 5%;
+          width: 90%;
+          height: 1px;
+          background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.4), rgba(139, 92, 246, 0.3), rgba(34, 211, 238, 0.2), transparent);
         }
         .qb-header-icon {
-          width: 40px; height: 40px;
+          position: relative;
+          width: 48px; height: 48px;
           display: flex; align-items: center; justify-content: center;
-          border-radius: 12px;
-          background: linear-gradient(135deg, rgba(56,189,248,0.15), rgba(129,140,248,0.15));
-          color: #38bdf8;
+          border-radius: 14px;
+          background: linear-gradient(135deg, #38bdf8, #0ea5e9);
+          color: white;
+          box-shadow: 0 6px 20px -4px rgba(56, 189, 248, 0.5);
           flex-shrink: 0;
+        }
+        .qb-header-icon::before {
+          content: '';
+          position: absolute;
+          inset: -4px;
+          border-radius: 18px;
+          border: 1.5px dashed rgba(56, 189, 248, 0.35);
+          animation: qb-icon-orbit 12s linear infinite;
+        }
+        @keyframes qb-icon-orbit {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
         }
         .qb-header-text { flex: 1; }
         .qb-header h2 {
           margin: 0;
-          font-size: 1.15rem;
+          font-size: 1.3rem;
           font-weight: 700;
-          background: linear-gradient(135deg, #38bdf8 0%, #818cf8 50%, #a78bfa 100%);
+          background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 40%, #7dd3fc 80%, #38bdf8 100%);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           background-clip: text;
         }
         .qb-subtitle {
-          margin: 2px 0 0;
-          font-size: 0.78rem;
-          color: #4a5568;
+          margin: 4px 0 0;
+          font-size: 0.85rem;
+          color: #94a3b8;
         }
         .qb-header-badge {
           display: flex;
@@ -976,6 +1081,8 @@ const QuizBuilderPanel: React.FC<QuizBuilderPanelProps> = ({
           display: flex;
           overflow: hidden;
           min-height: 0;
+          position: relative;
+          z-index: 2;
         }
 
         /* ---- Settings column ---- */
@@ -984,7 +1091,7 @@ const QuizBuilderPanel: React.FC<QuizBuilderPanelProps> = ({
           min-width: 290px;
           max-width: 340px;
           padding: 16px 20px;
-          border-right: 1px solid rgba(255,255,255,0.05);
+          border-right: 1px solid rgba(56, 189, 248, 0.12);
           overflow-y: auto;
           overflow-x: hidden;
           display: flex;
@@ -992,8 +1099,8 @@ const QuizBuilderPanel: React.FC<QuizBuilderPanelProps> = ({
           gap: 4px;
         }
         .qb-section {
-          padding: 12px 0;
-          border-bottom: 1px solid rgba(255,255,255,0.04);
+          padding: 14px 0;
+          border-bottom: 1px solid rgba(56, 189, 248, 0.08);
         }
         .qb-section:last-child { border-bottom: none; }
         .qb-section-title {
@@ -1028,8 +1135,8 @@ const QuizBuilderPanel: React.FC<QuizBuilderPanelProps> = ({
         .qb-input, .qb-select, .qb-textarea {
           padding: 8px 11px;
           border-radius: 8px;
-          border: 1px solid rgba(255,255,255,0.08);
-          background: rgba(255,255,255,0.03);
+          border: 1px solid rgba(56, 189, 248, 0.15);
+          background: rgba(22, 33, 55, 0.6);
           color: #e2e8f0;
           font-size: 0.84rem;
           outline: none;
@@ -1105,12 +1212,12 @@ const QuizBuilderPanel: React.FC<QuizBuilderPanelProps> = ({
           justify-content: space-between;
           padding: 8px 10px;
           border-radius: 8px;
-          background: rgba(255,255,255,0.02);
-          border: 1px solid rgba(255,255,255,0.04);
+          background: rgba(22, 33, 55, 0.5);
+          border: 1px solid rgba(56, 189, 248, 0.1);
           cursor: pointer;
           transition: background 0.15s;
         }
-        .qb-toggle:hover { background: rgba(255,255,255,0.04); }
+        .qb-toggle:hover { background: rgba(56, 189, 248, 0.06); }
         .qb-toggle-info {
           display: flex;
           align-items: center;
@@ -1243,23 +1350,24 @@ const QuizBuilderPanel: React.FC<QuizBuilderPanelProps> = ({
         }
 
         .qb-question-card {
-          border-radius: 10px;
-          border: 1px solid rgba(255,255,255,0.05);
-          background: rgba(255,255,255,0.015);
+          border-radius: 12px;
+          border: 1px solid rgba(56, 189, 248, 0.15);
+          background: rgba(22, 33, 55, 0.6);
           overflow: hidden;
           transition: all 0.2s;
           flex-shrink: 0;
         }
         .qb-question-card:nth-child(even) {
-          background: rgba(255,255,255,0.025);
+          background: rgba(22, 33, 55, 0.7);
         }
         .qb-question-card:hover {
-          border-color: rgba(56,189,248,0.15);
-          background: rgba(255,255,255,0.035);
+          border-color: rgba(56,189,248,0.3);
+          background: rgba(22, 33, 55, 0.8);
         }
         .qb-question-card.expanded {
-          border-color: rgba(56,189,248,0.2);
-          background: rgba(56,189,248,0.02);
+          border-color: rgba(56,189,248,0.3);
+          background: rgba(22, 33, 55, 0.85);
+          box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(56, 189, 248, 0.06);
         }
         .qb-question-row {
           display: flex;
@@ -1496,9 +1604,12 @@ const QuizBuilderPanel: React.FC<QuizBuilderPanelProps> = ({
           align-items: center;
           justify-content: space-between;
           padding: 12px 24px;
-          border-top: 1px solid rgba(255,255,255,0.05);
-          background: rgba(0,0,0,0.2);
-          backdrop-filter: blur(10px);
+          border-top: 1px solid rgba(56, 189, 248, 0.15);
+          background: rgba(15, 23, 42, 0.85);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          position: relative;
+          z-index: 3;
         }
         .qb-footer-info {
           display: flex;
@@ -1607,17 +1718,17 @@ const QuizBuilderPanel: React.FC<QuizBuilderPanelProps> = ({
 
         /* Scrollbars */
         .qb-question-list::-webkit-scrollbar,
-        .qb-settings::-webkit-scrollbar { width: 5px; }
+        .qb-settings::-webkit-scrollbar { width: 8px; }
         .qb-question-list::-webkit-scrollbar-track,
         .qb-settings::-webkit-scrollbar-track { background: transparent; }
         .qb-question-list::-webkit-scrollbar-thumb,
         .qb-settings::-webkit-scrollbar-thumb {
-          background: rgba(255,255,255,0.07);
-          border-radius: 3px;
+          background: rgba(56, 189, 248, 0.2);
+          border-radius: 10px;
         }
         .qb-question-list::-webkit-scrollbar-thumb:hover,
         .qb-settings::-webkit-scrollbar-thumb:hover {
-          background: rgba(255,255,255,0.12);
+          background: rgba(56, 189, 248, 0.35);
         }
       `}</style>
     </div>
