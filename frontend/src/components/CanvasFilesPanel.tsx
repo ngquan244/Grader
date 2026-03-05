@@ -13,14 +13,18 @@ import {
   FolderOpen,
   Database,
   BookOpen,
-  Trash2,
+  Trash,
   Edit2,
   X,
   Plus,
   Save,
-  Trash,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  WifiOff,
+  Sparkles,
+  Trash2,
 } from 'lucide-react';
 import PanelHelpButton from './PanelHelpButton';
 
@@ -40,16 +44,11 @@ import {
   downloadCanvasFile,
   indexCanvasFile,
   extractCanvasTopics,
-  listCanvasFiles,
   listIndexedCanvasDocuments,
-  getCanvasStats,
   getCanvasDocumentTopics,
   updateCanvasDocumentTopics,
-  deleteCanvasFile,
   removeCanvasFileIndex,
-  type CanvasFile as CanvasLocalFile,
   type CanvasIndexedDocument,
-  type CanvasStats,
 } from '../api/canvasRag';
 import {
   getSelectedCourse,
@@ -123,12 +122,10 @@ const statusLabels: Record<ExtendedFileStatus, string> = {
   extracting: 'Đang trích xuất...',
 };
 
-// Tab type for the panel
-type PanelTab = 'remote' | 'local';
+// Tab type removed — single view now
 
 const CanvasFilesPanel: React.FC = () => {
   const { isAuthenticated, canvasTokens } = useAuth();
-  const [activeTab, setActiveTab] = useState<PanelTab>('remote');
   const canvasStars = useMemo(() => generateCanvasStars(30), []);
   
   // Remote files state (from Canvas API)
@@ -140,22 +137,25 @@ const CanvasFilesPanel: React.FC = () => {
   const [remoteFiles, setRemoteFiles] = useState<CanvasFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [canvasErrorType, setCanvasErrorType] = useState<'auth' | 'network' | 'unknown' | null>(null);
+  const [isCanvasAvailable, setIsCanvasAvailable] = useState(true);
   const [downloadStates, setDownloadStates] = useState<
     Map<number, ExtendedDownloadState>
   >(new Map());
   const [isDownloading, setIsDownloading] = useState(false);
 
-  // Local files state (downloaded files)
-  const [localFiles, setLocalFiles] = useState<CanvasLocalFile[]>([]);
+  // Indexed documents state (always available, even offline)
   const [indexedDocs, setIndexedDocs] = useState<CanvasIndexedDocument[]>([]);
-  const [canvasStats, setCanvasStats] = useState<CanvasStats | null>(null);
-  const [localLoading, setLocalLoading] = useState(false);
-  const [localFileStates, setLocalFileStates] = useState<Map<string, ExtendedFileStatus>>(new Map());
+  const [indexedSectionExpanded, setIndexedSectionExpanded] = useState(true);
+  const [indexedLoading, setIndexedLoading] = useState(false);
+
+  // Action states for indexed files (extract/edit/remove)
+  const [fileActionStates, setFileActionStates] = useState<Map<string, ExtendedFileStatus>>(new Map());
   
   // Pagination state
   const [remoteCurrentPage, setRemoteCurrentPage] = useState(1);
-  const [localCurrentPage, setLocalCurrentPage] = useState(1);
-  const ITEMS_PER_PAGE = 5; // 5 files per page for testing (change to 10 for production)
+  const [indexedCurrentPage, setIndexedCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 5;
 
   // Edit topics modal state
   const [showEditTopicsModal, setShowEditTopicsModal] = useState(false);
@@ -172,21 +172,17 @@ const CanvasFilesPanel: React.FC = () => {
     if (stored) {
       setSelectedCourse(stored);
     }
+    // Always load indexed docs on mount (works offline)
+    loadIndexedDocs();
   }, []);
 
   // Fetch remote files when course changes
   useEffect(() => {
     if (selectedCourse) {
       fetchRemoteFiles(selectedCourse.id);
+      loadIndexedDocs(selectedCourse.id);
     }
   }, [selectedCourse]);
-
-  // Load local files when switching to local tab
-  useEffect(() => {
-    if (activeTab === 'local') {
-      loadLocalData();
-    }
-  }, [activeTab]);
 
   // Reset pagination when data changes
   useEffect(() => {
@@ -194,69 +190,79 @@ const CanvasFilesPanel: React.FC = () => {
   }, [remoteFiles.length]);
 
   useEffect(() => {
-    setLocalCurrentPage(1);
-  }, [localFiles.length]);
+    setIndexedCurrentPage(1);
+  }, [indexedDocs.length]);
+
+  // Load indexed documents (works independently of Canvas API)
+  const loadIndexedDocs = async (courseId?: number) => {
+    setIndexedLoading(true);
+    try {
+      const indexedRes = await listIndexedCanvasDocuments(courseId);
+      if (indexedRes.success) {
+        setIndexedDocs(indexedRes.documents);
+      }
+    } catch (err) {
+      console.error('Error loading indexed docs:', err);
+    } finally {
+      setIndexedLoading(false);
+    }
+  };
 
   const fetchRemoteFiles = async (courseId: number) => {
     setLoading(true);
     setError(null);
+    setCanvasErrorType(null);
     setRemoteFiles([]);
     setDownloadStates(new Map());
 
     try {
-      // Fetch remote files and local data in parallel
-      const [remoteResponse, localFilesRes, indexedRes] = await Promise.all([
+      // Fetch remote files and indexed docs in parallel
+      const [remoteResponse, indexedRes] = await Promise.all([
         canvasApi.fetchCourseFiles(courseId),
-        listCanvasFiles(),
-        listIndexedCanvasDocuments(),
+        listIndexedCanvasDocuments(courseId),
       ]);
 
       if (!remoteResponse.success) {
-        setError(remoteResponse.error || 'Failed to fetch files');
+        const errorMsg = remoteResponse.error || 'Failed to fetch files';
+        setError(errorMsg);
+        setIsCanvasAvailable(false);
+        // Detect error type
+        if (errorMsg.toLowerCase().includes('token') || errorMsg.toLowerCase().includes('401') || errorMsg.toLowerCase().includes('expired')) {
+          setCanvasErrorType('auth');
+        } else {
+          setCanvasErrorType('unknown');
+        }
         return;
       }
 
+      setIsCanvasAvailable(true);
       setRemoteFiles(remoteResponse.files);
       
-      // Update local data
-      if (localFilesRes.success) {
-        setLocalFiles(localFilesRes.files);
-      }
+      // Update indexed docs
       if (indexedRes.success) {
         setIndexedDocs(indexedRes.documents);
       }
       
-      // Check status for each remote file
-      const localFileSet = new Set(
-        localFilesRes.success 
-          ? localFilesRes.files.map(f => f.filename.toLowerCase().trim()) 
-          : []
-      );
+      // Check status for each remote file against indexed docs
       const indexedFileSet = new Set(
         indexedRes.success 
           ? indexedRes.documents.map(d => d.filename.toLowerCase().trim()) 
           : []
       );
       
-      // Helper to sanitize filename for comparison (remove special chars)
+      // Helper to sanitize filename for comparison
       const sanitize = (name: string) => 
         name.toLowerCase().replace(/[,]/g, '').replace(/\s+/g, ' ').trim();
       
-      // Set initial status for files that are already downloaded/indexed
+      // Set initial status for files that are already indexed
       const newStates = new Map<number, ExtendedDownloadState>();
       remoteResponse.files.forEach((file: CanvasFile) => {
         const remoteNameSanitized = sanitize(file.display_name);
         
-        // Check if file exists locally or indexed (with sanitized name matching)
         const isIndexed = [...indexedFileSet].some(indexedName => 
           sanitize(indexedName) === remoteNameSanitized ||
           remoteNameSanitized.includes(sanitize(indexedName.replace('.pdf', ''))) ||
           sanitize(indexedName).includes(remoteNameSanitized.replace('.pdf', ''))
-        );
-        const isDownloaded = [...localFileSet].some(localName =>
-          sanitize(localName) === remoteNameSanitized ||
-          remoteNameSanitized.includes(sanitize(localName.replace('.pdf', ''))) ||
-          sanitize(localName).includes(remoteNameSanitized.replace('.pdf', ''))
         );
         
         if (isIndexed) {
@@ -265,12 +271,6 @@ const CanvasFilesPanel: React.FC = () => {
             filename: file.display_name,
             status: 'indexed',
           });
-        } else if (isDownloaded) {
-          newStates.set(file.id, {
-            fileId: file.id,
-            filename: file.display_name,
-            status: 'saved',
-          });
         }
       });
       
@@ -278,34 +278,11 @@ const CanvasFilesPanel: React.FC = () => {
         setDownloadStates(newStates);
       }
     } catch (err) {
-      setError('Network error. Please check your connection.');
+      setError('Lỗi kết nối mạng. Vui lòng kiểm tra kết nối.');
+      setIsCanvasAvailable(false);
+      setCanvasErrorType('network');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const loadLocalData = async () => {
-    setLocalLoading(true);
-    try {
-      const [filesRes, indexedRes, statsRes] = await Promise.all([
-        listCanvasFiles(),
-        listIndexedCanvasDocuments(),
-        getCanvasStats(),
-      ]);
-      
-      if (filesRes.success) {
-        setLocalFiles(filesRes.files);
-      }
-      if (indexedRes.success) {
-        setIndexedDocs(indexedRes.documents);
-      }
-      if (statsRes.success) {
-        setCanvasStats(statsRes.stats);
-      }
-    } catch (err) {
-      console.error('Error loading local data:', err);
-    } finally {
-      setLocalLoading(false);
     }
   };
 
@@ -417,8 +394,8 @@ const CanvasFilesPanel: React.FC = () => {
       
       if (indexResult.success) {
         updateFileStatus(file.id, { status: 'indexed' });
-        // Refresh local files list to show updated status
-        await loadLocalData();
+        // Refresh indexed docs to show updated status
+        await loadIndexedDocs(selectedCourse?.id);
         // Dispatch event to notify DocumentRAGPanel to refresh topics
         window.dispatchEvent(new CustomEvent('canvas-topics-updated'));
       } else if (indexResult.already_indexed) {
@@ -480,63 +457,43 @@ const CanvasFilesPanel: React.FC = () => {
 
     setIsDownloading(false);
     
-    // Refresh local data
-    loadLocalData();
+    // Refresh indexed docs
+    loadIndexedDocs(selectedCourse?.id);
   };
 
-  // Local file actions
-  const handleIndexLocalFile = async (filename: string) => {
-    setLocalFileStates(prev => new Map(prev).set(filename, 'indexing'));
-    
-    try {
-      const result = await indexCanvasFile(filename, selectedCourse?.id);
-      
-      if (result.success) {
-        setLocalFileStates(prev => new Map(prev).set(filename, 'indexed'));
-        await loadLocalData();
-        // Dispatch event to notify DocumentRAGPanel to refresh topics
-        window.dispatchEvent(new CustomEvent('canvas-topics-updated'));
-      } else {
-        setLocalFileStates(prev => new Map(prev).set(filename, 'failed'));
-      }
-    } catch (err) {
-      setLocalFileStates(prev => new Map(prev).set(filename, 'failed'));
-    }
-  };
+  // === File action handlers (shared by remote rows + indexed section) ===
 
   const handleExtractTopics = async (filename: string) => {
-    setLocalFileStates(prev => new Map(prev).set(filename, 'extracting'));
+    setFileActionStates(prev => new Map(prev).set(filename, 'extracting'));
     
     try {
       const result = await extractCanvasTopics(filename, 10);
       
       if (result.success) {
-        setLocalFileStates(prev => {
+        setFileActionStates(prev => {
           const newMap = new Map(prev);
           newMap.delete(filename);
           return newMap;
         });
-        await loadLocalData();
-        // Dispatch event to notify DocumentRAGPanel to refresh topics
+        await loadIndexedDocs(selectedCourse?.id);
         window.dispatchEvent(new CustomEvent('canvas-topics-updated'));
       } else {
-        setLocalFileStates(prev => new Map(prev).set(filename, 'failed'));
+        setFileActionStates(prev => new Map(prev).set(filename, 'failed'));
       }
     } catch (err) {
-      setLocalFileStates(prev => new Map(prev).set(filename, 'failed'));
+      setFileActionStates(prev => new Map(prev).set(filename, 'failed'));
     }
   };
 
   const handleRemoveIndex = async (filename: string) => {
-    if (!confirm(`Xóa index cho "${filename}"? File sẽ được giữ lại nhưng cần index lại để sử dụng.`)) {
+    if (!confirm(`Xóa index nội bộ cho "${filename}"?\nHành động này chỉ xóa dữ liệu vector và chủ đề trên hệ thống.\nFile trên Canvas LMS không bị ảnh hưởng.`)) {
       return;
     }
     
     try {
       const result = await removeCanvasFileIndex(filename);
       if (result.success) {
-        await loadLocalData();
-        // Dispatch event to notify DocumentRAGPanel to refresh topics
+        await loadIndexedDocs(selectedCourse?.id);
         window.dispatchEvent(new CustomEvent('canvas-topics-updated'));
       }
     } catch (err) {
@@ -544,12 +501,11 @@ const CanvasFilesPanel: React.FC = () => {
     }
   };
 
-  // Remove index for remote file (from Canvas tab)
+  // Remove index for remote file (from Canvas file list)
   const handleRemoveIndexForRemoteFile = async (file: CanvasFile) => {
-    // Find the local filename (sanitized)
     const sanitizedName = file.display_name.replace(/[,]/g, '');
     
-    if (!confirm(`Xóa index cho "${file.display_name}"? File sẽ được giữ lại nhưng cần index lại để sử dụng.`)) {
+    if (!confirm(`Xóa index nội bộ cho "${file.display_name}"?\nHành động này chỉ xóa dữ liệu vector và chủ đề trên hệ thống.\nFile trên Canvas LMS không bị ảnh hưởng.`)) {
       return;
     }
     
@@ -561,37 +517,17 @@ const CanvasFilesPanel: React.FC = () => {
       }
       
       if (result.success) {
-        // Update status to 'saved' (downloaded but not indexed)
+        // Reset status — no longer indexed
         setDownloadStates(prev => {
           const newMap = new Map(prev);
-          newMap.set(file.id, {
-            fileId: file.id,
-            filename: file.display_name,
-            status: 'saved',
-          });
+          newMap.delete(file.id);
           return newMap;
         });
-        await loadLocalData();
-        // Dispatch event to notify DocumentRAGPanel to refresh topics
+        await loadIndexedDocs(selectedCourse?.id);
         window.dispatchEvent(new CustomEvent('canvas-topics-updated'));
       }
     } catch (err) {
       console.error('Error removing index:', err);
-    }
-  };
-
-  const handleDeleteLocalFile = async (filename: string) => {
-    if (!confirm(`Xóa file "${filename}"? Hành động này không thể hoàn tác.`)) {
-      return;
-    }
-    
-    try {
-      const result = await deleteCanvasFile(filename);
-      if (result.success) {
-        await loadLocalData();
-      }
-    } catch (err) {
-      console.error('Error deleting file:', err);
     }
   };
 
@@ -656,7 +592,8 @@ const CanvasFilesPanel: React.FC = () => {
       
       if (response.success) {
         closeEditTopicsModal();
-        await loadLocalData();
+        await loadIndexedDocs(selectedCourse?.id);
+        window.dispatchEvent(new CustomEvent('canvas-topics-updated'));
       } else {
         alert('Không thể lưu chủ đề. Vui lòng thử lại.');
       }
@@ -760,58 +697,64 @@ const CanvasFilesPanel: React.FC = () => {
       </div>
 
       <div className="canvas-content">
-      {/* Tab Switcher */}
-      <div className="canvas-tabs">
-        <button
-          className={`tab-btn ${activeTab === 'remote' ? 'active' : ''}`}
-          onClick={() => setActiveTab('remote')}
-        >
-          <Download size={16} />
-          Từ Canvas
-        </button>
-        <button
-          className={`tab-btn ${activeTab === 'local' ? 'active' : ''}`}
-          onClick={() => setActiveTab('local')}
-        >
-          <Database size={16} />
-          Đã tải ({localFiles.length})
-        </button>
+
+      {/* Offline Banner */}
+      {!isCanvasAvailable && selectedCourse && (
+        <div className="canvas-offline-banner">
+          <WifiOff size={18} />
+          <div className="offline-text">
+            <strong>Chế độ offline</strong>
+            <span>
+              {canvasErrorType === 'auth'
+                ? 'Token Canvas không hợp lệ hoặc đã hết hạn. Vui lòng cập nhật token trong Cài đặt.'
+                : canvasErrorType === 'network'
+                ? 'Không thể kết nối Canvas LMS. Kiểm tra kết nối mạng.'
+                : 'Không thể truy cập Canvas LMS.'}
+              {' '}Quản lý tài liệu đã index vẫn khả dụng.
+            </span>
+          </div>
+          <button
+            className="btn-secondary btn-sm"
+            onClick={() => selectedCourse && fetchRemoteFiles(selectedCourse.id)}
+            disabled={loading}
+          >
+            <RefreshCw size={14} className={loading ? 'spin' : ''} />
+            Thử lại
+          </button>
+        </div>
+      )}
+
+      {/* Course Selection Section */}
+      <div className="canvas-section">
+        <h3>Khóa học đã chọn</h3>
+        {selectedCourse ? (
+          <div className="selected-course">
+            <div className="course-details">
+              <span className="course-name">{selectedCourse.name}</span>
+              <span className="course-id">ID: {selectedCourse.id}</span>
+            </div>
+            <div className="course-actions">
+              <button className="btn-secondary btn-sm" onClick={handleChangeCourse}>
+                Đổi
+              </button>
+              <button
+                className="btn-secondary btn-sm danger"
+                onClick={handleDisconnect}
+              >
+                Ngắt kết nối
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button className="btn-primary" onClick={() => setIsModalOpen(true)}>
+            <FolderOpen size={18} />
+            Chọn khóa học
+          </button>
+        )}
       </div>
 
-      {/* Remote Files Tab */}
-      {activeTab === 'remote' && (
-        <>
-          {/* Course Selection Section */}
-          <div className="canvas-section">
-            <h3>Khóa học đã chọn</h3>
-            {selectedCourse ? (
-              <div className="selected-course">
-                <div className="course-details">
-                  <span className="course-name">{selectedCourse.name}</span>
-                  <span className="course-id">ID: {selectedCourse.id}</span>
-                </div>
-                <div className="course-actions">
-                  <button className="btn-secondary btn-sm" onClick={handleChangeCourse}>
-                    Đổi
-                  </button>
-                  <button
-                    className="btn-secondary btn-sm danger"
-                    onClick={handleDisconnect}
-                  >
-                    Ngắt kết nối
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <button className="btn-primary" onClick={() => setIsModalOpen(true)}>
-                <FolderOpen size={18} />
-                Chọn khóa học
-              </button>
-            )}
-          </div>
-
-          {/* Files Section */}
-          {selectedCourse && (
+      {/* Files Section */}
+          {selectedCourse && isCanvasAvailable && (
             <div className="canvas-section">
               <div className="section-header">
                 <h3>File trong khóa học</h3>
@@ -850,11 +793,11 @@ const CanvasFilesPanel: React.FC = () => {
                     const summary = getDownloadSummary();
                     return (
                       <>
-                        <span className="summary-item saved">
-                          <CheckCircle size={14} /> {summary.saved} saved
-                        </span>
                         <span className="summary-item indexed">
                           <Database size={14} /> {summary.indexed} indexed
+                        </span>
+                        <span className="summary-item saved">
+                          <CheckCircle size={14} /> {summary.saved} saved
                         </span>
                         <span className="summary-item duplicate">
                           <Copy size={14} /> {summary.duplicates} duplicates
@@ -894,6 +837,19 @@ const CanvasFilesPanel: React.FC = () => {
                 const startIndex = (remoteCurrentPage - 1) * ITEMS_PER_PAGE;
                 const paginatedFiles = remoteFiles.slice(startIndex, startIndex + ITEMS_PER_PAGE);
                 
+                // Helper to find indexed doc by remote filename
+                const findIndexedDoc = (displayName: string) => {
+                  const sanitize = (name: string) => 
+                    name.toLowerCase().replace(/[,]/g, '').replace(/\s+/g, ' ').trim();
+                  const remoteSanitized = sanitize(displayName);
+                  return indexedDocs.find(doc => {
+                    const docSanitized = sanitize(doc.filename);
+                    return docSanitized === remoteSanitized ||
+                      remoteSanitized.includes(sanitize(doc.filename.replace('.pdf', ''))) ||
+                      docSanitized.includes(remoteSanitized.replace('.pdf', ''));
+                  });
+                };
+
                 return (
                   <>
                     <div className="files-list">
@@ -911,7 +867,10 @@ const CanvasFilesPanel: React.FC = () => {
                             paginatedFiles.map((file) => {
                               const state = downloadStates.get(file.id);
                               const isIndexed = state?.status === 'indexed';
-                              const isSaved = state?.status === 'saved';
+                              const indexedDoc = isIndexed ? findIndexedDoc(file.display_name) : null;
+                              const actionState = fileActionStates.get(
+                                indexedDoc?.filename || file.display_name.replace(/[,]/g, '')
+                              );
                               return (
                                 <tr key={file.id}>
                                   <td>
@@ -922,10 +881,18 @@ const CanvasFilesPanel: React.FC = () => {
                                   </td>
                                   <td>{formatFileSize(file.size)}</td>
                                   <td>
-                                    {state ? (
+                                    {actionState ? (
+                                      <div className={`file-status ${actionState}`}>
+                                        <StatusIcon status={actionState} />
+                                        <span>{statusLabels[actionState]}</span>
+                                      </div>
+                                    ) : state ? (
                                       <div className={`file-status ${state.status}`}>
                                         <StatusIcon status={state.status} />
-                                        <span>{statusLabels[state.status]}</span>
+                                        <span>
+                                          {statusLabels[state.status]}
+                                          {isIndexed && indexedDoc && ` · ${indexedDoc.topic_count} topics`}
+                                        </span>
                                       </div>
                                     ) : (
                                       <span className="file-status idle">—</span>
@@ -933,34 +900,52 @@ const CanvasFilesPanel: React.FC = () => {
                                   </td>
                                   <td>
                                     <div className="action-buttons">
-                                      {/* Download only button */}
-                                      {!isIndexed && !isSaved && (
-                                        <button
-                                          className="btn-action"
-                                          onClick={() => downloadSingleFile(file)}
-                                          disabled={isDownloading || ['downloading', 'indexing'].includes(state?.status || '')}
-                                          title="Chỉ tải"
-                                        >
-                                          <Download size={14} />
-                                        </button>
-                                      )}
-                                      {/* Download & Index button (or just Index if already saved) */}
+                                      {/* Not indexed: download / download+index */}
                                       {!isIndexed && (
-                                        <button
-                                          className="btn-action btn-primary-action"
-                                          onClick={() => downloadAndIndexFile(file)}
-                                          disabled={isDownloading || ['downloading', 'indexing'].includes(state?.status || '')}
-                                          title={isSaved ? "Index" : "Tải & Index"}
-                                        >
-                                          <Database size={14} />
-                                        </button>
+                                        <>
+                                          <button
+                                            className="btn-action"
+                                            onClick={() => downloadAndIndexFile(file)}
+                                            disabled={isDownloading || ['downloading', 'indexing'].includes(state?.status || '')}
+                                            title="Tải & Index"
+                                          >
+                                            <Database size={14} />
+                                          </button>
+                                        </>
                                       )}
-                                      {/* Remove index button (when indexed) */}
-                                      {isIndexed && (
+                                      {/* Indexed: extract topics, edit topics, remove index */}
+                                      {isIndexed && indexedDoc && (
+                                        <>
+                                          <button
+                                            className="btn-action"
+                                            onClick={() => handleExtractTopics(indexedDoc.filename)}
+                                            disabled={actionState === 'extracting'}
+                                            title="Trích xuất chủ đề"
+                                          >
+                                            <Sparkles size={14} />
+                                          </button>
+                                          <button
+                                            className="btn-action"
+                                            onClick={() => openEditTopicsModal(indexedDoc.filename)}
+                                            title="Sửa chủ đề"
+                                          >
+                                            <Edit2 size={14} />
+                                          </button>
+                                          <button
+                                            className="btn-action warning"
+                                            onClick={() => handleRemoveIndexForRemoteFile(file)}
+                                            title="Xóa index nội bộ (không ảnh hưởng Canvas)"
+                                          >
+                                            <Trash size={14} />
+                                          </button>
+                                        </>
+                                      )}
+                                      {/* Indexed but no doc found — just show remove */}
+                                      {isIndexed && !indexedDoc && (
                                         <button
                                           className="btn-action warning"
                                           onClick={() => handleRemoveIndexForRemoteFile(file)}
-                                          title="Xóa index"
+                                          title="Xóa index nội bộ (không ảnh hưởng Canvas)"
                                         >
                                           <Trash size={14} />
                                         </button>
@@ -981,7 +966,7 @@ const CanvasFilesPanel: React.FC = () => {
                       </table>
                     </div>
                     
-                    {/* Pagination - Always show */}
+                    {/* Pagination */}
                     <div className="pagination">
                       <button
                         className="pagination-btn"
@@ -1020,201 +1005,164 @@ const CanvasFilesPanel: React.FC = () => {
               })()}
             </div>
           )}
-        </>
-      )}
 
-      {/* Local Files Tab */}
-      {activeTab === 'local' && (
-        <div className="canvas-section">
-          {/* Stats */}
-          {canvasStats && (
-            <div className="canvas-stats">
-              <div className="stat-item">
-                <span className="stat-value">{canvasStats.total_documents}</span>
-                <span className="stat-label">Tài liệu</span>
-              </div>
-              <div className="stat-item">
-                <span className="stat-value">{canvasStats.total_chunks}</span>
-                <span className="stat-label">Chunks</span>
-              </div>
-            </div>
-          )}
-
-          <div className="section-header">
-            <h3>File đã tải từ Canvas</h3>
+      {/* ===== Indexed Documents Section (always visible, works offline) ===== */}
+      <div className="canvas-section indexed-documents-section">
+        <div
+          className="section-header clickable"
+          onClick={() => setIndexedSectionExpanded(!indexedSectionExpanded)}
+        >
+          <h3>
+            <Database size={18} />
+            Tài liệu đã Index
+            <span className="indexed-count-badge">{indexedDocs.length}</span>
+          </h3>
+          <div className="section-actions">
             <button
               className="btn-secondary btn-sm"
-              onClick={loadLocalData}
-              disabled={localLoading}
+              onClick={(e) => {
+                e.stopPropagation();
+                loadIndexedDocs(selectedCourse?.id);
+              }}
+              disabled={indexedLoading}
             >
-              <RefreshCw size={16} className={localLoading ? 'spin' : ''} />
-              Refresh
+              <RefreshCw size={14} className={indexedLoading ? 'spin' : ''} />
             </button>
+            {indexedSectionExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
           </div>
-
-          {localLoading && (
-            <div className="loading-center">
-              <Loader2 className="spin" size={32} />
-            </div>
-          )}
-
-          {!localLoading && (() => {
-            const totalPages = Math.max(1, Math.ceil(localFiles.length / ITEMS_PER_PAGE));
-            const startIndex = (localCurrentPage - 1) * ITEMS_PER_PAGE;
-            const paginatedFiles = localFiles.slice(startIndex, startIndex + ITEMS_PER_PAGE);
-            
-            return (
-              <>
-                <div className="files-list">
-                  <table className="files-table">
-                    <thead>
-                      <tr>
-                        <th>Tên file</th>
-                        <th>Kích thước</th>
-                        <th>Trạng thái</th>
-                        <th>Topics</th>
-                        <th>Thao tác</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {paginatedFiles.length > 0 ? (
-                        paginatedFiles.map((file) => {
-                          const indexed = indexedDocs.find(d => d.filename === file.filename);
-                          const fileState = localFileStates.get(file.filename);
-                          
-                          return (
-                            <tr key={file.filename}>
-                              <td>
-                                <div className="file-name">
-                                  <FileText size={16} />
-                                  <span>{file.filename}</span>
-                                </div>
-                              </td>
-                              <td>{formatFileSize(file.size)}</td>
-                              <td>
-                                {fileState ? (
-                                  <div className={`file-status ${fileState}`}>
-                                    <StatusIcon status={fileState} />
-                                    <span>{statusLabels[fileState]}</span>
-                                  </div>
-                                ) : indexed ? (
-                                  <div className="file-status indexed">
-                                    <Database size={16} />
-                                    <span>Indexed</span>
-                                  </div>
-                                ) : (
-                                  <span className="file-status idle">Chưa index</span>
-                                )}
-                              </td>
-                              <td>
-                                {indexed ? (
-                                  <span className="topic-count">
-                                    {indexed.topic_count} topics
-                                  </span>
-                                ) : (
-                                  <span className="topic-count empty">—</span>
-                                )}
-                              </td>
-                              <td>
-                                <div className="action-buttons">
-                                  {!indexed && (
-                                    <button
-                                      className="btn-action btn-primary-action"
-                                      onClick={() => handleIndexLocalFile(file.filename)}
-                                      disabled={fileState === 'indexing'}
-                                      title="Index file"
-                                    >
-                                      <Database size={14} />
-                                    </button>
-                                  )}
-                                  {indexed && (
-                                    <>
-                                      <button
-                                        className="btn-action"
-                                        onClick={() => handleExtractTopics(file.filename)}
-                                        disabled={fileState === 'extracting'}
-                                        title="Trích xuất chủ đề"
-                                      >
-                                        <BookOpen size={14} />
-                                      </button>
-                                      <button
-                                        className="btn-action"
-                                        onClick={() => openEditTopicsModal(file.filename)}
-                                        title="Sửa chủ đề"
-                                      >
-                                        <Edit2 size={14} />
-                                      </button>
-                                      <button
-                                        className="btn-action warning"
-                                        onClick={() => handleRemoveIndex(file.filename)}
-                                        title="Xóa index (giữ file)"
-                                      >
-                                        <Trash size={14} />
-                                      </button>
-                                    </>
-                                  )}
-                                  <button
-                                    className="btn-action danger"
-                                    onClick={() => handleDeleteLocalFile(file.filename)}
-                                    title="Xóa file và index"
-                                  >
-                                    <Trash2 size={14} />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })
-                      ) : (
-                        <tr>
-                          <td colSpan={5} className="empty-table-message">
-                            Chưa có file nào được tải từ Canvas.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-                
-                {/* Pagination - Always show */}
-                <div className="pagination">
-                  <button
-                    className="pagination-btn"
-                    onClick={() => setLocalCurrentPage(p => Math.max(1, p - 1))}
-                    disabled={localCurrentPage === 1}
-                  >
-                    <ChevronLeft size={16} />
-                  </button>
-                  <div className="pagination-pages">
-                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                      <button
-                        key={page}
-                        className={`pagination-page ${page === localCurrentPage ? 'active' : ''}`}
-                        onClick={() => setLocalCurrentPage(page)}
-                      >
-                        {page}
-                      </button>
-                    ))}
-                  </div>
-                  <button
-                    className="pagination-btn"
-                    onClick={() => setLocalCurrentPage(p => Math.min(totalPages, p + 1))}
-                    disabled={localCurrentPage === totalPages}
-                  >
-                    <ChevronRight size={16} />
-                  </button>
-                  <span className="pagination-info">
-                    {localFiles.length > 0 
-                      ? `${startIndex + 1}-${Math.min(startIndex + ITEMS_PER_PAGE, localFiles.length)} / ${localFiles.length}`
-                      : '0 / 0'
-                    }
-                  </span>
-                </div>
-              </>
-            );
-          })()}
         </div>
-      )}
+
+        {indexedSectionExpanded && (
+          <>
+            {indexedLoading && (
+              <div className="loading-center">
+                <Loader2 className="spin" size={24} />
+              </div>
+            )}
+
+            {!indexedLoading && (() => {
+              const totalPages = Math.max(1, Math.ceil(indexedDocs.length / ITEMS_PER_PAGE));
+              const startIndex = (indexedCurrentPage - 1) * ITEMS_PER_PAGE;
+              const paginatedDocs = indexedDocs.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+
+              return (
+                <>
+                  <div className="files-list">
+                    <table className="files-table">
+                      <thead>
+                        <tr>
+                          <th>Tên file</th>
+                          <th>Chunks</th>
+                          <th>Topics</th>
+                          <th>Thao tác</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {paginatedDocs.length > 0 ? (
+                          paginatedDocs.map((doc) => {
+                            const actionState = fileActionStates.get(doc.filename);
+                            return (
+                              <tr key={doc.file_hash}>
+                                <td>
+                                  <div className="file-name">
+                                    <FileText size={16} />
+                                    <span>{doc.filename}</span>
+                                  </div>
+                                </td>
+                                <td>
+                                  <span className="chunk-count">{doc.chunks_added}</span>
+                                </td>
+                                <td>
+                                  <span className={`topic-count ${doc.topic_count === 0 ? 'empty' : ''}`}>
+                                    {doc.topic_count > 0 ? `${doc.topic_count} topics` : '—'}
+                                  </span>
+                                </td>
+                                <td>
+                                  <div className="action-buttons">
+                                    {actionState ? (
+                                      <div className={`file-status ${actionState}`}>
+                                        <StatusIcon status={actionState} />
+                                      </div>
+                                    ) : (
+                                      <>
+                                        <button
+                                          className="btn-action"
+                                          onClick={() => handleExtractTopics(doc.filename)}
+                                          title="Trích xuất chủ đề"
+                                        >
+                                          <Sparkles size={14} />
+                                        </button>
+                                        <button
+                                          className="btn-action"
+                                          onClick={() => openEditTopicsModal(doc.filename)}
+                                          title="Sửa chủ đề"
+                                        >
+                                          <Edit2 size={14} />
+                                        </button>
+                                        <button
+                                          className="btn-action warning"
+                                          onClick={() => handleRemoveIndex(doc.filename)}
+                                          title="Xóa index nội bộ (không ảnh hưởng Canvas)"
+                                        >
+                                          <Trash2 size={14} />
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        ) : (
+                          <tr>
+                            <td colSpan={4} className="empty-table-message">
+                              Chưa có tài liệu nào được index.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Pagination */}
+                  {indexedDocs.length > ITEMS_PER_PAGE && (
+                    <div className="pagination">
+                      <button
+                        className="pagination-btn"
+                        onClick={() => setIndexedCurrentPage(p => Math.max(1, p - 1))}
+                        disabled={indexedCurrentPage === 1}
+                      >
+                        <ChevronLeft size={16} />
+                      </button>
+                      <div className="pagination-pages">
+                        {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                          <button
+                            key={page}
+                            className={`pagination-page ${page === indexedCurrentPage ? 'active' : ''}`}
+                            onClick={() => setIndexedCurrentPage(page)}
+                          >
+                            {page}
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        className="pagination-btn"
+                        onClick={() => setIndexedCurrentPage(p => Math.min(totalPages, p + 1))}
+                        disabled={indexedCurrentPage === totalPages}
+                      >
+                        <ChevronRight size={16} />
+                      </button>
+                      <span className="pagination-info">
+                        {`${startIndex + 1}-${Math.min(startIndex + ITEMS_PER_PAGE, indexedDocs.length)} / ${indexedDocs.length}`}
+                      </span>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </>
+        )}
+      </div>
 
       </div>{/* end canvas-content */}
 

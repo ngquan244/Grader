@@ -191,16 +191,31 @@ async def list_canvas_files(user: CurrentUser):
 
 
 @router.get("/indexed")
-async def list_indexed_canvas_documents(user: CurrentUser):
+async def list_indexed_canvas_documents(
+    user: CurrentUser,
+    course_id: Optional[int] = None,
+):
     """
     List all indexed Canvas documents with topics.
+    Optionally filter by course_id.
     """
     try:
         service = get_canvas_rag_service()
         with SessionLocal() as db:
-            return service.list_indexed_documents(
+            result = service.list_indexed_documents(
                 user_id=str(user.id), db_session=db,
             )
+        
+        # Filter by course_id if provided
+        if course_id is not None and result.get("success"):
+            filtered = [
+                doc for doc in result.get("documents", [])
+                if doc.get("course_id") == course_id
+            ]
+            result["documents"] = filtered
+            result["count"] = len(filtered)
+        
+        return result
     except Exception as e:
         logger.exception("Error listing indexed Canvas documents")
         raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
@@ -285,12 +300,14 @@ async def reset_canvas_index(admin: AdminUser):
 @router.delete("/files/{filename}")
 async def delete_canvas_file(filename: str, user: CurrentUser):
     """
-    Delete a Canvas file and its index data.
+    Delete a Canvas file's local cache and its index data.
+    Does NOT delete the file from Canvas LMS.
     """
-    logger.info(f"Deleting Canvas file: {filename}")
+    logger.info(f"Deleting Canvas file (local): {filename}")
     
     service = get_canvas_rag_service()
-    result = service.delete_file(filename, user_id=str(user.id))
+    with SessionLocal() as db:
+        result = service.delete_file(filename, user_id=str(user.id), db_session=db)
     
     if not result.get("success"):
         raise HTTPException(status_code=500, detail=result.get("error", "Failed to delete file"))
@@ -302,11 +319,14 @@ async def delete_canvas_file(filename: str, user: CurrentUser):
 async def remove_canvas_file_index(filename: str, user: CurrentUser):
     """
     Remove index for a Canvas file (keep the file).
+    Cleans up: ChromaDB collection, topic data, and database records.
+    Does NOT affect the file on Canvas LMS.
     """
     logger.info(f"Removing index for Canvas file: {filename}")
     
     service = get_canvas_rag_service()
-    result = service.remove_index(filename, user_id=str(user.id))
+    with SessionLocal() as db:
+        result = service.remove_index(filename, user_id=str(user.id), db_session=db)
     
     if not result.get("success"):
         raise HTTPException(status_code=404, detail=result.get("error", "Failed to remove index"))

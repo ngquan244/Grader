@@ -2832,48 +2832,88 @@ body {
 }
 
 /* Canvas Tabs - Dark Glassmorphism */
-.canvas-tabs {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 24px;
-  padding: 5px;
-  background: rgba(22, 33, 55, 0.8);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(56, 189, 248, 0.2);
-  border-radius: 14px;
-}
-
-.canvas-tabs .tab-btn {
-  flex: 1;
+/* Canvas Offline Banner */
+.canvas-offline-banner {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 12px 20px;
-  border: none;
-  border-radius: 10px;
-  background: transparent;
-  color: #64748b;
+  gap: 12px;
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 12px;
+  color: #fbbf24;
   font-size: 0.9rem;
-  font-weight: 600;
+}
+
+.canvas-offline-banner svg {
+  flex-shrink: 0;
+  color: #f59e0b;
+}
+
+.canvas-offline-banner span {
+  flex: 1;
+  color: #fcd34d;
+}
+
+.canvas-offline-banner .btn-sm {
+  flex-shrink: 0;
+}
+
+/* Indexed Documents Section */
+.indexed-documents-section {
+  border-color: rgba(139, 92, 246, 0.25);
+}
+
+.indexed-documents-section:hover {
+  border-color: rgba(139, 92, 246, 0.4);
+}
+
+.indexed-documents-section .section-header.clickable {
   cursor: pointer;
-  transition: all 0.2s ease;
+  user-select: none;
+  margin-bottom: 0;
+  transition: opacity 0.2s ease;
 }
 
-.canvas-tabs .tab-btn:hover {
-  color: #cbd5e1;
-  background: rgba(56, 189, 248, 0.08);
+.indexed-documents-section .section-header.clickable:hover {
+  opacity: 0.85;
 }
 
-.canvas-tabs .tab-btn.active {
-  background: linear-gradient(135deg, #38bdf8 0%, #0ea5e9 100%);
+.indexed-documents-section h3 svg {
+  color: #a78bfa;
+}
+
+.indexed-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  font-size: 0.75rem;
+  font-weight: 700;
   color: white;
-  box-shadow: 0 2px 12px rgba(56, 189, 248, 0.35);
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  border-radius: 12px;
+  margin-left: 4px;
 }
 
-.canvas-tabs .tab-btn svg {
-  width: 18px;
-  height: 18px;
+.chunk-count {
+  color: #94a3b8;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.topic-count {
+  color: #a78bfa;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.topic-count.empty {
+  color: #475569;
+  font-weight: 400;
 }
 
 /* Canvas Section Card - Glassmorphism */

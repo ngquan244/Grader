@@ -5,54 +5,12 @@
  */
 
 import { apiClient } from './client';
-import { authApi } from './auth';
+import { getCanvasHeaders, clearCanvasTokenCache } from './canvas';
 
 const API_BASE = '/api/canvas-rag';
 
-// Cache for Canvas token to avoid repeated API calls
-let cachedToken: { token: string; baseUrl: string; expiresAt: number } | null = null;
-
-/**
- * Get Canvas headers from backend (fetches decrypted token)
- * Caches the token for 5 minutes to reduce API calls
- */
-async function getCanvasHeaders(): Promise<Record<string, string>> {
-  const now = Date.now();
-  
-  // Return cached token if still valid
-  if (cachedToken && cachedToken.expiresAt > now) {
-    return {
-      'X-Canvas-Token': cachedToken.token,
-      'X-Canvas-Base-Url': cachedToken.baseUrl,
-    };
-  }
-
-  try {
-    const { access_token, canvas_domain } = await authApi.getActiveCanvasToken();
-    
-    // Cache for 5 minutes
-    cachedToken = {
-      token: access_token,
-      baseUrl: canvas_domain,
-      expiresAt: now + 5 * 60 * 1000,
-    };
-
-    return {
-      'X-Canvas-Token': access_token,
-      'X-Canvas-Base-Url': canvas_domain,
-    };
-  } catch {
-    // Return empty headers if not authenticated
-    return {};
-  }
-}
-
-/**
- * Clear the cached Canvas token
- */
-export function clearCanvasRagTokenCache(): void {
-  cachedToken = null;
-}
+// Re-export clearCanvasTokenCache for convenience
+export { clearCanvasTokenCache as clearCanvasRagTokenCache };
 
 // ===== Types =====
 
@@ -252,37 +210,16 @@ export async function updateCanvasDocumentTopics(
 }
 
 /**
- * List all downloaded Canvas files
- */
-export async function listCanvasFiles(): Promise<{
-  success: boolean;
-  files: CanvasFile[];
-  count: number;
-}> {
-  const response = await apiClient.get(`${API_BASE}/files`);
-  return response.data;
-}
-
-/**
  * List all indexed Canvas documents
+ * Optionally filter by courseId
  */
-export async function listIndexedCanvasDocuments(): Promise<{
+export async function listIndexedCanvasDocuments(courseId?: number): Promise<{
   success: boolean;
   documents: CanvasIndexedDocument[];
   count: number;
 }> {
-  const response = await apiClient.get(`${API_BASE}/indexed`);
-  return response.data;
-}
-
-/**
- * Get Canvas index statistics
- */
-export async function getCanvasStats(): Promise<{
-  success: boolean;
-  stats: CanvasStats;
-}> {
-  const response = await apiClient.get(`${API_BASE}/stats`);
+  const params = courseId ? { course_id: courseId } : {};
+  const response = await apiClient.get(`${API_BASE}/indexed`, { params });
   return response.data;
 }
 
@@ -324,18 +261,6 @@ export async function resetCanvasIndex(): Promise<{
 }
 
 /**
- * Delete a Canvas file
- */
-export async function deleteCanvasFile(
-  filename: string
-): Promise<{ success: boolean; message?: string }> {
-  const response = await apiClient.delete(
-    `${API_BASE}/files/${encodeURIComponent(filename)}`
-  );
-  return response.data;
-}
-
-/**
  * Remove index for a Canvas file (keep the file)
  */
 export async function removeCanvasFileIndex(
@@ -353,13 +278,10 @@ export const canvasRagApi = {
   extractCanvasTopics,
   getCanvasDocumentTopics,
   updateCanvasDocumentTopics,
-  listCanvasFiles,
   listIndexedCanvasDocuments,
-  getCanvasStats,
   queryCanvasDocuments,
   generateCanvasQuiz,
   resetCanvasIndex,
-  deleteCanvasFile,
   removeCanvasFileIndex,
 };
 

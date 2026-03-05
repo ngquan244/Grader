@@ -7,7 +7,6 @@ export { default as DocumentRAGPanel } from './DocumentRAGPanel';
 export { default as CanvasFilesPanel } from './CanvasFilesPanel';
 export { default as QuizBuilderPanel } from './QuizBuilderPanel';
 export { default as CanvasCourseModal } from './CanvasCourseModal';
-export { default as CanvasFileSelectModal } from './CanvasFileSelectModal';
 export { default as CanvasImportModal } from './CanvasImportModal';
 export { default as GuidePanel } from './GuidePanel';
 export { default as CanvasSimulationPanel } from './CanvasSimulationPanel';

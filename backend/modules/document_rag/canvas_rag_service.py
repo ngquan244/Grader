@@ -975,8 +975,17 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
                 "error": str(e)
             }
     
-    def remove_index(self, filename: str, user_id: Optional[str] = None) -> Dict[str, Any]:
-        """Remove index for a Canvas file (keep the file itself)."""
+    def remove_index(
+        self,
+        filename: str,
+        user_id: Optional[str] = None,
+        db_session: Optional[Session] = None,
+    ) -> Dict[str, Any]:
+        """Remove index for a Canvas file (keep the file itself).
+        
+        Cleans up: ChromaDB collection, legacy vector store,
+        indexed registry (JSON), topic storage, and PostgreSQL record.
+        """
         self._ensure_initialized()
         
         try:
@@ -999,6 +1008,20 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
                             break
                 except Exception as e:
                     logger.warning(f"Could not search collection_manager: {e}")
+            
+            # Source 3: Find file hash from DB
+            if not hash_to_remove and db_session and user_id:
+                try:
+                    rows = SyncRAGCollectionRepository.get_all_documents_with_topics(
+                        db_session, _uuid.UUID(user_id),
+                        source=RAGSourceType.CANVAS,
+                    )
+                    for r in rows:
+                        if r.get("filename") == filename:
+                            hash_to_remove = r.get("file_hash")
+                            break
+                except Exception as e:
+                    logger.warning(f"Could not search DB for file hash: {e}")
             
             if not hash_to_remove:
                 return {
@@ -1031,6 +1054,20 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
             # Remove topics
             self._topic_storage.remove_document(hash_to_remove)
             
+            # Remove from PostgreSQL
+            if db_session and user_id:
+                try:
+                    SyncRAGCollectionRepository.unregister(
+                        db_session,
+                        file_hash=hash_to_remove,
+                        user_id=_uuid.UUID(user_id),
+                        source=RAGSourceType.CANVAS,
+                    )
+                    db_session.commit()
+                except Exception as e:
+                    logger.warning(f"Could not remove DB record: {e}")
+                    db_session.rollback()
+            
             return {
                 "success": True,
                 "message": f"Index removed for: {filename}"
@@ -1042,9 +1079,21 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
                 "error": str(e)
             }
     
-    def delete_file(self, filename: str, user_id: Optional[str] = None) -> Dict[str, Any]:
-        """Delete a Canvas file and its index data (scoped to user)."""
+    def delete_file(
+        self,
+        filename: str,
+        user_id: Optional[str] = None,
+        db_session: Optional[Session] = None,
+    ) -> Dict[str, Any]:
+        """Delete a Canvas file and its index data (scoped to user).
+        
+        Cascades: first removes index (ChromaDB + DB + topics),
+        then deletes physical file and MD5 registry entry.
+        """
         try:
+            # First, cascade remove index if file is indexed
+            self.remove_index(filename, user_id=user_id, db_session=db_session)
+            
             # Scope to per-user directory
             target_dir = self._get_user_dir(user_id) if user_id else self.CANVAS_RAG_DIR
             file_path = target_dir / filename
@@ -1064,23 +1113,9 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
                 del registry[hash_to_remove]
                 self._save_md5_registry(registry, user_id)
             
-            # Remove from indexed registry (per-user)
-            indexed_registry = self._load_indexed_registry(user_id)
-            hash_to_remove = None
-            for hash_val, data in indexed_registry.items():
-                if data.get("filename") == filename:
-                    hash_to_remove = hash_val
-                    break
-            if hash_to_remove:
-                del indexed_registry[hash_to_remove]
-                self._save_indexed_registry(indexed_registry, user_id)
-                
-                # Remove topics
-                self._topic_storage.remove_document(hash_to_remove)
-            
             return {
                 "success": True,
-                "message": f"File deleted: {filename}"
+                "message": f"Removed local cached file: {filename}"
             }
         except Exception as e:
             logger.error(f"Error deleting Canvas file: {e}")
