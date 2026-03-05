@@ -1,6 +1,7 @@
 import React, { useState, useCallback, lazy, Suspense } from 'react';
 import { uploadApi } from '../api/upload';
 import { Upload, ImageIcon, CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import PanelHelpButton from './PanelHelpButton';
 
 const UploadPanel: React.FC = () => {
   const [imageFiles, setImageFiles] = useState<File[]>([]);
@@ -49,7 +50,10 @@ const UploadPanel: React.FC = () => {
 
   return (
     <div style={{ maxWidth: 800, color: '#f8fafc' }}>
-      <h2 style={{ fontSize: '1.5rem', marginBottom: '1.5rem' }}>Upload Files</h2>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+        <h2 style={{ fontSize: '1.5rem', margin: 0 }}>Upload Files</h2>
+        <PanelHelpButton panelKey="upload" />
+      </div>
 
       <div style={{ background: '#1e293b', border: '1px solid #475569', padding: '1.5rem', borderRadius: 12, marginBottom: '1.5rem' }}>
         <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.1rem', marginBottom: '0.5rem' }}>

@@ -205,6 +205,10 @@ class Settings(BaseSettings):
     def USER_WORKSPACES_DIR(self) -> Path:
         return self.DATA_DIR / "user_workspaces"
     
+    @property
+    def GUIDE_IMAGES_DIR(self) -> Path:
+        return self.DATA_DIR / "guide_images"
+    
     def get_user_filled_dir(self, user_id: str) -> Path:
         """Get per-user directory for uploaded exam images."""
         return self.USER_WORKSPACES_DIR / user_id / "filled"
@@ -368,3 +372,4 @@ settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
 settings.LOGS_DIR.mkdir(parents=True, exist_ok=True)
 settings.EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
 settings.USER_WORKSPACES_DIR.mkdir(parents=True, exist_ok=True)
+settings.GUIDE_IMAGES_DIR.mkdir(parents=True, exist_ok=True)

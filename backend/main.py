@@ -152,6 +152,9 @@ app.include_router(guide_routes.router, prefix="/api/guide", tags=["Guide"])
 # Serve static files (exports)
 app.mount("/static/exports", StaticFiles(directory=str(settings.EXPORTS_DIR)), name="exports")
 
+# Serve guide images (uploaded by admin for guide markdown)
+app.mount("/media/guide", StaticFiles(directory=str(settings.GUIDE_IMAGES_DIR)), name="guide_media")
+
 
 @app.get("/")
 async def root():

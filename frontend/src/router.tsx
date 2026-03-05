@@ -113,6 +113,7 @@ const AppRouter: React.FC = () => {
         {/* Protected routes - require authentication */}
         <Route element={<ProtectedRoute />}>
           <Route path="/" element={<App />} />
+          <Route path="/guide/:section" element={<App />} />
           <Route path="/:tab" element={<App />} />
         </Route>
       </Routes>

@@ -22,6 +22,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
+import PanelHelpButton from './PanelHelpButton';
 
 /* ---------- tiny helper: random stars for background ---------- */
 const generateCanvasStars = (count: number) =>
@@ -712,6 +713,7 @@ const CanvasFilesPanel: React.FC = () => {
             <h2>Canvas LMS</h2>
             <p>Tải file từ Canvas, index và quản lý tài liệu</p>
           </div>
+          <PanelHelpButton panelKey="canvas" />
         </div>
         <div className="canvas-not-configured">
           <AlertCircle size={48} />
@@ -754,6 +756,7 @@ const CanvasFilesPanel: React.FC = () => {
           <h2>Canvas LMS</h2>
           <p>Tải file từ Canvas, index và quản lý tài liệu</p>
         </div>
+        <PanelHelpButton panelKey="canvas" />
       </div>
 
       <div className="canvas-content">

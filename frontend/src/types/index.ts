@@ -122,5 +122,12 @@ export function pathToTab(path: string): TabType {
   return (entry ? entry[0] : TABS.CHAT) as TabType;
 }
 
+/** Extract guide section from URL path (e.g. /guide/chat → 'chat') */
+export function getGuideSectionFromPath(path: string): string | null {
+  const match = path.match(/^\/guide\/(.+)$/);
+  return match ? match[1] : null;
+}
+
+
 // Re-export Canvas types
 export * from './canvas';

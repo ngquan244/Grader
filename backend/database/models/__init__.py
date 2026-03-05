@@ -20,6 +20,7 @@ from .invite_code import (
     InviteCode,
     InviteCodeUsage,
 )
+from .guide_document import GuideDocument
 
 __all__ = [
     "User",
@@ -44,4 +45,5 @@ __all__ = [
     "AppSetting",
     "InviteCode",
     "InviteCodeUsage",
+    "GuideDocument",
 ]

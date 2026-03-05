@@ -5,6 +5,7 @@ import { useApp } from '../context/AppContext';
 import { useModelConfig } from '../context/ModelConfigContext';
 import { getToolsConfig, type ToolsConfigPublic } from '../api/admin';
 import { Send, Loader2, Trash2, Bot, User, Sparkles, GraduationCap, FileText, Wrench, ArrowDown, MessageSquare, ChevronDown, Zap, Monitor, RefreshCw, HelpCircle } from 'lucide-react';
+import PanelHelpButton from './PanelHelpButton';
 import type { ChatMessage } from '../types';
 
 /**
@@ -333,6 +334,7 @@ const ChatPanel: React.FC = () => {
             <Trash2 size={16} />
             <span>Xóa</span>
           </button>
+          <PanelHelpButton panelKey="chat" />
         </div>
       </div>
 

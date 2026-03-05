@@ -30,6 +30,7 @@ import {
   FolderOpen,
   Rocket,
 } from 'lucide-react';
+import PanelHelpButton from './PanelHelpButton';
 
 /* ---------- tiny helper: random stars for background ---------- */
 const generateRAGStars = (count: number) =>
@@ -1009,6 +1010,7 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
         >
           <RefreshCw size={18} />
         </button>
+        <PanelHelpButton panelKey="document_rag" />
       </div>
 
       <div className="rag-content">

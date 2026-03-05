@@ -1,165 +1,310 @@
 """
 Guide API Routes
 ================
-Serves the user guide (markdown) for all authenticated users.
-Admin can update the guide content.
-Sections for hidden panels are automatically stripped for non-admin users.
+Serves per-panel guide documents from the database.
+Admin can create, update, delete guide documents and upload images.
+Non-admin users see only published guides for visible panels.
 """
 import logging
-import re
+import uuid
 from pathlib import Path
+from typing import List, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.auth.dependencies import CurrentUser, AdminUser
+from backend.database.base import get_async_session
 from backend.database.models.user import UserRole
+from backend.services import guide_service
+from backend.services.panel_config_service import get_panel_config
+from backend.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-GUIDE_FILE = Path("data/user_guide.md")
-
-# Map guide section titles (lowercase) → panel config key
-_SECTION_PANEL_MAP = {
-    "chat ai": "chat",
-    "upload bài thi": "upload",
-    "upload": "upload",
-    "chấm điểm": "grading",
-    "rag tài liệu": "document_rag",
-    "canvas lms": "canvas",
-    "tạo canvas quiz": "canvas_quiz",
-    "cài đặt": "settings",
-}
-
-_FEATURE_NAMES = {
-    "chat": "Chat AI",
-    "upload": "Upload bài thi",
-    "grading": "Chấm điểm tự động",
-    "document_rag": "RAG Tài Liệu",
-    "canvas": "Canvas LMS",
-    "canvas_quiz": "Tạo Canvas Quiz",
-}
-
-# FAQ question keywords → required panel keys (if any panel hidden → hide FAQ)
-_FAQ_PANEL_MAP = [
-    {"keywords": ["chấm bài thi"], "panels": ["upload", "grading"]},
-    {"keywords": ["tài liệu đã upload", "nội dung tài liệu"], "panels": ["document_rag"]},
-    {"keywords": ["quiz từ tài liệu", "đẩy lên canvas"], "panels": ["document_rag", "canvas_quiz"]},
-    {"keywords": ["tính năng bị khóa"], "panels": ["chat"]},
-    {"keywords": ["lỗi khi chấm bài"], "panels": ["grading"]},
-    {"keywords": ["ollama", "groq"], "panels": ["settings"]},
-]
+# Allowed image MIME types and extensions
+_ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+_ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+_MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
 
 
-def _read_guide() -> str:
-    """Read the guide markdown file."""
-    if not GUIDE_FILE.exists():
-        return ""
-    return GUIDE_FILE.read_text(encoding="utf-8")
+# ─── Schemas ──────────────────────────────────────────────────────────
+
+class GuideListItem(BaseModel):
+    """Summary of a guide document for the listing."""
+    panel_key: str
+    title: str
+    description: Optional[str] = None
+    icon_name: Optional[str] = None
+    sort_order: int = 0
+    is_published: bool = True
+
+    class Config:
+        from_attributes = True
 
 
-def _filter_guide(raw: str) -> str:
-    """Remove guide sections for panels that are hidden by admin."""
-    from backend.services.panel_config_service import get_panel_config
-
-    config = get_panel_config()
-    hidden = {k for k, v in config.items() if not v}
-    if not hidden:
-        return raw
-
-    parts = re.split(r'^(?=## )', raw, flags=re.MULTILINE)
-    filtered = []
-
-    for part in parts:
-        if not part.startswith("## "):
-            # Intro — strip hidden feature names from the summary line
-            for pk in hidden:
-                name = _FEATURE_NAMES.get(pk)
-                if name:
-                    escaped = re.escape(name)
-                    part = re.sub(
-                        rf',?\s*\*\*{escaped}\*\*,?',
-                        lambda m: ',' if m.group().startswith(',') and m.group().endswith(',') else '',
-                        part,
-                    )
-            part = re.sub(r',\s*,', ',', part)
-            part = re.sub(r':\s*,\s*', ': ', part)
-            part = re.sub(r',\s*\.', '.', part)
-            filtered.append(part)
-            continue
-
-        heading_match = re.match(r'^## (.+)$', part, re.MULTILINE)
-        if not heading_match:
-            filtered.append(part)
-            continue
-
-        title = heading_match.group(1).strip().lower()
-        panel_key = _SECTION_PANEL_MAP.get(title)
-        if panel_key and panel_key in hidden:
-            continue
-
-        filtered.append(part)
-
-    result = "".join(filtered)
-
-    # Filter FAQ ### sub-questions inside ## Câu hỏi thường gặp
-    def _filter_faq(m: re.Match) -> str:
-        faq_block = m.group(0)
-        faq_parts = re.split(r'^(?=### )', faq_block, flags=re.MULTILINE)
-        kept = []
-        for faq in faq_parts:
-            if not faq.startswith("### "):
-                kept.append(faq)
-                continue
-            faq_title = (re.match(r'^### (.+)$', faq, re.MULTILINE) or type('', (), {'group': lambda s, i: ''})()).group(1).lower()
-            should_hide = False
-            for rule in _FAQ_PANEL_MAP:
-                if any(kw in faq_title for kw in rule["keywords"]):
-                    if any(p in hidden for p in rule["panels"]):
-                        should_hide = True
-                    break
-            if not should_hide:
-                kept.append(faq)
-        return "".join(kept)
-
-    result = re.sub(r'## Câu hỏi thường gặp[\s\S]*?(?=\n## |$)', _filter_faq, result)
-
-    return result
-
-
-def _write_guide(content: str) -> None:
-    """Write the guide markdown file."""
-    GUIDE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    GUIDE_FILE.write_text(content, encoding="utf-8")
-
-
-class GuideResponse(BaseModel):
-    content: str
+class GuideListResponse(BaseModel):
+    guides: List[GuideListItem]
     success: bool = True
 
 
-class GuideUpdateRequest(BaseModel):
+class GuideDetailResponse(BaseModel):
+    panel_key: str
+    title: str
+    description: Optional[str] = None
+    icon_name: Optional[str] = None
     content: str
+    sort_order: int = 0
+    is_published: bool = True
+    success: bool = True
+
+    class Config:
+        from_attributes = True
 
 
-@router.get("", response_model=GuideResponse)
-async def get_guide(user: CurrentUser):
-    """Get the user guide content (any authenticated user).
-    Non-admin users receive content filtered to only visible panels."""
-    content = _read_guide()
-    if user.role != UserRole.ADMIN:
-        content = _filter_guide(content)
-    return GuideResponse(content=content)
+class GuideUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    icon_name: Optional[str] = None
+    content: Optional[str] = None
+    sort_order: Optional[int] = None
+    is_published: Optional[bool] = None
 
 
-@router.put("", response_model=GuideResponse)
-async def update_guide(
+class GuideCreateRequest(BaseModel):
+    panel_key: str
+    title: str
+    content: str = ""
+    description: Optional[str] = None
+    icon_name: Optional[str] = None
+    sort_order: int = 0
+    is_published: bool = True
+
+
+class ImageUploadResponse(BaseModel):
+    url: str
+    filename: str
+    success: bool = True
+
+
+# ─── Helpers ──────────────────────────────────────────────────────────
+
+def _get_visible_panels() -> set[str]:
+    """Get the set of panel keys that are currently enabled."""
+    config = get_panel_config()
+    return {k for k, v in config.items() if v}
+
+
+# ─── Endpoints ────────────────────────────────────────────────────────
+
+@router.get("", response_model=GuideListResponse)
+async def list_guides(
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_async_session),
+):
+    """
+    List all guide documents.
+    Non-admin users only see published guides for visible panels.
+    """
+    is_admin = user.role == UserRole.ADMIN
+
+    if is_admin:
+        guides = await guide_service.list_guides(db, include_unpublished=True)
+    else:
+        visible = _get_visible_panels()
+        guides = await guide_service.list_guides(
+            db, include_unpublished=False, visible_panels=visible
+        )
+
+    items = [
+        GuideListItem(
+            panel_key=g.panel_key,
+            title=g.title,
+            description=g.description,
+            icon_name=g.icon_name,
+            sort_order=g.sort_order,
+            is_published=g.is_published,
+        )
+        for g in guides
+    ]
+    return GuideListResponse(guides=items)
+
+
+@router.get("/{panel_key}", response_model=GuideDetailResponse)
+async def get_guide(
+    panel_key: str,
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_async_session),
+):
+    """
+    Get full content of a guide document by panel_key.
+    Non-admin users can only view published guides for visible panels.
+    """
+    guide = await guide_service.get_guide_by_panel_key(db, panel_key)
+    if not guide:
+        raise HTTPException(status_code=404, detail="Guide document not found")
+
+    is_admin = user.role == UserRole.ADMIN
+
+    if not is_admin:
+        if not guide.is_published:
+            raise HTTPException(status_code=404, detail="Guide document not found")
+
+        # Check panel visibility (overview and faq are always accessible)
+        always_visible = {"overview", "faq"}
+        if panel_key not in always_visible:
+            visible = _get_visible_panels()
+            if panel_key not in visible:
+                raise HTTPException(
+                    status_code=403,
+                    detail="This guide is not available for your current configuration"
+                )
+
+    return GuideDetailResponse(
+        panel_key=guide.panel_key,
+        title=guide.title,
+        description=guide.description,
+        icon_name=guide.icon_name,
+        content=guide.content,
+        sort_order=guide.sort_order,
+        is_published=guide.is_published,
+    )
+
+
+@router.post("", response_model=GuideDetailResponse, status_code=201)
+async def create_guide_endpoint(
+    request: GuideCreateRequest,
+    _admin: AdminUser,
+    db: AsyncSession = Depends(get_async_session),
+):
+    """Create a new guide document (admin only)."""
+    # Check if panel_key already exists
+    existing = await guide_service.get_guide_by_panel_key(db, request.panel_key)
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Guide for panel '{request.panel_key}' already exists"
+        )
+
+    guide = await guide_service.create_guide(
+        db,
+        panel_key=request.panel_key,
+        title=request.title,
+        content=request.content,
+        description=request.description,
+        icon_name=request.icon_name,
+        sort_order=request.sort_order,
+        is_published=request.is_published,
+    )
+    await db.commit()
+
+    return GuideDetailResponse(
+        panel_key=guide.panel_key,
+        title=guide.title,
+        description=guide.description,
+        icon_name=guide.icon_name,
+        content=guide.content,
+        sort_order=guide.sort_order,
+        is_published=guide.is_published,
+    )
+
+
+@router.put("/{panel_key}", response_model=GuideDetailResponse)
+async def update_guide_endpoint(
+    panel_key: str,
     request: GuideUpdateRequest,
     _admin: AdminUser,
+    db: AsyncSession = Depends(get_async_session),
 ):
-    """Update the user guide content (admin only)."""
-    _write_guide(request.content)
-    logger.info("User guide updated by admin")
-    return GuideResponse(content=request.content)
+    """Update a guide document (admin only). Only non-null fields are updated."""
+    guide = await guide_service.update_guide(
+        db,
+        panel_key,
+        title=request.title,
+        content=request.content,
+        description=request.description,
+        icon_name=request.icon_name,
+        sort_order=request.sort_order,
+        is_published=request.is_published,
+    )
+    if not guide:
+        raise HTTPException(status_code=404, detail="Guide document not found")
+
+    await db.commit()
+
+    return GuideDetailResponse(
+        panel_key=guide.panel_key,
+        title=guide.title,
+        description=guide.description,
+        icon_name=guide.icon_name,
+        content=guide.content,
+        sort_order=guide.sort_order,
+        is_published=guide.is_published,
+    )
+
+
+@router.delete("/{panel_key}")
+async def delete_guide_endpoint(
+    panel_key: str,
+    _admin: AdminUser,
+    db: AsyncSession = Depends(get_async_session),
+):
+    """Delete a guide document (admin only)."""
+    deleted = await guide_service.delete_guide(db, panel_key)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Guide document not found")
+
+    await db.commit()
+    return {"success": True, "message": f"Guide '{panel_key}' deleted"}
+
+
+@router.post("/images", response_model=ImageUploadResponse)
+async def upload_guide_image(
+    _admin: AdminUser,
+    file: UploadFile = File(...),
+):
+    """
+    Upload an image for use in guide markdown content (admin only).
+    Returns the URL to embed in markdown: ![alt](/media/guide/filename.png)
+    """
+    # Validate content type
+    if file.content_type not in _ALLOWED_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported image type: {file.content_type}. "
+                   f"Allowed: {', '.join(_ALLOWED_IMAGE_TYPES)}"
+        )
+
+    # Validate extension
+    original_name = file.filename or "image.png"
+    ext = Path(original_name).suffix.lower()
+    if ext not in _ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file extension: {ext}"
+        )
+
+    # Read and validate size
+    content = await file.read()
+    if len(content) > _MAX_IMAGE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Image too large ({len(content) / 1024 / 1024:.1f} MB). "
+                   f"Max: {_MAX_IMAGE_SIZE / 1024 / 1024:.0f} MB"
+        )
+
+    # Generate unique filename
+    unique_name = f"{uuid.uuid4().hex}{ext}"
+    dest = settings.GUIDE_IMAGES_DIR / unique_name
+
+    # Write to disk
+    settings.GUIDE_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(content)
+
+    url = f"/media/guide/{unique_name}"
+    logger.info("Guide image uploaded: %s (%d bytes)", unique_name, len(content))
+
+    return ImageUploadResponse(url=url, filename=unique_name)

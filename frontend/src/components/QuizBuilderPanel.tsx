@@ -22,6 +22,7 @@ import {
   Sparkles,
   Eye,
 } from 'lucide-react';
+import PanelHelpButton from './PanelHelpButton';
 import { canvasQuizApi } from '../api/canvasQuiz';
 import { canvasApi } from '../api/canvas';
 import type {
@@ -235,6 +236,7 @@ const QuizBuilderPanel: React.FC<QuizBuilderPanelProps> = ({
           <Sparkles size={12} />
           <span>Canvas LMS</span>
         </div>
+        <PanelHelpButton panelKey="canvas_quiz" />
       </div>
 
       {/* ---- Result banner ---- */}

@@ -14,6 +14,7 @@ import {
   History,
   Shield,
 } from 'lucide-react';
+import PanelHelpButton from './PanelHelpButton';
 import { canvasSimApi } from '../api/canvasSim';
 import { canvasApi } from '../api/canvas';
 import { canvasQuizApi } from '../api/canvasQuiz';
@@ -297,6 +298,7 @@ const CanvasSimulationPanel: React.FC = () => {
             <h2>Attempt Simulation</h2>
             <p>Mô phỏng bài làm quiz trên Canvas LMS</p>
           </div>
+          <PanelHelpButton panelKey="canvas_sim" />
         </div>
 
         {/* Sub-tabs */}

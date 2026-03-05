@@ -1,168 +1,59 @@
 /**
- * GuidePanel — User Guide page
+ * GuidePanel — Per-document User Guide
  *
- * Menu-based navigation: users click on a topic in the sidebar to view it.
- * - All users can read the guide.
- * - Admins see an "Edit" button to switch to a Markdown editor & save.
+ * Fetches guide documents from DB. Each panel has its own guide document
+ * that can be edited independently by admins.
+ *
+ * Routes:
+ *   /guide          → overview (grid of all guide topics)
+ *   /guide/:section → detail view for a specific guide document
  */
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   BookOpen, Edit3, Save, X, Loader2, AlertCircle, CheckCircle2,
   MessageSquare, Upload, CheckSquare, BookText,
   GraduationCap, PenSquare, Settings, HelpCircle, Home, ChevronRight,
-  ArrowLeft,
+  ArrowLeft, ImagePlus,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { usePanelConfig } from '../context/PanelConfigContext';
-import { getGuide, updateGuide } from '../api/guide';
+import { useLocation, useNavigate } from 'react-router-dom';
+import {
+  getGuideList, getGuideByPanel, updateGuide, uploadGuideImage,
+  type GuideListItem, type GuideDetailResponse,
+} from '../api/guide';
+import { getGuideSectionFromPath } from '../types';
 import './GuidePanel.css';
 
 /* ------------------------------------------------------------------ */
-/*  Map guide section titles → panel keys                              */
+/*  Icon map — maps icon_name from DB to Lucide components            */
 /* ------------------------------------------------------------------ */
-const SECTION_PANEL_MAP: Record<string, string> = {
-  'chat ai': 'chat',
-  'upload': 'upload',
-  'chấm điểm': 'grading',
-  'rag tài liệu': 'document_rag',
-  'canvas lms': 'canvas',
-  'tạo canvas quiz': 'canvas_quiz',
-  'cài đặt': 'settings',
+const ICON_MAP: Record<string, React.ReactNode> = {
+  'MessageSquare': <MessageSquare size={18} />,
+  'Upload':        <Upload size={18} />,
+  'CheckSquare':   <CheckSquare size={18} />,
+  'BookText':      <BookText size={18} />,
+  'GraduationCap': <GraduationCap size={18} />,
+  'PenSquare':     <PenSquare size={18} />,
+  'Settings':      <Settings size={18} />,
+  'HelpCircle':    <HelpCircle size={18} />,
+  'BookOpen':      <BookOpen size={18} />,
 };
 
-/**
- * Map FAQ question titles (lowercase substring match) → required panel keys.
- * If ANY required panel is hidden, the FAQ item is removed.
- * Questions not listed here are always shown.
- */
-const FAQ_PANEL_MAP: Array<{ keywords: string[]; panels: string[] }> = [
-  { keywords: ['chấm bài thi'], panels: ['upload', 'grading'] },
-  { keywords: ['tài liệu đã upload', 'nội dung tài liệu'], panels: ['document_rag'] },
-  { keywords: ['tính năng bị khóa'], panels: ['chat'] },
-  { keywords: ['lỗi khi chấm bài'], panels: ['grading'] },
-  { keywords: ['ollama', 'groq'], panels: ['settings'] },
-  { keywords: ['quiz từ tài liệu', 'đẩy lên canvas'], panels: ['document_rag', 'canvas_quiz'] },
-];
-
-/* ------------------------------------------------------------------ */
-/*  Icon map for menu items                                            */
-/* ------------------------------------------------------------------ */
-const SECTION_ICONS: Record<string, React.ReactNode> = {
-  'chat ai':         <MessageSquare size={18} />,
-  'upload':          <Upload size={18} />,
-  'chấm điểm':      <CheckSquare size={18} />,
-  'rag tài liệu':   <BookText size={18} />,
-  'canvas lms':      <GraduationCap size={18} />,
-  'tạo canvas quiz': <PenSquare size={18} />,
-  'cài đặt':         <Settings size={18} />,
-  'câu hỏi thường gặp': <HelpCircle size={18} />,
+const ICON_MAP_LARGE: Record<string, React.ReactNode> = {
+  'MessageSquare': <MessageSquare size={22} />,
+  'Upload':        <Upload size={22} />,
+  'CheckSquare':   <CheckSquare size={22} />,
+  'BookText':      <BookText size={22} />,
+  'GraduationCap': <GraduationCap size={22} />,
+  'PenSquare':     <PenSquare size={22} />,
+  'Settings':      <Settings size={22} />,
+  'HelpCircle':    <HelpCircle size={22} />,
+  'BookOpen':      <BookOpen size={22} />,
 };
 
-const SECTION_DESCRIPTIONS: Record<string, string> = {
-  'chat ai':         'Giao tiếp AI bằng ngôn ngữ tự nhiên',
-  'upload':          'Tải ảnh bài thi lên hệ thống',
-  'chấm điểm':      'Chấm bài trắc nghiệm tự động',
-  'rag tài liệu':   'Hỏi đáp thông minh từ tài liệu',
-  'canvas lms':      'Tích hợp hệ thống Canvas',
-  'tạo canvas quiz': 'Tạo & đẩy quiz lên Canvas',
-  'cài đặt':         'Cấu hình model AI & Canvas',
-  'câu hỏi thường gặp': 'Giải đáp thắc mắc phổ biến',
-};
-
-/* ------------------------------------------------------------------ */
-/*  Types                                                              */
-/* ------------------------------------------------------------------ */
-interface GuideSection {
-  id: string;          // kebab-case slug
-  title: string;       // original heading text
-  titleLower: string;  // lowercased for lookup
-  body: string;        // markdown body (without ## heading)
-}
-
-/* ------------------------------------------------------------------ */
-/*  Parse markdown into sections                                       */
-/* ------------------------------------------------------------------ */
-function parseSections(md: string): { intro: string; sections: GuideSection[] } {
-  const parts = md.split(/^(?=## )/m);
-  let intro = '';
-  const sections: GuideSection[] = [];
-
-  for (const part of parts) {
-    if (!part.startsWith('## ')) {
-      intro = part.trim();
-      continue;
-    }
-    const headingMatch = part.match(/^## (.+)$/m);
-    if (!headingMatch) continue;
-
-    const title = headingMatch[1].trim();
-    const body = part.replace(/^## .+\n?/, '').trim();
-    const id = title
-      .toLowerCase()
-      .replace(/\s+/g, '-')
-      .replace(/[^a-z0-9\u00C0-\u024F\u1E00-\u1EFF-]/g, '');
-
-    sections.push({ id, title, titleLower: title.toLowerCase(), body });
-  }
-
-  return { intro, sections };
-}
-
-/* ------------------------------------------------------------------ */
-/*  Filter logic (same as before, but works on parsed sections)        */
-/* ------------------------------------------------------------------ */
-function filterSections(
-  sections: GuideSection[],
-  isPanelVisible: (key: string) => boolean,
-): GuideSection[] {
-  return sections
-    .filter((s) => {
-      const panelKey = SECTION_PANEL_MAP[s.titleLower];
-      if (!panelKey) return true;
-      return isPanelVisible(panelKey);
-    })
-    .map((s) => {
-      // Filter FAQ items inside FAQ section
-      if (s.titleLower === 'câu hỏi thường gặp') {
-        const faqParts = s.body.split(/^(?=### )/m);
-        const filtered = faqParts.filter((faq) => {
-          if (!faq.startsWith('### ')) return true;
-          const faqTitle = (faq.match(/^### (.+)$/m)?.[1] || '').toLowerCase();
-          for (const rule of FAQ_PANEL_MAP) {
-            if (rule.keywords.some((kw) => faqTitle.includes(kw))) {
-              return rule.panels.every((p) => isPanelVisible(p));
-            }
-          }
-          return true;
-        });
-        return { ...s, body: filtered.join('') };
-      }
-      return s;
-    });
-}
-
-function filterIntro(intro: string, isPanelVisible: (key: string) => boolean): string {
-  let result = intro;
-  const featurePanelMap: Record<string, string> = {
-    'Chat AI': 'chat',
-    'Upload bài thi': 'upload',
-    'Chấm điểm tự động': 'grading',
-    'RAG Tài Liệu': 'document_rag',
-    'Canvas LMS': 'canvas',
-    'Tạo Canvas Quiz': 'canvas_quiz',
-  };
-  for (const [featureName, panelKey] of Object.entries(featurePanelMap)) {
-    if (!isPanelVisible(panelKey)) {
-      result = result.replace(
-        new RegExp(`,?\\s*\\*\\*${featureName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\*\\*,?`, 'g'),
-        (match) => (match.startsWith(',') && match.endsWith(',') ? ',' : ''),
-      );
-    }
-  }
-  result = result.replace(/,\s*,/g, ',');
-  result = result.replace(/:\s*,\s*/g, ': ');
-  result = result.replace(/,\s*\./g, '.');
-  return result;
+function getIcon(name: string | null, large = false): React.ReactNode {
+  if (!name) return large ? <BookOpen size={22} /> : <BookOpen size={18} />;
+  return (large ? ICON_MAP_LARGE[name] : ICON_MAP[name]) || (large ? <BookOpen size={22} /> : <BookOpen size={18} />);
 }
 
 /* ------------------------------------------------------------------ */
@@ -173,6 +64,8 @@ function renderMarkdown(md: string): string {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
+    // Images: ![alt](url)
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width:100%;border-radius:8px;margin:0.5rem 0" />')
     .replace(/^### (.+)$/gm, '<h3>$1</h3>')
     .replace(/^## (.+)$/gm, '<h2>$1</h2>')
     .replace(/^# (.+)$/gm, '<h1>$1</h1>')
@@ -193,72 +86,112 @@ function renderMarkdown(md: string): string {
 /* ================================================================== */
 const GuidePanel: React.FC = () => {
   const { user } = useAuth();
-  const { isPanelVisible } = usePanelConfig();
+  const location = useLocation();
+  const navigate = useNavigate();
   const isAdmin = user?.role === 'ADMIN';
 
-  const [content, setContent] = useState('');
-  const [editContent, setEditContent] = useState('');
-  const [editing, setEditing] = useState(false);
+  // State
+  const [guides, setGuides] = useState<GuideListItem[]>([]);
+  const [activeDetail, setActiveDetail] = useState<GuideDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editContent, setEditContent] = useState('');
+  const [editTitle, setEditTitle] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [activeSection, setActiveSection] = useState<string | null>(null); // null = intro
+  const [imageUploading, setImageUploading] = useState(false);
+  const editorRef = useRef<HTMLTextAreaElement>(null);
 
-  /* ---------- Parsed & filtered data ---------- */
-  const parsed = useMemo(() => parseSections(content), [content]);
-
-  const visibleSections = useMemo(() => {
-    if (isAdmin) return parsed.sections;
-    return filterSections(parsed.sections, isPanelVisible);
-  }, [parsed.sections, isAdmin, isPanelVisible]);
-
-  const visibleIntro = useMemo(() => {
-    if (isAdmin) return parsed.intro;
-    return filterIntro(parsed.intro, isPanelVisible);
-  }, [parsed.intro, isAdmin, isPanelVisible]);
-
-  // Reset active section if it got filtered out
-  useEffect(() => {
-    if (activeSection && !visibleSections.find((s) => s.id === activeSection)) {
-      setActiveSection(null);
-    }
-  }, [activeSection, visibleSections]);
-
-  /* ---------- Active section content ---------- */
-  const currentSection = useMemo(
-    () => visibleSections.find((s) => s.id === activeSection) ?? null,
-    [activeSection, visibleSections],
+  // Derive active section from URL
+  const activeSection = useMemo(
+    () => getGuideSectionFromPath(location.pathname),
+    [location.pathname],
   );
 
-  /* ---------- Fetch guide on mount ---------- */
-  const fetchGuide = useCallback(async () => {
+  /* ---------- Fetch guide list on mount ---------- */
+  const fetchGuideList = useCallback(async () => {
     try {
       setLoading(true);
       setError('');
-      const res = await getGuide();
-      setContent(res.content || '');
+      const res = await getGuideList();
+      setGuides(res.guides || []);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Không thể tải hướng dẫn';
+      const msg = err instanceof Error ? err.message : 'Không thể tải danh sách hướng dẫn';
       setError(msg);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { fetchGuide(); }, [fetchGuide]);
+  useEffect(() => { fetchGuideList(); }, [fetchGuideList]);
+
+  /* ---------- Fetch detail when section changes ---------- */
+  useEffect(() => {
+    if (!activeSection) {
+      setActiveDetail(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        setDetailLoading(true);
+        setError('');
+        const res = await getGuideByPanel(activeSection);
+        if (!cancelled) setActiveDetail(res);
+      } catch (err: unknown) {
+        if (!cancelled) {
+          const msg = err instanceof Error ? err.message : 'Không thể tải hướng dẫn';
+          setError(msg);
+          setActiveDetail(null);
+        }
+      } finally {
+        if (!cancelled) setDetailLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeSection]);
+
+  /* ---------- Navigation helpers ---------- */
+  const goToSection = (panelKey: string) => {
+    navigate(`/guide/${panelKey}`);
+  };
+
+  const goToOverview = () => {
+    navigate('/guide');
+  };
 
   /* ---------- Admin editing ---------- */
-  const handleEdit = () => { setEditContent(content); setEditing(true); setSuccess(''); };
-  const handleCancel = () => { setEditing(false); setEditContent(''); };
+  const handleEdit = () => {
+    if (!activeDetail) return;
+    setEditContent(activeDetail.content);
+    setEditTitle(activeDetail.title);
+    setEditing(true);
+    setSuccess('');
+  };
+
+  const handleCancel = () => {
+    setEditing(false);
+    setEditContent('');
+    setEditTitle('');
+  };
 
   const handleSave = async () => {
+    if (!activeDetail) return;
     try {
-      setSaving(true); setError(''); setSuccess('');
-      const res = await updateGuide(editContent);
-      setContent(res.content);
+      setSaving(true);
+      setError('');
+      setSuccess('');
+      const res = await updateGuide(activeDetail.panel_key, {
+        content: editContent,
+        title: editTitle,
+      });
+      setActiveDetail(res);
       setEditing(false);
       setSuccess('Đã lưu hướng dẫn thành công!');
+      // Also refresh the list to pick up title changes
+      fetchGuideList();
       setTimeout(() => setSuccess(''), 4000);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Lỗi khi lưu hướng dẫn';
@@ -267,6 +200,85 @@ const GuidePanel: React.FC = () => {
       setSaving(false);
     }
   };
+
+  /* ---------- Image paste handler ---------- */
+  const handleEditorPaste = useCallback(async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (!file) return;
+
+        try {
+          setImageUploading(true);
+          const res = await uploadGuideImage(file);
+          // Insert markdown image at cursor position
+          const textarea = editorRef.current;
+          if (textarea) {
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            const before = editContent.substring(0, start);
+            const after = editContent.substring(end);
+            const imageMarkdown = `![image](${res.url})`;
+            setEditContent(before + imageMarkdown + after);
+            // Move cursor after inserted text
+            setTimeout(() => {
+              textarea.selectionStart = textarea.selectionEnd = start + imageMarkdown.length;
+              textarea.focus();
+            }, 0);
+          }
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : 'Lỗi khi upload ảnh';
+          setError(msg);
+        } finally {
+          setImageUploading(false);
+        }
+        return;
+      }
+    }
+  }, [editContent]);
+
+  /* ---------- Image insert via file picker ---------- */
+  const handleImageInsert = useCallback(async () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/jpeg,image/png,image/gif,image/webp';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        setImageUploading(true);
+        const res = await uploadGuideImage(file);
+        const textarea = editorRef.current;
+        if (textarea) {
+          const start = textarea.selectionStart;
+          const end = textarea.selectionEnd;
+          const before = editContent.substring(0, start);
+          const after = editContent.substring(end);
+          const imageMarkdown = `![${file.name}](${res.url})`;
+          setEditContent(before + imageMarkdown + after);
+          setTimeout(() => {
+            textarea.selectionStart = textarea.selectionEnd = start + imageMarkdown.length;
+            textarea.focus();
+          }, 0);
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Lỗi khi upload ảnh';
+        setError(msg);
+      } finally {
+        setImageUploading(false);
+      }
+    };
+    input.click();
+  }, [editContent]);
+
+  // Separate visible guides: overview vs sections (excluding 'overview')
+  const overviewGuide = useMemo(() => guides.find(g => g.panel_key === 'overview'), [guides]);
+  const sectionGuides = useMemo(() => guides.filter(g => g.panel_key !== 'overview'), [guides]);
 
   /* ---------- Render ---------- */
   if (loading) {
@@ -288,7 +300,7 @@ const GuidePanel: React.FC = () => {
           <BookOpen size={28} />
           <h1>Hướng dẫn sử dụng</h1>
         </div>
-        {isAdmin && !editing && (
+        {isAdmin && activeSection && !editing && (
           <button className="guide-edit-btn" onClick={handleEdit}>
             <Edit3 size={16} />
             Chỉnh sửa
@@ -296,6 +308,15 @@ const GuidePanel: React.FC = () => {
         )}
         {isAdmin && editing && (
           <div className="guide-edit-actions">
+            <button
+              className="guide-image-btn"
+              onClick={handleImageInsert}
+              disabled={imageUploading || saving}
+              title="Chèn ảnh"
+            >
+              {imageUploading ? <Loader2 className="spin" size={16} /> : <ImagePlus size={16} />}
+              Ảnh
+            </button>
             <button className="guide-save-btn" onClick={handleSave} disabled={saving}>
               {saving ? <Loader2 className="spin" size={16} /> : <Save size={16} />}
               {saving ? 'Đang lưu…' : 'Lưu'}
@@ -319,19 +340,38 @@ const GuidePanel: React.FC = () => {
           <CheckCircle2 size={18} /> {success}
         </div>
       )}
+      {imageUploading && (
+        <div className="guide-alert guide-alert-info">
+          <Loader2 className="spin" size={18} /> Đang upload ảnh…
+        </div>
+      )}
 
       {/* Content */}
-      {editing ? (
+      {editing && activeDetail ? (
+        /* ── Admin Editor ── */
         <div className="guide-editor-container">
           <div className="guide-editor-hint">
-            Soạn nội dung bằng Markdown. Phần xem trước hiển thị bên phải.
+            Soạn nội dung bằng Markdown. Paste ảnh trực tiếp hoặc nhấn nút Ảnh để chèn. Phần xem trước hiển thị bên phải.
+          </div>
+          <div className="guide-editor-title-row">
+            <label htmlFor="guide-title-input">Tiêu đề:</label>
+            <input
+              id="guide-title-input"
+              className="guide-title-input"
+              type="text"
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              placeholder="Tiêu đề hướng dẫn"
+            />
           </div>
           <div className="guide-editor-split">
             <textarea
+              ref={editorRef}
               className="guide-editor"
               value={editContent}
               onChange={(e) => setEditContent(e.target.value)}
-              placeholder="# Tiêu đề&#10;&#10;Nội dung hướng dẫn..."
+              onPaste={handleEditorPaste}
+              placeholder="# Tiêu đề&#10;&#10;Nội dung hướng dẫn...&#10;&#10;Paste ảnh trực tiếp vào đây!"
             />
             <div
               className="guide-preview guide-content"
@@ -339,85 +379,132 @@ const GuidePanel: React.FC = () => {
             />
           </div>
         </div>
-      ) : content ? (
-        <div className="guide-layout">
-          {/* ── Sidebar menu ── */}
-          <nav className="guide-sidebar">
-            <div className="guide-sidebar-label">MENU</div>
-            <button
-              className={`guide-menu-item ${activeSection === null ? 'active' : ''}`}
-              onClick={() => setActiveSection(null)}
-            >
-              <span className="guide-menu-icon"><Home size={18} /></span>
-              <span>Tổng quan</span>
-              <ChevronRight size={14} className="guide-menu-chevron" />
-            </button>
-
-            <div className="guide-menu-divider" />
-
-            {visibleSections.map((s) => (
+      ) : activeSection ? (
+        /* ── Section detail view ── */
+        detailLoading ? (
+          <div className="guide-loading">
+            <Loader2 className="spin" size={36} />
+            <p>Đang tải…</p>
+          </div>
+        ) : activeDetail ? (
+          <div className="guide-layout">
+            {/* Sidebar */}
+            <nav className="guide-sidebar">
+              <div className="guide-sidebar-label">MENU</div>
               <button
-                key={s.id}
-                className={`guide-menu-item ${activeSection === s.id ? 'active' : ''}`}
-                onClick={() => setActiveSection(s.id)}
+                className="guide-menu-item"
+                onClick={goToOverview}
               >
-                <span className="guide-menu-icon">{SECTION_ICONS[s.titleLower] || <BookOpen size={18} />}</span>
-                <span>{s.title}</span>
+                <span className="guide-menu-icon"><Home size={18} /></span>
+                <span>Tổng quan</span>
                 <ChevronRight size={14} className="guide-menu-chevron" />
               </button>
-            ))}
-          </nav>
+              <div className="guide-menu-divider" />
+              {sectionGuides.map((g) => (
+                <button
+                  key={g.panel_key}
+                  className={`guide-menu-item ${activeSection === g.panel_key ? 'active' : ''}`}
+                  onClick={() => goToSection(g.panel_key)}
+                >
+                  <span className="guide-menu-icon">{getIcon(g.icon_name)}</span>
+                  <span>{g.title}</span>
+                  <ChevronRight size={14} className="guide-menu-chevron" />
+                </button>
+              ))}
+            </nav>
 
-          {/* ── Main content area ── */}
-          <div className="guide-main">
-            {activeSection === null ? (
-              /* Intro / overview */
-              <div className="guide-content guide-intro-view" key="intro">
-                {visibleIntro && (
-                  <div className="guide-intro-card" dangerouslySetInnerHTML={{ __html: renderMarkdown(visibleIntro) }} />
-                )}
-                <h2 className="guide-topics-heading">Chọn chủ đề</h2>
-                <div className="guide-topic-grid">
-                  {visibleSections.map((s) => (
-                    <button
-                      key={s.id}
-                      className="guide-topic-card"
-                      onClick={() => setActiveSection(s.id)}
-                    >
-                      <div className="guide-topic-icon">
-                        {SECTION_ICONS[s.titleLower] || <BookOpen size={22} />}
-                      </div>
-                      <span className="guide-topic-label">{s.title}</span>
-                      <span className="guide-topic-desc">
-                        {SECTION_DESCRIPTIONS[s.titleLower] || ''}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : currentSection ? (
-              /* Section detail */
-              <div className="guide-content guide-section-view" key={currentSection.id}>
-                <button className="guide-back-btn" onClick={() => setActiveSection(null)}>
+            {/* Main content */}
+            <div className="guide-main">
+              <div className="guide-content guide-section-view" key={activeDetail.panel_key}>
+                <button className="guide-back-btn" onClick={goToOverview}>
                   <ArrowLeft size={16} />
                   Quay lại tổng quan
                 </button>
                 <div className="guide-section-header">
                   <div className="guide-section-header-icon">
-                    {SECTION_ICONS[currentSection.titleLower] || <BookOpen size={24} />}
+                    {getIcon(activeDetail.icon_name, true)}
                   </div>
-                  <h2>{currentSection.title}</h2>
+                  <h2>{activeDetail.title}</h2>
+                  {isAdmin && !activeDetail.is_published && (
+                    <span className="guide-unpublished-badge">Ẩn</span>
+                  )}
                 </div>
-                <div className="guide-section-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(currentSection.body) }} />
+                <div
+                  className="guide-section-body"
+                  dangerouslySetInnerHTML={{ __html: renderMarkdown(activeDetail.content) }}
+                />
               </div>
-            ) : null}
+            </div>
+          </div>
+        ) : null
+      ) : guides.length > 0 ? (
+        /* ── Overview / topic grid ── */
+        <div className="guide-layout">
+          {/* Sidebar */}
+          <nav className="guide-sidebar">
+            <div className="guide-sidebar-label">MENU</div>
+            <button
+              className="guide-menu-item active"
+              onClick={goToOverview}
+            >
+              <span className="guide-menu-icon"><Home size={18} /></span>
+              <span>Tổng quan</span>
+              <ChevronRight size={14} className="guide-menu-chevron" />
+            </button>
+            <div className="guide-menu-divider" />
+            {sectionGuides.map((g) => (
+              <button
+                key={g.panel_key}
+                className="guide-menu-item"
+                onClick={() => goToSection(g.panel_key)}
+              >
+                <span className="guide-menu-icon">{getIcon(g.icon_name)}</span>
+                <span>{g.title}</span>
+                <ChevronRight size={14} className="guide-menu-chevron" />
+              </button>
+            ))}
+          </nav>
+
+          {/* Main content */}
+          <div className="guide-main">
+            <div className="guide-content guide-intro-view" key="intro">
+              {overviewGuide && (
+                <div className="guide-intro-card">
+                  <p className="guide-intro-text">
+                    Chào mừng bạn đến với <strong>TA Grader</strong> — hệ thống trợ giảng thông minh.
+                    Chọn một chủ đề bên dưới để xem hướng dẫn chi tiết.
+                  </p>
+                </div>
+              )}
+              <h2 className="guide-topics-heading">Chọn chủ đề</h2>
+              <div className="guide-topic-grid">
+                {sectionGuides.map((g) => (
+                  <button
+                    key={g.panel_key}
+                    className="guide-topic-card"
+                    onClick={() => goToSection(g.panel_key)}
+                  >
+                    <div className="guide-topic-icon">
+                      {getIcon(g.icon_name, true)}
+                    </div>
+                    <span className="guide-topic-label">{g.title}</span>
+                    <span className="guide-topic-desc">
+                      {g.description || ''}
+                    </span>
+                    {isAdmin && !g.is_published && (
+                      <span className="guide-unpublished-badge">Ẩn</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       ) : (
         <div className="guide-empty">
           <BookOpen size={48} strokeWidth={1.2} />
           <p>Chưa có nội dung hướng dẫn.</p>
-          {isAdmin && <p>Nhấn <strong>Chỉnh sửa</strong> để bắt đầu viết hướng dẫn cho người dùng.</p>}
+          {isAdmin && <p>Vào từng mục để tạo nội dung hướng dẫn cho người dùng.</p>}
         </div>
       )}
     </div>

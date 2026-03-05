@@ -18,6 +18,7 @@ import {
   Edit2,
   X,
 } from 'lucide-react';
+import PanelHelpButton from './PanelHelpButton';
 
 const DEFAULT_CANVAS_URL = 'https://lms.uet.vnu.edu.vn';
 
@@ -163,10 +164,13 @@ const SettingsPanel: React.FC = () => {
 
   return (
     <div className="settings-panel">
-      <h2>
-        <Settings size={24} />
-        Cài đặt
-      </h2>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h2>
+          <Settings size={24} />
+          Cài đặt
+        </h2>
+        <PanelHelpButton panelKey="settings" />
+      </div>
 
       {/* Canvas LMS Integration Section */}
       <div className="settings-section canvas-integration-section">

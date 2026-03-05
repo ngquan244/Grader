@@ -15,6 +15,7 @@ import {
   Minus,
   ChevronDown,
 } from 'lucide-react';
+import PanelHelpButton from './PanelHelpButton';
 import { canvasResultsApi } from '../api/canvasResults';
 import { canvasApi } from '../api/canvas';
 import { canvasQuizApi } from '../api/canvasQuiz';
@@ -240,6 +241,7 @@ const CanvasResultsPanel: React.FC = () => {
             <h2>Results Aggregation</h2>
             <p>Tổng hợp và phân tích kết quả Canvas</p>
           </div>
+          <PanelHelpButton panelKey="canvas_results" />
         </div>
 
         {/* Sub-tabs */}
