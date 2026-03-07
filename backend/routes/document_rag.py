@@ -108,7 +108,7 @@ def get_rag_service() -> RAGService:
 # ===== API Endpoints =====
 
 @router.post("/upload", response_model=IngestResponse)
-async def upload_document(user: CurrentUser, file: UploadFile = File(...)):
+def upload_document(user: CurrentUser, file: UploadFile = File(...)):
     """
     Upload a PDF document for RAG.
     
@@ -142,7 +142,7 @@ async def upload_document(user: CurrentUser, file: UploadFile = File(...)):
 
 
 @router.post("/build-index", response_model=IngestResponse)
-async def build_index(user: CurrentUser, filename: str = Form(...)):
+def build_index(user: CurrentUser, filename: str = Form(...)):
     """
     Build/update the vector index for an uploaded document.
     
@@ -179,7 +179,7 @@ async def build_index(user: CurrentUser, filename: str = Form(...)):
 
 
 @router.post("/upload-and-index", response_model=IngestResponse)
-async def upload_and_index(user: CurrentUser, file: UploadFile = File(...)):
+def upload_and_index(user: CurrentUser, file: UploadFile = File(...)):
     """
     Upload and immediately index a PDF document.
     
@@ -235,6 +235,7 @@ async def download_and_index(request: DownloadAndIndexRequest, user: CurrentUser
     
     Used for Canvas LMS integration where files have signed download URLs.
     """
+    import asyncio
     import httpx
     
     logger.info(f"Download and index: {request.filename} from URL (user={user.id})")
@@ -244,7 +245,7 @@ async def download_and_index(request: DownloadAndIndexRequest, user: CurrentUser
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
     
     try:
-        # Download file from URL (follow redirects like curl -L)
+        # Download file from URL (follow redirects like curl -L) — async I/O
         async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
             response = await client.get(request.url)
             response.raise_for_status()
@@ -268,15 +269,17 @@ async def download_and_index(request: DownloadAndIndexRequest, user: CurrentUser
             file_path = user_upload_dir / f"{base_name}_{counter}.pdf"
             counter += 1
         
-        with open(file_path, "wb") as f:
-            f.write(content)
-        
-        logger.info(f"File downloaded and saved to: {file_path}")
-        
-        # Index the document
-        rag_service = get_rag_service()
-        with SessionLocal() as db:
-            result = rag_service.ingest_document(str(file_path), user_id=str(user.id), db_session=db)
+        # Save + index in threadpool to avoid blocking event loop
+        user_id = str(user.id)
+        def _save_and_ingest():
+            with open(file_path, "wb") as f:
+                f.write(content)
+            logger.info(f"File downloaded and saved to: {file_path}")
+            rag_service = get_rag_service()
+            with SessionLocal() as db:
+                return rag_service.ingest_document(str(file_path), user_id=user_id, db_session=db)
+
+        result = await asyncio.to_thread(_save_and_ingest)
         
         return IngestResponse(
             success=result.get("success", False),
@@ -301,7 +304,7 @@ async def download_and_index(request: DownloadAndIndexRequest, user: CurrentUser
 
 
 @router.post("/query", response_model=QueryResponse)
-async def query_documents(request: QueryRequest, user: CurrentUser):
+def query_documents(request: QueryRequest, user: CurrentUser):
     """
     Query the document knowledge base.
     
@@ -346,7 +349,7 @@ async def query_documents(request: QueryRequest, user: CurrentUser):
 
 
 @router.get("/stats", response_model=IndexStatsResponse)
-async def get_index_stats(user: CurrentUser):
+def get_index_stats(user: CurrentUser):
     """
     Get statistics about the document index.
     """
@@ -366,7 +369,7 @@ async def get_index_stats(user: CurrentUser):
 
 
 @router.post("/reset")
-async def reset_index(user: CurrentUser):
+def reset_index(user: CurrentUser):
     """
     Reset the document index for the current user.
     """
@@ -385,7 +388,7 @@ async def reset_index(user: CurrentUser):
 
 
 @router.get("/ollama-status")
-async def check_ollama_status(user: CurrentUser):
+def check_ollama_status(user: CurrentUser):
     """
     Check if Ollama is running and the model is available.
     """
@@ -405,7 +408,7 @@ async def check_ollama_status(user: CurrentUser):
 
 
 @router.get("/config")
-async def get_rag_config(user: CurrentUser):
+def get_rag_config(user: CurrentUser):
     """
     Get current RAG configuration.
     """
@@ -424,7 +427,7 @@ async def get_rag_config(user: CurrentUser):
 
 
 @router.get("/uploaded-files")
-async def list_uploaded_files(user: CurrentUser):
+def list_uploaded_files(user: CurrentUser):
     """
     List all uploaded PDF files for the current user.
     """
@@ -451,7 +454,7 @@ async def list_uploaded_files(user: CurrentUser):
 
 
 @router.delete("/uploaded-files/{filename}")
-async def delete_uploaded_file(filename: str, user: CurrentUser):
+def delete_uploaded_file(filename: str, user: CurrentUser):
     """
     Delete an uploaded file.
     
@@ -481,7 +484,7 @@ async def delete_uploaded_file(filename: str, user: CurrentUser):
 # ============================================================================
 
 @router.post("/generate-quiz", response_model=GenerateQuizResponse)
-async def generate_quiz_from_documents(request: GenerateQuizRequest, user: CurrentUser):
+def generate_quiz_from_documents(request: GenerateQuizRequest, user: CurrentUser):
     """
     Generate quiz questions from indexed documents using RAG.
     
@@ -603,7 +606,7 @@ class LLMProviderResponse(BaseModel):
 
 
 @router.get("/extract-topics")
-async def extract_topics_from_documents(user: CurrentUser):
+def extract_topics_from_documents(user: CurrentUser):
     """
     Extract suggested topics from indexed documents.
     
@@ -639,7 +642,7 @@ async def extract_topics_from_documents(user: CurrentUser):
 
 
 @router.post("/export-quiz-qti")
-async def export_quiz_to_qti(request: ExportQuizRequest, user: CurrentUser):
+def export_quiz_to_qti(request: ExportQuizRequest, user: CurrentUser):
     """
     Export quiz questions to QTI 2.1 format as a ZIP package.
     
@@ -705,7 +708,7 @@ async def export_quiz_to_qti(request: ExportQuizRequest, user: CurrentUser):
 # ==================== TOPIC MANAGEMENT ENDPOINTS ====================
 
 @router.get("/document-topics/{filename}")
-async def get_document_topics(filename: str, user: CurrentUser):
+def get_document_topics(filename: str, user: CurrentUser):
     """
     Get cached topics for a specific indexed document.
     Topics are extracted during indexing, so this is instant (no LLM call).
@@ -747,7 +750,7 @@ class UpdateTopicsRequest(BaseModel):
 
 
 @router.put("/document-topics/{filename}")
-async def update_document_topics(filename: str, request: UpdateTopicsRequest, user: CurrentUser):
+def update_document_topics(filename: str, request: UpdateTopicsRequest, user: CurrentUser):
     """
     Update topics for a specific document.
     Allows users to add, remove, or modify topics.
@@ -785,7 +788,7 @@ async def update_document_topics(filename: str, request: UpdateTopicsRequest, us
 
 
 @router.get("/indexed-documents")
-async def list_indexed_documents(user: CurrentUser):
+def list_indexed_documents(user: CurrentUser):
     """
     List all indexed documents with their topic counts.
     """
@@ -823,7 +826,7 @@ async def list_indexed_documents(user: CurrentUser):
 # ============================================================================
 
 @router.post("/set-llm", response_model=LLMProviderResponse)
-async def set_llm_provider(request: SetLLMProviderRequest, admin: AdminUser):
+def set_llm_provider(request: SetLLMProviderRequest, admin: AdminUser):
     """
     Set the LLM provider at runtime.
     
@@ -877,7 +880,7 @@ async def set_llm_provider(request: SetLLMProviderRequest, admin: AdminUser):
 
 
 @router.get("/llm-provider")
-async def get_llm_provider_info(user: CurrentUser):
+def get_llm_provider_info(user: CurrentUser):
     """
     Get current LLM provider information.
     
@@ -896,7 +899,7 @@ async def get_llm_provider_info(user: CurrentUser):
 
 
 @router.get("/llm-status")
-async def check_llm_status(user: CurrentUser):
+def check_llm_status(user: CurrentUser):
     """
     Check current LLM provider connection status.
     

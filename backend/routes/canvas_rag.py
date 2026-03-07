@@ -5,6 +5,7 @@ FastAPI routes for Canvas-specific Document RAG features.
 Completely separate from uploaded document routes.
 """
 
+import asyncio
 import logging
 import uuid as _uuid
 from typing import Optional, List
@@ -175,7 +176,7 @@ async def index_canvas_file(request: CanvasIndexRequest, http_request: Request, 
     """
     logger.info(f"Indexing Canvas file: {request.filename}, course_id: {request.course_id}")
     
-    # Permission check
+    # Permission check (async)
     await _check_canvas_permission(
         http_request, course_id=request.course_id,
         filename=request.filename, user_id=str(user.id),
@@ -190,15 +191,19 @@ async def index_canvas_file(request: CanvasIndexRequest, http_request: Request, 
     if not file_path.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {request.filename}")
     
-    with SessionLocal() as db:
-        result = service.ingest_document(
-            file_path=str(file_path),
-            course_id=request.course_id,
-            user_id=str(user.id),
-            db_session=db,
-        )
+    # Sync ingest → run in threadpool
+    user_id = str(user.id)
+    course_id = request.course_id
+    def _do_ingest():
+        with SessionLocal() as db:
+            return service.ingest_document(
+                file_path=str(file_path),
+                course_id=course_id,
+                user_id=user_id,
+                db_session=db,
+            )
     
-    return result
+    return await asyncio.to_thread(_do_ingest)
 
 
 @router.post("/extract-topics")
@@ -213,15 +218,20 @@ async def extract_topics_for_canvas_file(
     """
     logger.info(f"Extracting topics for Canvas file: {request.filename}")
     
-    # Permission check
+    # Permission check (async)
     await _check_canvas_permission(
         http_request, filename=request.filename, user_id=str(user.id),
     )
     
-    service = get_canvas_rag_service()
-    result = service.extract_topics_for_file(request.filename, request.num_topics, user_id=str(user.id))
+    # Sync LLM call → run in threadpool
+    filename = request.filename
+    num_topics = request.num_topics
+    user_id = str(user.id)
+    def _do_extract():
+        service = get_canvas_rag_service()
+        return service.extract_topics_for_file(filename, num_topics, user_id=user_id)
     
-    return result
+    return await asyncio.to_thread(_do_extract)
 
 
 @router.get("/topics/{filename}")
@@ -230,16 +240,21 @@ async def get_canvas_document_topics(filename: str, http_request: Request, user:
     Get topics for a Canvas document.
     Permission-validated: token must have access to the course.
     """
-    # Permission check
+    # Permission check (async)
     await _check_canvas_permission(
         http_request, filename=filename, user_id=str(user.id),
     )
     try:
-        service = get_canvas_rag_service()
-        with SessionLocal() as db:
-            return service.get_document_topics(
-                filename, user_id=str(user.id), db_session=db,
-            )
+        # Sync DB call → run in threadpool
+        user_id = str(user.id)
+        def _do_get_topics():
+            service = get_canvas_rag_service()
+            with SessionLocal() as db:
+                return service.get_document_topics(
+                    filename, user_id=user_id, db_session=db,
+                )
+        
+        return await asyncio.to_thread(_do_get_topics)
     except Exception as e:
         logger.exception("Error getting Canvas document topics")
         raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
@@ -258,26 +273,31 @@ async def update_canvas_document_topics(
     try:
         logger.info(f"Updating topics for Canvas file: {request.filename}")
         
-        # Permission check
+        # Permission check (async)
         await _check_canvas_permission(
             http_request, filename=request.filename, user_id=str(user.id),
         )
         
-        service = get_canvas_rag_service()
-        with SessionLocal() as db:
-            result = service.update_document_topics(
-                request.filename, request.topics,
-                user_id=str(user.id), db_session=db,
-            )
+        # Sync DB call → run in threadpool
+        filename = request.filename
+        topics = request.topics
+        user_id = str(user.id)
+        def _do_update():
+            service = get_canvas_rag_service()
+            with SessionLocal() as db:
+                return service.update_document_topics(
+                    filename, topics,
+                    user_id=user_id, db_session=db,
+                )
         
-        return result
+        return await asyncio.to_thread(_do_update)
     except Exception as e:
         logger.exception("Error updating Canvas document topics")
         raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
 @router.get("/files")
-async def list_canvas_files(user: CurrentUser):
+def list_canvas_files(user: CurrentUser):
     """
     List all downloaded Canvas files.
     """
@@ -297,15 +317,20 @@ async def list_indexed_canvas_documents(
     Permission-validated: only returns documents for courses the token can access.
     """
     try:
-        service = get_canvas_rag_service()
-        with SessionLocal() as db:
-            result = service.list_indexed_documents(
-                user_id=str(user.id), db_session=db,
-            )
+        # Sync DB call → run in threadpool
+        user_id = str(user.id)
+        def _do_list():
+            service = get_canvas_rag_service()
+            with SessionLocal() as db:
+                return service.list_indexed_documents(
+                    user_id=user_id, db_session=db,
+                )
+        
+        result = await asyncio.to_thread(_do_list)
         
         # Filter by course_id if provided
         if course_id is not None and result.get("success"):
-            # Permission check for the specific course
+            # Permission check for the specific course (async)
             await _check_canvas_permission(http_request, course_id=course_id)
             
             filtered = [
@@ -320,7 +345,7 @@ async def list_indexed_canvas_documents(
             docs = result.get("documents", [])
 
             if canvas_base_url and canvas_token:
-                # Token present → verify each course
+                # Token present → verify each course (async)
                 course_ids = set()
                 for doc in docs:
                     cid = doc.get("course_id")
@@ -357,7 +382,7 @@ async def list_indexed_canvas_documents(
 
 
 @router.get("/stats")
-async def get_canvas_stats(user: CurrentUser):
+def get_canvas_stats(user: CurrentUser):
     """
     Get Canvas index statistics.
     """
@@ -371,19 +396,14 @@ async def get_canvas_stats(user: CurrentUser):
 
 
 @router.post("/query")
-async def query_canvas_documents(request: CanvasQueryRequest, http_request: Request, user: CurrentUser):
+def query_canvas_documents(request: CanvasQueryRequest, user: CurrentUser):
     """
     Query the Canvas document knowledge base.
-    Permission-validated when filename is provided.
     """
     logger.info(f"Canvas RAG Query: {request.question}")
     
     if not request.question or not request.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty")
-    
-    # Permission check (best-effort — query may span multiple courses)
-    # When user filters by filename, we can check the specific course
-    # Otherwise we rely on the /indexed filter to have already restricted visible docs
     
     service = get_canvas_rag_service()
     with SessionLocal() as db:
@@ -413,31 +433,35 @@ async def generate_quiz_from_canvas_documents(
     if not request.topics:
         raise HTTPException(status_code=400, detail="At least one topic is required")
     
-    # Permission check: if specific documents are selected, check each
+    # Permission check: if specific documents are selected, check each (async)
     if request.selected_documents:
         for doc_name in request.selected_documents:
             await _check_canvas_permission(
                 http_request, filename=doc_name, user_id=str(user.id),
             )
     
-    service = get_canvas_rag_service()
-    with SessionLocal() as db:
-        result = service.generate_quiz(
-            topics=request.topics,
-            num_questions=request.num_questions,
-            difficulty=request.difficulty,
-            language=request.language,
-            k=request.k,
-            selected_documents=request.selected_documents,
-            user_id=str(user.id),
-            db_session=db,
-        )
+    # Sync LLM + DB call → run in threadpool
+    user_id = str(user.id)
+    req = request
+    def _do_generate():
+        service = get_canvas_rag_service()
+        with SessionLocal() as db:
+            return service.generate_quiz(
+                topics=req.topics,
+                num_questions=req.num_questions,
+                difficulty=req.difficulty,
+                language=req.language,
+                k=req.k,
+                selected_documents=req.selected_documents,
+                user_id=user_id,
+                db_session=db,
+            )
     
-    return result
+    return await asyncio.to_thread(_do_generate)
 
 
 @router.post("/reset")
-async def reset_canvas_index(admin: AdminUser):
+def reset_canvas_index(admin: AdminUser):
     """
     Reset Canvas index (delete all indexed documents and files).
     """
@@ -450,7 +474,7 @@ async def reset_canvas_index(admin: AdminUser):
 
 
 @router.delete("/files/{filename}")
-async def delete_canvas_file(filename: str, user: CurrentUser):
+def delete_canvas_file(filename: str, user: CurrentUser):
     """
     Delete a Canvas file's local cache and its index data.
     Does NOT delete the file from Canvas LMS.
@@ -468,7 +492,7 @@ async def delete_canvas_file(filename: str, user: CurrentUser):
 
 
 @router.delete("/index/{filename}")
-async def remove_canvas_file_index(filename: str, user: CurrentUser):
+def remove_canvas_file_index(filename: str, user: CurrentUser):
     """
     Remove index for a Canvas file (keep the file).
     Cleans up: ChromaDB collection, topic data, and database records.

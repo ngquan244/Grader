@@ -15,7 +15,7 @@ router = APIRouter()
 
 
 @router.post("/send", response_model=ChatResponse)
-async def send_message(request: ChatRequest, user: CurrentUser):
+def send_message(request: ChatRequest, user: CurrentUser):
     """Send a message to the AI agent and get response"""
     if not request.message.strip():
         raise BadRequestException(Messages.EMPTY_MESSAGE)
@@ -50,7 +50,7 @@ async def send_message(request: ChatRequest, user: CurrentUser):
 
 
 @router.get("/models")
-async def get_available_models(user: CurrentUser):
+def get_available_models(user: CurrentUser):
     """Get list of available AI models"""
     return {
         "models": settings.AVAILABLE_MODELS,
@@ -60,6 +60,6 @@ async def get_available_models(user: CurrentUser):
 
 
 @router.delete("/history")
-async def clear_history(user: CurrentUser):
+def clear_history(user: CurrentUser):
     """Clear chat history"""
     return {"message": Messages.HISTORY_CLEARED, "success": True}

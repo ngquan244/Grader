@@ -29,13 +29,13 @@ async def upload_exam_images(user: CurrentUser, files: List[UploadFile] = File(.
 
 
 @router.get("/status")
-async def get_upload_status(user: CurrentUser):
+def get_upload_status(user: CurrentUser):
     """Get current upload status"""
     return file_service.get_upload_status(user_id=str(user.id))
 
 
 @router.delete("/images")
-async def clear_uploaded_images(user: CurrentUser):
+def clear_uploaded_images(user: CurrentUser):
     """Clear all uploaded images"""
     count = file_service.clear_images(user_id=str(user.id))
     return {
