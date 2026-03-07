@@ -12,7 +12,7 @@ from typing import Optional, Dict, Any, List
 from celery import shared_task
 
 from backend.celery_app import RateLimitedLLMTask
-from backend.core.logger import quiz_logger
+from backend.core.logger import quiz_logger, celery_logger, logger as app_logger
 from backend.services.job_service import get_sync_job_service
 from backend.database.base import SessionLocal
 
@@ -104,12 +104,12 @@ def generate_quiz(
         
         if result.get("success"):
             n_questions = len(result.get("questions", []))
-            logger.info(f"[QUIZ] success questions={n_questions} duration={duration}s selected_docs={n_selected} resolved_hashes={n_resolved}")
+            app_logger.info(f"[QUIZ] success questions={n_questions} duration={duration}s selected_docs={n_selected} resolved_hashes={n_resolved}")
             result.pop("_resolved_hashes", None)
             job_service.complete_job(job_uuid, result)
         else:
             error_msg = result.get("error") or result.get("message") or "Quiz generation failed"
-            logger.error(f"[QUIZ] failed duration={duration}s selected_docs={n_selected} resolved_hashes={n_resolved} error=\"{error_msg}\"")
+            app_logger.error(f"[QUIZ] failed duration={duration}s selected_docs={n_selected} resolved_hashes={n_resolved} error=\"{error_msg}\"")
             quiz_logger.error(f"Quiz failed: {error_msg}, result_keys={list(result.keys())}")
             result.pop("_resolved_hashes", None)
             job_service.fail_job(job_uuid, error_msg)
@@ -118,7 +118,7 @@ def generate_quiz(
         
     except Exception as e:
         duration = round(time.time() - t0, 1)
-        logger.error(f"[QUIZ] exception duration={duration}s selected_docs={n_selected} error=\"{e}\"")
+        app_logger.error(f"[QUIZ] exception duration={duration}s selected_docs={n_selected} error=\"{e}\"")
         quiz_logger.exception(f"Exception in generate_quiz task: {e}")
         job_service.fail_job(job_uuid, str(e))
         raise
@@ -173,7 +173,7 @@ def agent_invoke(
         return result
         
     except Exception as e:
-        logger.exception(f"Error in agent_invoke task: {e}")
+        app_logger.exception(f"Error in agent_invoke task: {e}")
         job_service.fail_job(job_uuid, str(e))
         raise
     finally:
@@ -234,7 +234,7 @@ def rag_query(
         return result
         
     except Exception as e:
-        logger.exception(f"Error in rag_query task: {e}")
+        app_logger.exception(f"Error in rag_query task: {e}")
         job_service.fail_job(job_uuid, str(e))
         raise
     finally:
@@ -275,7 +275,7 @@ def extract_document_topics(
         return result
         
     except Exception as e:
-        logger.exception(f"Error in extract_document_topics task: {e}")
+        app_logger.exception(f"Error in extract_document_topics task: {e}")
         job_service.fail_job(job_uuid, str(e))
         raise
     finally:

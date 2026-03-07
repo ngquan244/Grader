@@ -129,7 +129,7 @@ def upload_document(user: CurrentUser, file: UploadFile = File(...)):
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        logger.info(f"File saved to: {file_path}")
+        logger.debug(f"File saved to: {file_path}")
         
         return IngestResponse(
             success=True,
@@ -204,7 +204,7 @@ def upload_and_index(user: CurrentUser, file: UploadFile = File(...)):
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        logger.info(f"File saved to: {file_path}")
+        logger.debug(f"File saved to: {file_path}")
         
         # Index the document
         rag_service = get_rag_service()
@@ -279,7 +279,7 @@ async def download_and_index(request: DownloadAndIndexRequest, user: CurrentUser
         def _save_and_ingest():
             with open(file_path, "wb") as f:
                 f.write(content)
-            logger.info(f"File downloaded and saved to: {file_path}")
+            logger.debug(f"File downloaded and saved to: {file_path}")
             rag_service = get_rag_service()
             with SessionLocal() as db:
                 return rag_service.ingest_document(str(file_path), user_id=user_id, db_session=db)

@@ -364,7 +364,7 @@ class PerFileCollectionManager:
                 if name not in registered_names:
                     try:
                         shutil.rmtree(item)
-                        logger.info(f"Cleaned up orphaned collection directory: {name}")
+                        logger.debug(f"Cleaned up orphaned collection directory: {name}")
                     except Exception as e:
                         logger.warning(f"Could not clean up orphaned directory {name}: {e}")
         except Exception as e:
@@ -466,7 +466,7 @@ class PerFileCollectionManager:
             collection_dir = str(self.persist_directory / collection_name)
             Path(collection_dir).mkdir(parents=True, exist_ok=True)
             
-            logger.info(f"Getting/creating collection: {collection_name} for file: {filename}")
+            logger.debug(f"Getting/creating collection: {collection_name} for file: {filename}")
             
             collection = Chroma(
                 collection_name=collection_name,
@@ -517,7 +517,7 @@ class PerFileCollectionManager:
                 try:
                     count = collection._collection.count()
                     if count > 0:
-                        logger.info(f"Replacing {count} existing documents in {collection_name}")
+                        logger.debug(f"Replacing {count} existing documents in {collection_name}")
                         # Get all IDs and delete them
                         existing = collection._collection.get(include=[])
                         if existing and existing.get("ids"):
@@ -532,7 +532,7 @@ class PerFileCollectionManager:
             ]
             
             # Add documents
-            logger.info(f"Adding {len(documents)} documents to collection: {collection_name}")
+            logger.debug(f"Adding {len(documents)} documents to collection: {collection_name}")
             collection.add_documents(documents=documents, ids=ids)
             
             # Update registry
@@ -545,7 +545,7 @@ class PerFileCollectionManager:
                 user_id=user_id,
             )
             
-            logger.info(f"Successfully added {len(documents)} documents to {collection_name}")
+            logger.debug(f"Successfully added {len(documents)} documents to {collection_name}")
             return len(documents)
     
     def query_collection(

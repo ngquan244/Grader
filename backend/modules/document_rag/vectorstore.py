@@ -133,7 +133,7 @@ class ChromaVectorStore:
                         if meta and "file_hash" in meta:
                             self._indexed_hashes.add(meta["file_hash"])
                 
-                logger.info(f"Loaded {len(self._indexed_hashes)} indexed document hashes")
+                logger.debug(f"Loaded {len(self._indexed_hashes)} indexed document hashes")
         except Exception as e:
             logger.warning(f"Could not load indexed hashes: {e}")
             self._indexed_hashes = set()
@@ -185,14 +185,14 @@ class ChromaVectorStore:
                 docs_to_add.append(doc)
             
             if len(docs_to_add) < len(documents):
-                logger.info(f"Skipped {len(documents) - len(docs_to_add)} duplicate documents")
+                logger.debug(f"Skipped {len(documents) - len(docs_to_add)} duplicate documents")
         
         if not docs_to_add:
             logger.info("All documents already indexed, nothing to add")
             return 0
         
         # Add to vector store
-        logger.info(f"Adding {len(docs_to_add)} documents to vector store")
+        logger.debug(f"Adding {len(docs_to_add)} documents to vector store")
         
         # Generate IDs for documents
         ids = [
@@ -208,7 +208,7 @@ class ChromaVectorStore:
             if file_hash:
                 self._indexed_hashes.add(file_hash)
         
-        logger.info(f"Successfully added {len(docs_to_add)} documents")
+        logger.debug(f"Successfully added {len(docs_to_add)} documents")
         return len(docs_to_add)
     
     def get_retriever(self, **kwargs):
@@ -289,7 +289,7 @@ class ChromaVectorStore:
                     self._indexed_hashes.discard(filter_dict["file_hash"])
                     self._save_indexed_hashes()
                 
-                logger.info(f"Deleted {len(ids_to_delete)} documents matching filter: {filter_dict}")
+                logger.debug(f"Deleted {len(ids_to_delete)} documents matching filter: {filter_dict}")
                 return len(ids_to_delete)
             
             return 0

@@ -36,9 +36,9 @@ from .quiz_generator import QuizGenerator
 from .llm_providers import BaseLLM, LLMFactory
 from .rag_repository import SyncRAGCollectionRepository
 from backend.database.models.rag_document import RAGSourceType
-from backend.core.logger import quiz_logger
+from backend.core.logger import quiz_logger, canvas_logger
 
-logger = logging.getLogger(__name__)
+logger = canvas_logger
 
 
 class CanvasTopicStorage:

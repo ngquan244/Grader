@@ -91,8 +91,8 @@ class RAGService:
         self._llm_provider_name = llm_provider or rag_config.LLM_PROVIDER
         
         logger.info("Initializing RAG Service with per-file collections...")
-        logger.info(f"Persist directory: {self.persist_directory}")
-        logger.info(f"LLM provider: {self._llm_provider_name}")
+        logger.debug(f"Persist directory: {self.persist_directory}")
+        logger.debug(f"LLM provider: {self._llm_provider_name}")
         
         # Per-file collection manager (replaces global vectorstore)
         self._collection_manager: Optional[PerFileCollectionManager] = None
@@ -187,7 +187,7 @@ class RAGService:
         """
         self._ensure_initialized()
         
-        logger.info(f"Ingesting document into per-file collection: {file_path} (user={user_id})")
+        logger.debug(f"Ingesting document into per-file collection: {file_path} (user={user_id})")
         
         try:
             # Check if file exists
@@ -217,7 +217,7 @@ class RAGService:
                 already_indexed = self._collection_manager.is_indexed(file_hash, user_id=user_id)
             
             if skip_if_exists and already_indexed:
-                logger.info(f"Document already indexed in per-file collection: {file_path}")
+                logger.debug(f"Document already indexed in per-file collection: {file_path}")
                 collection_name = self._collection_manager.get_collection_name(file_hash)
                 has_topics = False
                 if db_session and user_id:
@@ -285,7 +285,7 @@ class RAGService:
             topics_extracted = []
             if extract_topics:
                 try:
-                    logger.info(f"Extracting topics for {filename}...")
+                    logger.debug(f"Extracting topics for {filename}...")
                     topics_result = self._extract_topics_from_chunks(chunks, file_meta)
                     if topics_result.get("success") and topics_result.get("topics"):
                         topics_extracted = topics_result["topics"]
@@ -303,7 +303,7 @@ class RAGService:
                             topics=topics_extracted,
                             user_id=user_id
                         )
-                        logger.info(f"Saved {len(topics_extracted)} topics for {filename}")
+                        logger.debug(f"Saved {len(topics_extracted)} topics for {filename}")
                 except Exception as e:
                     logger.warning(f"Could not extract topics: {e}")
             
@@ -381,7 +381,7 @@ class RAGService:
         """
         self._ensure_initialized()
         
-        logger.info(f"Processing query: {question} (user={user_id})")
+        logger.debug(f"Processing query: {question} (user={user_id})")
         
         # Determine which collections to query
         target_hashes = file_hashes or []
@@ -430,7 +430,7 @@ class RAGService:
                 "error": "No documents indexed"
             }
         
-        logger.info(f"Querying {len(target_hashes)} collections")
+        logger.debug(f"Querying {len(target_hashes)} collections")
         
         try:
             # Pass target_file_hashes directly — no mutable state
@@ -541,11 +541,11 @@ class RAGService:
                 SyncRAGCollectionRepository.clear(
                     db_session, uuid.UUID(user_id),
                 )
-                logger.info(f"Cleared DB collection records (user={user_id})")
+                logger.debug(f"Cleared DB collection records (user={user_id})")
             
             # Also clear stored topics (JSON fallback)
             topic_storage.clear(user_id=user_id)
-            logger.info(f"Cleared stored topics (user={user_id})")
+            logger.debug(f"Cleared stored topics (user={user_id})")
             
             if success:
                 return {

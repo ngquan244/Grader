@@ -23,6 +23,7 @@ from celery.signals import (
 from kombu import Queue, Exchange
 
 from backend.core.config import settings
+from backend.core.logger import celery_logger
 
 logger = logging.getLogger(__name__)
 
@@ -159,19 +160,19 @@ class BaseTaskWithRetry(Task):
         """Called before task starts."""
         self._job_id = kwargs.get("job_id")
         if self._job_id:
-            logger.info(f"Task {self.name}[{task_id}] starting for job_id={self._job_id}")
+            celery_logger.info(f"Task {self.name}[{task_id}] starting for job_id={self._job_id}")
     
     def on_success(self, retval, task_id, args, kwargs):
         """Called when task succeeds."""
         job_id = kwargs.get("job_id")
         if job_id:
-            logger.info(f"Task {self.name}[{task_id}] succeeded for job_id={job_id}")
+            celery_logger.info(f"Task {self.name}[{task_id}] succeeded for job_id={job_id}")
     
     def on_failure(self, exc, task_id, args, kwargs, einfo):
         """Called when task fails after all retries."""
         job_id = kwargs.get("job_id")
         if job_id:
-            logger.error(
+            celery_logger.error(
                 f"Task {self.name}[{task_id}] failed for job_id={job_id}: {exc}",
                 exc_info=einfo
             )
@@ -181,7 +182,7 @@ class BaseTaskWithRetry(Task):
         job_id = kwargs.get("job_id")
         retry_count = self.request.retries
         if job_id:
-            logger.warning(
+            celery_logger.warning(
                 f"Task {self.name}[{task_id}] retry #{retry_count} for job_id={job_id}: {exc}"
             )
 
@@ -214,7 +215,7 @@ class RateLimitedCanvasTask(BaseTaskWithRetry):
 @worker_ready.connect
 def on_worker_ready(sender, **kwargs):
     """Log when worker is ready."""
-    logger.info(f"Celery worker ready: {sender}")
+    celery_logger.info(f"Celery worker ready: {sender}")
 
 
 @task_prerun.connect
@@ -222,7 +223,7 @@ def task_prerun_handler(sender, task_id, task, args, kwargs, **other):
     """Log task start with correlation IDs."""
     job_id = kwargs.get("job_id", "N/A")
     user_id = kwargs.get("user_id", "N/A")
-    logger.info(
+    celery_logger.info(
         f"TASK_START | task={sender.name} | task_id={task_id} | "
         f"job_id={job_id} | user_id={user_id}"
     )
@@ -232,7 +233,7 @@ def task_prerun_handler(sender, task_id, task, args, kwargs, **other):
 def task_postrun_handler(sender, task_id, task, args, kwargs, retval, state, **other):
     """Log task completion."""
     job_id = kwargs.get("job_id", "N/A")
-    logger.info(
+    celery_logger.info(
         f"TASK_END | task={sender.name} | task_id={task_id} | "
         f"job_id={job_id} | state={state}"
     )
@@ -242,7 +243,7 @@ def task_postrun_handler(sender, task_id, task, args, kwargs, retval, state, **o
 def task_failure_handler(sender, task_id, exception, args, kwargs, traceback, einfo, **other):
     """Log task failures with full context."""
     job_id = kwargs.get("job_id", "N/A")
-    logger.error(
+    celery_logger.error(
         f"TASK_FAILURE | task={sender.name} | task_id={task_id} | "
         f"job_id={job_id} | error={exception}",
         exc_info=True

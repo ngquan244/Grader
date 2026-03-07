@@ -87,13 +87,13 @@ def load_pdf_documents(
     if path.suffix.lower() != ".pdf":
         raise ValueError(f"File is not a PDF: {file_path}")
     
-    logger.info(f"Loading PDF: {file_path}")
+    logger.debug(f"Loading PDF: {file_path}")
     
     # Load with PyPDFLoader
     loader = PyPDFLoader(str(file_path))
     documents = loader.load()
     
-    logger.info(f"Loaded {len(documents)} pages from PDF")
+    logger.debug(f"Loaded {len(documents)} pages from PDF")
     
     # Add extended metadata for deduplication
     if add_file_metadata:

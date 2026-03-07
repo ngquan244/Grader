@@ -12,8 +12,7 @@ from typing import Optional
 import httpx
 
 from backend.core.config import settings
-
-logger = logging.getLogger(__name__)
+from backend.core.logger import canvas_logger as logger
 
 # Directory for storing Canvas downloads with MD5 deduplication
 CANVAS_DOWNLOADS_DIR = settings.DATA_DIR / "canvas_downloads"
@@ -195,7 +194,7 @@ async def download_file_with_dedup(
         # Check for duplicate
         existing = check_duplicate(md5_hash, registry)
         if existing:
-            logger.info(f"Duplicate file detected: {filename} (matches {existing})")
+            logger.debug(f"Duplicate file detected: {filename} (matches {existing})")
             return {
                 "success": True,
                 "file_id": file_id,
@@ -227,7 +226,7 @@ async def download_file_with_dedup(
         registry[md5_hash] = str(file_path.relative_to(CANVAS_DOWNLOADS_DIR))
         save_md5_registry(registry)
         
-        logger.info(f"Saved file: {file_path}")
+        logger.debug(f"Saved file: {file_path}")
         return {
             "success": True,
             "file_id": file_id,
@@ -341,7 +340,7 @@ async def create_qti_migration(
             response.raise_for_status()
             migration = response.json()
             
-            logger.info(f"Created content migration {migration.get('id')} for course {course_id}")
+            logger.debug(f"Created content migration {migration.get('id')} for course {course_id}")
             return {
                 "success": True,
                 "migration": migration,
@@ -388,19 +387,19 @@ async def upload_to_pre_attachment(
             files = {file_param: (filename, file_content, "application/zip")}
             data = upload_params.copy()
             
-            logger.info(f"S3 Upload: POST to {upload_url}")
-            logger.info(f"S3 Upload params: {list(data.keys())}")
+            logger.debug(f"S3 Upload: POST to {upload_url}")
+            logger.debug(f"S3 Upload params: {list(data.keys())}")
             
             # Do NOT include Authorization header for S3 upload
             # Do NOT manually set Content-Type (let httpx handle multipart boundary)
             response = await client.post(upload_url, data=data, files=files)
             
-            logger.info(f"S3 Upload response: status={response.status_code}")
+            logger.debug(f"S3 Upload response: status={response.status_code}")
             
             # S3 returns 201 (created) or 204 (no content) on success
             # Or 303 (redirect) if success_action_redirect is set
             if response.status_code in [201, 204]:
-                logger.info("S3 Upload successful (direct success)")
+                logger.debug("S3 Upload successful (direct success)")
                 return {
                     "success": True,
                     "status_code": response.status_code,
@@ -409,7 +408,7 @@ async def upload_to_pre_attachment(
             elif response.status_code in [301, 302, 303, 307, 308]:
                 # Redirect response - capture the Location header
                 redirect_url = response.headers.get("Location")
-                logger.info(f"S3 Upload returned redirect: {redirect_url}")
+                logger.debug(f"S3 Upload returned redirect: {redirect_url}")
                 return {
                     "success": True,
                     "status_code": response.status_code,
@@ -448,7 +447,7 @@ async def finalize_file_upload(
     This step is REQUIRED after S3 upload to tell Canvas the file is ready.
     Without this, Canvas shows "file not available" and migration stays in pre_processing.
     """
-    logger.info(f"Finalize: GET {finalize_url}")
+    logger.debug(f"Finalize: GET {finalize_url}")
     
     async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
         try:
@@ -456,20 +455,20 @@ async def finalize_file_upload(
             headers = {"Authorization": f"Bearer {token}"}
             response = await client.get(finalize_url, headers=headers)
             
-            logger.info(f"Finalize response: status={response.status_code}")
+            logger.debug(f"Finalize response: status={response.status_code}")
             
             if response.status_code in [200, 201, 301, 302, 303]:
                 # Try to parse response for file confirmation
                 try:
                     file_info = response.json()
-                    logger.info(f"Finalize success: file_id={file_info.get('id')}, size={file_info.get('size')}")
+                    logger.debug(f"Finalize success: file_id={file_info.get('id')}, size={file_info.get('size')}")
                     return {
                         "success": True,
                         "file_info": file_info,
                     }
                 except Exception:
                     # Response may not be JSON, but that's OK
-                    logger.info("Finalize completed (non-JSON response)")
+                    logger.debug("Finalize completed (non-JSON response)")
                     return {
                         "success": True,
                     }
@@ -515,7 +514,7 @@ async def poll_migration_progress(
                 workflow_state = migration.get("workflow_state", "unknown")
                 progress = migration.get("progress", 0)
                 
-                logger.info(f"Migration {migration_id} poll #{attempt+1}: state={workflow_state}, progress={progress}%")
+                logger.debug(f"Migration {migration_id} poll #{attempt+1}: state={workflow_state}, progress={progress}%")
                 
                 if workflow_state == "completed":
                     return {
@@ -597,8 +596,7 @@ async def import_qti_to_canvas(
     Returns final status with success/failure.
     """
     # Step 1: Create migration
-    logger.info(f"=== QTI IMPORT START ===")
-    logger.info(f"Step 1: Creating QTI migration for course {course_id}, bank: {question_bank_name}")
+    logger.info(f"QTI import starting: course={course_id}, bank={question_bank_name}")
     migration_result = await create_qti_migration(
         token=token,
         base_url=base_url,
@@ -620,7 +618,7 @@ async def import_qti_to_canvas(
     pre_attachment = migration.get("pre_attachment", {})
     progress_url = migration.get("progress_url")
     
-    logger.info(f"Step 1 SUCCESS: migration_id={migration_id}")
+    logger.debug(f"Step 1 OK: migration_id={migration_id}")
     
     # Extract upload info
     upload_url = pre_attachment.get("upload_url")
@@ -630,15 +628,13 @@ async def import_qti_to_canvas(
     # Get success_action_redirect from upload_params (this is the finalize URL)
     success_redirect = upload_params.get("success_action_redirect")
     
-    logger.info(f"pre_attachment.upload_url: {upload_url}")
-    logger.info(f"pre_attachment.file_param: {file_param}")
-    logger.info(f"success_action_redirect: {success_redirect}")
+    logger.debug(f"pre_attachment: url={upload_url}, file_param={file_param}, redirect={success_redirect}")
     
     if not upload_url:
         logger.warning("No pre_attachment URL provided - migration may already be queued")
     else:
         # Step 2: Upload file to S3
-        logger.info(f"Step 2: Uploading QTI zip ({len(qti_zip_content)} bytes) to S3")
+        logger.debug(f"Step 2: Uploading QTI zip ({len(qti_zip_content)} bytes) to S3")
         upload_result = await upload_to_pre_attachment(
             upload_url=upload_url,
             upload_params=upload_params,
@@ -656,14 +652,14 @@ async def import_qti_to_canvas(
                 "migration_id": migration_id,
             }
         
-        logger.info(f"Step 2 SUCCESS: status_code={upload_result.get('status_code')}")
+        logger.debug(f"Step 2 OK: status_code={upload_result.get('status_code')}")
         
         # Step 3: FINALIZE file attachment (CRITICAL STEP)
         # Determine finalize URL: use redirect from S3 response, or success_action_redirect
         finalize_url = upload_result.get("redirect_url") or upload_result.get("location") or success_redirect
         
         if finalize_url:
-            logger.info(f"Step 3: Finalizing file attachment")
+            logger.debug(f"Step 3: Finalizing file attachment")
             finalize_result = await finalize_file_upload(
                 token=token,
                 finalize_url=finalize_url,
@@ -678,12 +674,12 @@ async def import_qti_to_canvas(
                     "migration_id": migration_id,
                 }
             
-            logger.info(f"Step 3 SUCCESS: File attachment finalized")
+            logger.debug(f"Step 3 OK: File finalized")
         else:
             logger.warning("Step 3 SKIPPED: No finalize URL available (may cause 'file not available' error)")
     
     # Step 4: Poll for completion
-    logger.info(f"Step 4: Polling migration {migration_id} for completion")
+    logger.debug(f"Step 4: Polling migration {migration_id}")
     poll_result = await poll_migration_progress(
         token=token,
         base_url=base_url,
@@ -692,7 +688,7 @@ async def import_qti_to_canvas(
     )
     
     if poll_result["success"]:
-        logger.info(f"=== QTI IMPORT SUCCESS ===")
+        logger.info(f"QTI import succeeded: migration_id={migration_id}, bank={question_bank_name}")
         return {
             "success": True,
             "status": "completed",

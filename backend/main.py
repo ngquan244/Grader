@@ -28,11 +28,13 @@ from backend.routes import guide as guide_routes
 from backend.auth import auth_router
 from backend.core.config import settings
 from backend.core import BaseAPIException
+from backend.core.logger import logger as app_logger, cleanup_old_logs
 
-# Configure logging
+# Configure root logger — WARNING+ only so module-level loggers don't spam console.
+# Named loggers in backend.core.logger have their own console/file levels.
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.WARNING,
+    format="%(asctime)s %(levelname)-1.1s %(name)s | %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -41,46 +43,46 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Application lifespan handler for startup/shutdown events"""
     # Startup
-    logger.info("Starting Teaching Assistant Grader API...")
-    logger.info(f"Environment: {'development' if settings.DEBUG else 'production'}")
+    app_logger.info("Starting Teaching Assistant Grader API...")
+    app_logger.info(f"Environment: {'development' if settings.DEBUG else 'production'}")
+    
+    # Clean up old log files
+    cleanup_old_logs(max_days=14)
     
     # Ensure directories exist
     for directory in [settings.EXPORTS_DIR, settings.DATA_DIR]:
         directory.mkdir(parents=True, exist_ok=True)
     
     # ── Preload BAAI/bge-m3 embedding model ──────────────────────────
-    # This avoids a long wait the first time a user opens the RAG page.
     try:
-        logger.info("Preloading embedding model (BAAI/bge-m3)...")
+        app_logger.info("Preloading embedding model (BAAI/bge-m3)...")
         from backend.modules.document_rag.collection_manager import (
             get_uploads_collection_manager,
             get_canvas_collection_manager,
         )
-        # Instantiating the managers triggers _init_embeddings() (singleton)
         get_uploads_collection_manager()
         get_canvas_collection_manager()
-        logger.info("Embedding model preloaded successfully ✓")
+        app_logger.info("Embedding model preloaded successfully ✓")
     except Exception as e:
-        logger.warning(f"Could not preload embedding model (non-fatal): {e}")
+        app_logger.warning(f"Could not preload embedding model (non-fatal): {e}")
     
     # ── Preload RAG & Canvas RAG services ─────────────────────────────
-    # These create ChromaVectorStore, LLM chains, etc. on first access.
     try:
-        logger.info("Preloading RAG services...")
+        app_logger.info("Preloading RAG services...")
         from backend.modules.document_rag.rag_service import RAGService
         from backend.modules.document_rag.canvas_rag_service import CanvasRAGService
         rag = RAGService.get_instance()
         rag._ensure_initialized()
         canvas_rag = CanvasRAGService.get_instance()
         canvas_rag._ensure_initialized()
-        logger.info("RAG services preloaded successfully ✓")
+        app_logger.info("RAG services preloaded successfully ✓")
     except Exception as e:
-        logger.warning(f"Could not preload RAG services (non-fatal): {e}")
+        app_logger.warning(f"Could not preload RAG services (non-fatal): {e}")
     
     yield
     
     # Shutdown
-    logger.info("Shutting down Teaching Assistant Grader API...")
+    app_logger.info("Shutting down Teaching Assistant Grader API...")
 
 
 # Swagger / ReDoc: only available in development
@@ -122,7 +124,7 @@ async def api_exception_handler(request: Request, exc: BaseAPIException):
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     """Handle unexpected exceptions"""
-    logger.error(f"Unexpected error: {exc}", exc_info=True)
+    app_logger.error(f"Unexpected error: {exc}", exc_info=True)
     return JSONResponse(
         status_code=500,
         content={
