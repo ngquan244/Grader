@@ -82,6 +82,8 @@ body {
   flex-direction: column;
   gap: 0.25rem;
   margin-top: 1rem;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .nav-item {
