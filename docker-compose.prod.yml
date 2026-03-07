@@ -121,6 +121,7 @@ services:
       - CORS_ORIGINS=["https://${PRODUCTION_DOMAIN}"]
       - SIGNUP_MODE=${SIGNUP_MODE:-invite}
       - SIGNUP_INVITE_CODE=${SIGNUP_INVITE_CODE}
+      - RUN_MIGRATIONS=true
     
     # Backend is NOT exposed externally — nginx proxies to it
     ports: []
@@ -146,6 +147,11 @@ services:
         reservations:
           memory: 512M
           cpus: '0.5'
+    
+    volumes:
+      - ./data:/app/data
+      - ./exports:/app/exports
+      - ./logs:/app/logs
     
     networks:
       - grader_network
@@ -201,9 +207,19 @@ services:
       - REDIS_HOST=redis
       - REDIS_PASSWORD=${REDIS_PASSWORD}
 
-# =============================================================================
-# Additional Named Volumes for Production
-# =============================================================================
+  # ===========================================================================
+  # Frontend Build — one-shot service to produce frontend/dist
+  # ===========================================================================
+  frontend-build:
+    image: node:20-alpine
+    container_name: grader_frontend_build
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    command: sh -c "npm ci && npm run build"
+    profiles:
+      - build
+
 volumes:
   certbot_certs:
     driver: local

@@ -47,8 +47,15 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Copy application code
 COPY --chown=appuser:appuser . .
 
+# Copy and set entrypoint script
+COPY --chown=appuser:appuser docker/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
 # Switch to non-root user
 USER appuser
+
+# Entrypoint handles optional migrations before CMD
+ENTRYPOINT ["/app/entrypoint.sh"]
 
 # Expose port
 EXPOSE 8000
