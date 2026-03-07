@@ -1105,7 +1105,8 @@ Return ONLY valid JSON, no additional text.""")
                         additional_count=missing,
                     )
                     if supplement:
-                        formatted_quiz.extend(supplement)
+                        still_missing = num_questions - len(formatted_quiz)
+                        formatted_quiz.extend(supplement[:still_missing])
                         logger.info(f"After supplement: {len(formatted_quiz)}/{num_questions} questions")
                 
                 # If still significantly short (< 70%), try batch plan B
@@ -1122,7 +1123,11 @@ Return ONLY valid JSON, no additional text.""")
                         formatted_quiz = batched_result
                         logger.info(f"After batching: {len(formatted_quiz)}/{num_questions} questions")
             
-            # Phase 6: Renumber questions sequentially
+            # Phase 6: Enforce exact count — truncate surplus questions
+            if len(formatted_quiz) > num_questions:
+                formatted_quiz = formatted_quiz[:num_questions]
+
+            # Renumber questions sequentially
             for i, q in enumerate(formatted_quiz):
                 q["question_number"] = i + 1
             
