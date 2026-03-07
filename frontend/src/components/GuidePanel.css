@@ -850,3 +850,21 @@
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   }
 }
+
+@media (max-width: 480px) {
+  .guide-panel {
+    padding: 0.75rem;
+  }
+  .guide-topic-grid {
+    grid-template-columns: 1fr;
+  }
+  .guide-content-header h2 {
+    font-size: 1rem;
+  }
+  .guide-content-body {
+    font-size: 0.85rem;
+  }
+  .guide-step-content {
+    padding: 0.75rem;
+  }
+}

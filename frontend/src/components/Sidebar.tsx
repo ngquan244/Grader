@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MessageSquare, FileUp, BarChart3, Settings, GraduationCap, FileText, FolderOpen, PenSquare, ShieldCheck, HelpCircle, PlayCircle, PieChart } from 'lucide-react';
+import { MessageSquare, FileUp, BarChart3, Settings, GraduationCap, FileText, FolderOpen, PenSquare, ShieldCheck, HelpCircle, PlayCircle, PieChart, Menu, X } from 'lucide-react';
 import { TABS, TAB_PATHS, type TabType } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { usePanelConfig } from '../context/PanelConfigContext';
@@ -34,54 +34,107 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { isPanelVisible } = usePanelConfig();
+  const [mobileOpen, setMobileOpen] = useState(false);
 
-  const handleTabClick = (tab: TabType) => {
+  const handleTabClick = useCallback((tab: TabType) => {
     navigate('/' + TAB_PATHS[tab]);
     onTabChange(tab);
-  };
+    setMobileOpen(false);
+  }, [navigate, onTabChange]);
+
+  // Close sidebar on resize to desktop
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 769px)');
+    const handler = () => { if (mq.matches) setMobileOpen(false); };
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
+  // Prevent body scroll when mobile sidebar is open
+  useEffect(() => {
+    if (mobileOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [mobileOpen]);
 
   // Filter out disabled panels (admins always see all panels)
   const visibleTabs = user?.role === 'ADMIN'
     ? SIDEBAR_TABS
     : SIDEBAR_TABS.filter((tab) => isPanelVisible(tab.id));
 
+  // Find current tab label for mobile header
+  const currentTabLabel = SIDEBAR_TABS.find(t => t.id === activeTab)?.label || 'TA Grader';
+
   return (
-    <div className="sidebar">
-      <div className="sidebar-header">
-        <GraduationCap size={32} />
-        <h1>TA Grader</h1>
+    <>
+      {/* Mobile top bar */}
+      <div className="mobile-topbar">
+        <button
+          className="mobile-hamburger"
+          onClick={() => setMobileOpen(true)}
+          aria-label="Mở menu"
+        >
+          <Menu size={22} />
+        </button>
+        <span className="mobile-topbar-title">{currentTabLabel}</span>
+        <div className="mobile-topbar-spacer" />
       </div>
 
-      <nav className="sidebar-nav">
-        {visibleTabs.map((tab) => {
-          const Icon = tab.icon;
-          return (
-            <button
-              key={tab.id}
-              className={`nav-item ${activeTab === tab.id ? 'active' : ''}`}
-              onClick={() => handleTabClick(tab.id)}
-            >
-              <Icon size={20} />
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
+      {/* Overlay for mobile */}
+      {mobileOpen && (
+        <div
+          className="sidebar-overlay"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
 
-        {/* Admin Panel link — only visible to ADMIN users */}
-        {user?.role === 'ADMIN' && (
+      <div className={`sidebar ${mobileOpen ? 'sidebar-open' : ''}`}>
+        <div className="sidebar-header">
+          <GraduationCap size={32} />
+          <h1>TA Grader</h1>
           <button
-            className="nav-item admin-panel-link"
-            onClick={() => navigate('/admin')}
+            className="sidebar-close-btn"
+            onClick={() => setMobileOpen(false)}
+            aria-label="Đóng menu"
           >
-            <ShieldCheck size={20} />
-            <span>Admin Panel</span>
+            <X size={20} />
           </button>
-        )}
-      </nav>
+        </div>
 
-      {/* User menu with logout */}
-      <UserMenu />
-    </div>
+        <nav className="sidebar-nav">
+          {visibleTabs.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                className={`nav-item ${activeTab === tab.id ? 'active' : ''}`}
+                onClick={() => handleTabClick(tab.id)}
+              >
+                <Icon size={20} />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+
+          {/* Admin Panel link — only visible to ADMIN users */}
+          {user?.role === 'ADMIN' && (
+            <button
+              className="nav-item admin-panel-link"
+              onClick={() => { navigate('/admin'); setMobileOpen(false); }}
+            >
+              <ShieldCheck size={20} />
+              <span>Admin Panel</span>
+            </button>
+          )}
+        </nav>
+
+        {/* User menu with logout */}
+        <UserMenu />
+      </div>
+    </>
   );
 };
 

@@ -2014,34 +2014,927 @@ body {
 }
 
 /* Responsive */
+
+/* ──────────────────────────────────────────────────────────────────────
+   Mobile Top Bar — visible only on mobile (≤768px)
+   ────────────────────────────────────────────────────────────────────── */
+.mobile-topbar {
+  display: none; /* hidden on desktop */
+}
+
+/* ── Sidebar close button — hidden on desktop ── */
+.sidebar-close-btn {
+  display: none;
+}
+
+/* ── Sidebar overlay — hidden on desktop ── */
+.sidebar-overlay {
+  display: none;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   TABLET BREAKPOINT — max-width: 1024px
+   ══════════════════════════════════════════════════════════════════════ */
+@media (max-width: 1024px) {
+  /* Narrower sidebar on tablet */
+  .sidebar {
+    width: 220px;
+    padding: 1.25rem 0.75rem;
+  }
+
+  .nav-item {
+    padding: 0.75rem 0.85rem;
+    font-size: 0.9rem;
+  }
+
+  .panel-padded {
+    padding: 1.5rem;
+  }
+
+  /* Summary cards: 2 cols on tablet */
+  .summary-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* Chat adjustments */
+  .chat-header {
+    padding: 0.875rem 1.25rem;
+  }
+
+  .chat-messages {
+    padding: 0.875rem 1rem;
+  }
+
+  .chat-input-area {
+    padding: 0.75rem 1rem;
+  }
+
+  .chat-welcome h3 {
+    font-size: 1.2rem;
+  }
+
+  .chat-welcome p {
+    font-size: 0.85rem;
+  }
+
+  .chat-suggestions {
+    max-width: 420px;
+  }
+
+  /* Tables: slightly reduce padding */
+  .results-table th,
+  .results-table td {
+    padding: 0.625rem;
+    font-size: 0.85rem;
+  }
+
+  .files-table th,
+  .files-table td {
+    padding: 10px 12px;
+  }
+
+  /* Canvas stats */
+  .canvas-stats {
+    gap: 12px;
+  }
+
+  .canvas-stats .stat-item {
+    padding: 14px;
+  }
+
+  .canvas-stats .stat-value {
+    font-size: 1.6rem;
+  }
+
+  /* Modal adjustments */
+  .modal-content {
+    width: 92%;
+    max-height: 85vh;
+  }
+
+  /* Toast */
+  .toast-container {
+    max-width: 360px;
+  }
+
+  /* Guide editor split: narrower gap */
+  .guide-editor-split {
+    gap: 0.75rem;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   MOBILE BREAKPOINT — max-width: 768px
+   ══════════════════════════════════════════════════════════════════════ */
 @media (max-width: 768px) {
+  /* ── Layout ── */
   .app {
     flex-direction: column;
   }
 
-  .sidebar {
-    width: 100%;
-    flex-direction: row;
-    padding: 0.5rem;
-    overflow-x: auto;
+  /* ── Mobile top bar ── */
+  .mobile-topbar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.625rem 1rem;
+    background: var(--bg-dark);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    flex-shrink: 0;
   }
 
-  .sidebar-header,
+  .mobile-hamburger {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text-primary);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.2s;
+  }
+
+  .mobile-hamburger:hover {
+    background: var(--bg-hover);
+    border-color: var(--primary);
+  }
+
+  .mobile-topbar-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    flex: 1;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .mobile-topbar-spacer {
+    width: 40px;
+    flex-shrink: 0;
+  }
+
+  /* ── Sidebar overlay ── */
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 900;
+    animation: fadeIn 0.2s ease-out;
+  }
+
+  /* ── Sidebar as off-canvas drawer ── */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 280px;
+    z-index: 950;
+    transform: translateX(-100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    padding: 1.25rem 1rem;
+    overflow-y: auto;
+    box-shadow: none;
+  }
+
+  .sidebar.sidebar-open {
+    transform: translateX(0);
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
+  }
+
+  .sidebar-close-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    margin-left: auto;
+    transition: all 0.2s;
+  }
+
+  .sidebar-close-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .sidebar-header {
+    display: flex !important;
+  }
+
   .sidebar-footer {
     display: none;
   }
 
   .sidebar-nav {
-    flex-direction: row;
-    margin: 0;
+    flex-direction: column;
+    margin-top: 1rem;
   }
 
   .nav-item span {
+    display: inline;
+  }
+
+  /* ── Main Content fills remaining space ── */
+  .main-content {
+    flex: 1;
+    height: auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .panel-padded {
+    padding: 1.25rem 1rem;
+  }
+
+  /* ── Chat Panel Mobile ── */
+  .chat-header {
+    padding: 0.75rem 1rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .chat-header-left {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .chat-header-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+  }
+
+  .chat-header-icon::after {
     display: none;
   }
 
+  .chat-header-info h2 {
+    font-size: 0.95rem;
+  }
+
+  .chat-header-actions {
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .chat-model-trigger {
+    max-width: 160px;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.72rem;
+  }
+
+  .chat-clear-btn {
+    padding: 0.35rem 0.7rem;
+    font-size: 0.75rem;
+  }
+
+  .chat-messages {
+    padding: 0.75rem 0.75rem;
+    gap: 0.5rem;
+  }
+
+  .chat-msg {
+    max-width: 92%;
+  }
+
+  .chat-msg-avatar {
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+  }
+
+  .chat-msg-bubble {
+    padding: 0.4rem 0.75rem;
+    border-radius: 14px;
+    font-size: 0.875rem;
+  }
+
+  .chat-welcome {
+    padding: 1.5rem 1rem;
+    gap: 0.75rem;
+  }
+
+  .chat-welcome-logo {
+    width: 64px;
+    height: 64px;
+  }
+
+  .chat-welcome-logo-inner {
+    width: 64px;
+    height: 64px;
+    border-radius: 18px;
+  }
+
+  .chat-welcome-logo-ring {
+    inset: -6px;
+    border-radius: 22px;
+  }
+
+  .chat-welcome-logo-ring-2 {
+    inset: -12px;
+    border-radius: 26px;
+  }
+
+  .chat-welcome-logo-ring-3 {
+    inset: -20px;
+    border-radius: 30px;
+  }
+
+  .chat-welcome h3 {
+    font-size: 1.15rem;
+  }
+
+  .chat-welcome p {
+    font-size: 0.82rem;
+    max-width: 100%;
+  }
+
+  .chat-suggestions {
+    grid-template-columns: 1fr;
+    max-width: 100%;
+    gap: 0.5rem;
+  }
+
+  .chat-suggestions .chat-suggestion-card:only-child,
+  .chat-suggestions .chat-suggestion-card:last-child:nth-child(odd) {
+    max-width: 100%;
+  }
+
+  .chat-suggestion-card {
+    padding: 0.75rem 0.875rem;
+  }
+
+  .chat-input-area {
+    padding: 0.625rem 0.75rem;
+  }
+
+  .chat-input-wrapper textarea {
+    padding: 0.625rem 0.875rem;
+    font-size: 0.875rem;
+    border-radius: 12px;
+  }
+
+  .chat-send-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+  }
+
+  .chat-input-hint {
+    font-size: 0.62rem;
+  }
+
+  .chat-tools-bar {
+    padding: 0.4rem 0.75rem;
+    font-size: 0.7rem;
+  }
+
+  .chat-scroll-btn {
+    bottom: 120px;
+    width: 34px;
+    height: 34px;
+  }
+
+  /* Provider switch */
+  .provider-switch-label {
+    font-size: 0.58rem;
+  }
+
+  /* ── Upload Panel Mobile ── */
+  .upload-panel {
+    max-width: 100%;
+  }
+
+  .upload-panel h2 {
+    font-size: 1.25rem;
+    margin-bottom: 1rem;
+  }
+
+  .upload-section {
+    padding: 1rem;
+  }
+
+  .drop-zone {
+    padding: 1.5rem 1rem;
+  }
+
+  /* ── Grading Panel Mobile ── */
   .summary-cards {
     grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+  }
+
+  .summary-card .value {
+    font-size: 1.2rem;
+  }
+
+  .grading-section {
+    padding: 1rem;
+  }
+
+  .form-row {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  /* ── Results Table Mobile ── */
+  .results-table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .results-table th,
+  .results-table td {
+    padding: 0.5rem 0.625rem;
+    font-size: 0.8rem;
+    white-space: nowrap;
+  }
+
+  /* ── Settings Panel Mobile ── */
+  .settings-section {
+    padding: 1rem;
+  }
+
+  .settings-section h3 {
+    font-size: 1rem;
+  }
+
+  .form-actions-row {
+    flex-direction: column;
+  }
+
+  .info-row {
+    flex-direction: column;
+    gap: 0.25rem;
+    align-items: flex-start;
+  }
+
+  .info-label {
+    min-width: unset;
+  }
+
+  /* ── Canvas Panel Mobile ── */
+  .canvas-hero-header {
+    padding: 14px 16px;
+    gap: 12px;
+  }
+
+  .canvas-hero-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+  }
+
+  .canvas-hero-icon::before {
+    display: none;
+  }
+
+  .canvas-hero-text h2 {
+    font-size: 1.1rem;
+  }
+
+  .canvas-hero-text p {
+    font-size: 0.8rem;
+  }
+
+  .canvas-content {
+    padding: 16px;
+    gap: 14px;
+  }
+
+  .canvas-section {
+    padding: 16px;
+    border-radius: 14px;
+  }
+
+  .canvas-stats {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .canvas-stats .stat-item {
+    flex-direction: row;
+    padding: 12px 16px;
+    text-align: left;
+  }
+
+  .canvas-stats .stat-value {
+    font-size: 1.4rem;
+  }
+
+  .selected-course {
+    flex-direction: column;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 14px 16px;
+  }
+
+  .course-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .course-actions .btn-secondary {
+    flex: 1;
+    text-align: center;
+    justify-content: center;
+  }
+
+  .section-header {
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  .section-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .section-actions .btn-secondary,
+  .section-actions .btn-primary {
+    flex: 1;
+    justify-content: center;
+    min-width: 0;
+  }
+
+  /* Files table — horizontal scroll */
+  .files-list {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .files-table th,
+  .files-table td {
+    padding: 10px 10px;
+    font-size: 0.82rem;
+    white-space: nowrap;
+  }
+
+  .download-summary {
+    flex-direction: column;
+    padding: 12px;
+  }
+
+  /* Canvas not configured */
+  .canvas-not-configured {
+    padding: 40px 20px;
+  }
+
+  .canvas-not-configured h3 {
+    font-size: 1.1rem;
+  }
+
+  /* Pagination */
+  .pagination-pages {
+    flex-wrap: wrap;
+  }
+
+  .pagination-page {
+    min-width: 32px;
+    height: 32px;
+    padding: 0 8px;
+    font-size: 0.82rem;
+  }
+
+  .pagination-info {
+    display: none;
+  }
+
+  /* ── Modals Mobile ── */
+  .modal-content {
+    width: 95%;
+    max-height: 90vh;
+    margin: 0.5rem;
+    border-radius: 14px;
+  }
+
+  .modal-lg {
+    max-width: 95%;
+  }
+
+  .modal-header {
+    padding: 1rem 1.25rem;
+  }
+
+  .modal-header h2 {
+    font-size: 1.1rem;
+  }
+
+  .modal-body {
+    padding: 1rem 1.25rem;
+  }
+
+  .modal-footer {
+    padding: 0.875rem 1.25rem;
+    flex-wrap: wrap;
+  }
+
+  .canvas-file-modal {
+    max-width: 95%;
+  }
+
+  /* ── Toast Mobile ── */
+  .toast-container {
+    left: 1rem;
+    right: 1rem;
+    max-width: 100%;
+  }
+
+  /* ── Guide Panel Mobile ── */
+  .guide-header {
+    padding: 14px 16px;
+    gap: 12px;
+  }
+
+  .guide-title-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+  }
+
+  .guide-title-icon::before {
+    display: none;
+  }
+
+  .guide-title h1 {
+    font-size: 1.1rem;
+  }
+
+  .guide-edit-btn,
+  .guide-save-btn,
+  .guide-cancel-btn {
+    padding: 0.4rem 0.75rem;
+    font-size: 0.8rem;
+  }
+
+  .guide-editor-split {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .guide-editor-container {
+    padding: 12px 16px;
+  }
+
+  .guide-main {
+    padding: 16px;
+  }
+
+  .guide-intro-card {
+    padding: 1rem 1.25rem;
+  }
+
+  /* ── Document RAG Mobile ── */
+  .rag-hero-header {
+    padding: 14px 16px;
+    gap: 12px;
+  }
+
+  .rag-hero-icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .rag-hero-icon::before {
+    display: none;
+  }
+
+  .rag-hero-text h2 {
+    font-size: 1.1rem;
+  }
+
+  .rag-content {
+    padding: 16px;
+  }
+
+  /* ── UserMenu Mobile ── */
+  .user-menu-dropdown {
+    left: 0.5rem;
+    right: 0.5rem;
+  }
+
+  /* ── Quiz/QuizBuilder Mobile ── */
+  .quiz-panel h2,
+  .grading-panel h2,
+  .settings-panel h2 {
+    font-size: 1.25rem;
+    margin-bottom: 1rem;
+  }
+
+  /* ── Canvas Integration Settings ── */
+  .canvas-integration-section {
+    padding: 1.25rem;
+  }
+
+  .canvas-status-card {
+    padding: 1rem;
+  }
+
+  .status-header {
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: flex-start;
+  }
+
+  .canvas-config-form .form-actions-row {
+    flex-direction: column;
+  }
+
+  .btn-save {
+    width: 100%;
+  }
+
+  /* ── Indexed Documents Section ── */
+  .indexed-count-badge {
+    min-width: 20px;
+    height: 20px;
+    font-size: 0.7rem;
+  }
+
+  /* ── Canvas LMS Offline Banner ── */
+  .canvas-offline-banner {
+    flex-direction: column;
+    text-align: center;
+    gap: 10px;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   SMALL MOBILE BREAKPOINT — max-width: 480px
+   ══════════════════════════════════════════════════════════════════════ */
+@media (max-width: 480px) {
+  .summary-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .summary-card .value {
+    font-size: 1.1rem;
+  }
+
+  .chat-header-info h2 {
+    font-size: 0.85rem;
+  }
+
+  .chat-header-status {
+    font-size: 0.65rem;
+  }
+
+  .chat-model-trigger {
+    max-width: 130px;
+    font-size: 0.68rem;
+  }
+
+  .chat-msg {
+    max-width: 95%;
+    gap: 0.5rem;
+  }
+
+  .chat-msg-bubble {
+    font-size: 0.82rem;
+  }
+
+  .chat-welcome-logo {
+    width: 56px;
+    height: 56px;
+  }
+
+  .chat-welcome-logo-inner {
+    width: 56px;
+    height: 56px;
+    border-radius: 16px;
+  }
+
+  .chat-welcome h3 {
+    font-size: 1rem;
+  }
+
+  .upload-panel h2 {
+    font-size: 1.1rem;
+  }
+
+  .upload-section h3 {
+    font-size: 0.95rem;
+  }
+
+  .btn-primary {
+    padding: 0.625rem 1rem;
+    font-size: 0.875rem;
+  }
+
+  .btn-large {
+    padding: 0.75rem 1.5rem;
+    font-size: 0.9rem;
+  }
+
+  .input-with-buttons {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .input-with-buttons input {
+    width: 100%;
+  }
+
+  /* Canvas stats: single column on small screens */
+  .canvas-stats .stat-value {
+    font-size: 1.2rem;
+  }
+
+  /* Pagination compact on small screens */
+  .pagination-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  /* Modal full width on very small screens */
+  .modal-content {
+    width: 98%;
+    max-width: 100%;
+    margin: 0.25rem;
+    border-radius: 12px;
+  }
+
+  .modal-header h2 {
+    font-size: 1rem;
+    gap: 0.5rem;
+  }
+
+  /* Guide topic grid */
+  .guide-topic-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+  }
+
+  .guide-topic-card {
+    padding: 1rem 0.75rem;
+  }
+
+  .guide-section-header h2 {
+    font-size: 1.15rem;
+  }
+
+  /* Canvas section */
+  .canvas-section h3 {
+    font-size: 0.95rem;
+  }
+
+  /* Toast full width */
+  .toast-container {
+    top: 0.5rem;
+    left: 0.5rem;
+    right: 0.5rem;
+  }
+
+  .toast {
+    font-size: 0.8rem;
+    padding: 0.625rem 0.875rem;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   VERY SMALL DEVICES — max-width: 360px
+   ══════════════════════════════════════════════════════════════════════ */
+@media (max-width: 360px) {
+  .mobile-topbar {
+    padding: 0.5rem 0.75rem;
+  }
+
+  .mobile-topbar-title {
+    font-size: 0.9rem;
+  }
+
+  .panel-padded {
+    padding: 1rem 0.75rem;
+  }
+
+  .chat-welcome h3 {
+    font-size: 0.95rem;
+  }
+
+  .chat-suggestion-card {
+    padding: 0.625rem 0.75rem;
+    font-size: 0.78rem;
+  }
+
+  .guide-topic-grid {
+    grid-template-columns: 1fr;
   }
 }
 
