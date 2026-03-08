@@ -121,6 +121,10 @@ services:
       - CORS_ORIGINS=["https://${PRODUCTION_DOMAIN}"]
       - SIGNUP_MODE=${SIGNUP_MODE:-invite}
       - SIGNUP_INVITE_CODE=${SIGNUP_INVITE_CODE}
+      - INVITE_SECRET=${INVITE_SECRET}
+      - LLM_PROVIDER=groq
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_FALLBACK_TO_OLLAMA=false
       - RUN_MIGRATIONS=true
     
     # Backend is NOT exposed externally — nginx proxies to it
@@ -165,9 +169,13 @@ services:
       - REDIS_HOST=redis
       - REDIS_PASSWORD=${REDIS_PASSWORD}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - POSTGRES_HOST=postgres
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
+      - LLM_PROVIDER=groq
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_FALLBACK_TO_OLLAMA=false
 
   worker-llm:
     environment:
@@ -175,10 +183,14 @@ services:
       - REDIS_HOST=redis
       - REDIS_PASSWORD=${REDIS_PASSWORD}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - POSTGRES_HOST=postgres
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
+      - LLM_PROVIDER=groq
       - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_FALLBACK_TO_OLLAMA=false
+      - LLM_RATE_LIMIT=${LLM_RATE_LIMIT:-10}
 
   worker-canvas:
     environment:
@@ -186,9 +198,13 @@ services:
       - REDIS_HOST=redis
       - REDIS_PASSWORD=${REDIS_PASSWORD}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - POSTGRES_HOST=postgres
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
+      - LLM_PROVIDER=groq
+      - GROQ_FALLBACK_TO_OLLAMA=false
+      - CANVAS_RATE_LIMIT=${CANVAS_RATE_LIMIT:-50}
 
   worker-misc:
     environment:
@@ -196,16 +212,21 @@ services:
       - REDIS_HOST=redis
       - REDIS_PASSWORD=${REDIS_PASSWORD}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - POSTGRES_HOST=postgres
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
+      - LLM_PROVIDER=groq
+      - GROQ_FALLBACK_TO_OLLAMA=false
 
-  # Flower — production auth + password-protected Redis
+  # Flower — internal only, access via SSH tunnel: ssh -L 5555:localhost:5555 root@VPS
   flower:
     command: celery -A backend.celery_app flower --port=5555 --broker=redis://:${REDIS_PASSWORD}@redis:6379/0
+    ports: []
     environment:
       - REDIS_HOST=redis
       - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - FLOWER_BASIC_AUTH=${FLOWER_USER:-admin}:${FLOWER_PASSWORD}
 
   # ===========================================================================
   # Frontend Build — one-shot service to produce frontend/dist

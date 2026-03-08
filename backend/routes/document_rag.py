@@ -396,7 +396,15 @@ def reset_index(user: CurrentUser):
 def check_ollama_status(user: CurrentUser):
     """
     Check if Ollama is running and the model is available.
+    Development only — returns unavailable in production.
     """
+    from backend.core.config import settings
+    if settings.ENVIRONMENT != "development":
+        return {
+            "connected": False,
+            "error": "Ollama is not available in production",
+            "message": "Production chỉ hỗ trợ Groq Cloud. Ollama chỉ dùng trong development."
+        }
     try:
         rag_service = get_rag_service()
         status = rag_service.check_ollama_status()
@@ -884,6 +892,14 @@ def set_llm_provider(request: SetLLMProviderRequest, admin: AdminUser):
         raise HTTPException(
             status_code=400,
             detail=f"Invalid provider: {request.provider}. Valid options: {valid_providers}"
+        )
+    
+    # Ollama is development-only
+    from backend.core.config import settings as core_settings
+    if request.provider.lower() == "ollama" and core_settings.ENVIRONMENT != "development":
+        raise HTTPException(
+            status_code=400,
+            detail="Ollama is only available in development. Production supports Groq Cloud only."
         )
     
     # Check if provider is enabled by admin

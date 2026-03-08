@@ -51,7 +51,7 @@ const ModelConfigContext = createContext<ModelConfigContextType | undefined>(und
 export const ModelConfigProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { isAuthenticated } = useAuth();
   const [state, setState] = useState<ModelConfigState>({
-    enabledProviders: ['ollama', 'groq'],
+    enabledProviders: ['groq'],
     enabledModels: {},
     providerLabels: {},
     modelLabels: {},

@@ -17,8 +17,8 @@ def _get_provider_config() -> dict:
         "provider": settings.LLM_PROVIDER,
         "groq_api_key": settings.GROQ_API_KEY,
         "groq_base_url": settings.GROQ_BASE_URL,
-        "ollama_base_url": getattr(settings, 'OLLAMA_BASE_URL', 'http://localhost:11434'),
-        "groq_fallback_to_ollama": settings.GROQ_FALLBACK_TO_OLLAMA,
+        "ollama_base_url": settings.OLLAMA_BASE_URL,
+        "groq_fallback_to_ollama": settings.GROQ_FALLBACK_TO_OLLAMA if settings.ENVIRONMENT == "development" else False,
         "ollama_fallback_model": settings.OLLAMA_MODEL,
     }
 

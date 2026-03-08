@@ -269,6 +269,24 @@ class Settings(BaseSettings):
                     f"ENVIRONMENT={self.ENVIRONMENT}."
                 )
 
+            # LLM Provider: Ollama is development-only
+            if self.LLM_PROVIDER == "ollama":
+                raise ValueError(
+                    "FATAL: LLM_PROVIDER='ollama' is not supported in production. "
+                    "Ollama requires too much RAM for VPS deployment. "
+                    "Set LLM_PROVIDER=groq in your .env file."
+                )
+            if not self.GROQ_API_KEY or not self.GROQ_API_KEY.strip():
+                raise ValueError(
+                    "FATAL: GROQ_API_KEY is required in production. "
+                    "Get your API key from: https://console.groq.com/keys"
+                )
+            if self.GROQ_FALLBACK_TO_OLLAMA:
+                raise ValueError(
+                    "FATAL: GROQ_FALLBACK_TO_OLLAMA must be False in production. "
+                    "Set GROQ_FALLBACK_TO_OLLAMA=false in your .env file."
+                )
+
             # CORS: ensure origins have been explicitly set (no localhost-only)
             _all_local = all(
                 "localhost" in o or "127.0.0.1" in o
@@ -303,7 +321,7 @@ class Settings(BaseSettings):
     # ==========================================================================
     # LLM Provider Configuration
     # ==========================================================================
-    LLM_PROVIDER: str = "ollama"  # "ollama" or "groq"
+    LLM_PROVIDER: str = "ollama"  # "ollama" (dev only) or "groq" (production)
     
     # Ollama settings (local LLM)
     OLLAMA_MODEL: str = "llama3.1:latest"

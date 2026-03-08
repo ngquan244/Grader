@@ -104,11 +104,11 @@ class ReActAgent:
         max_iterations: int = 10,
         temperature: float = 0.3,  
         max_history: int = 5,
-        provider: str = "ollama",
+        provider: str = "groq",
         groq_api_key: Optional[str] = None,
         groq_base_url: str = "https://api.groq.com/openai/v1",
         ollama_base_url: str = "http://localhost:11434",
-        groq_fallback_to_ollama: bool = True,
+        groq_fallback_to_ollama: bool = False,
         ollama_fallback_model: str = "llama3.1:latest",
         user_id: Optional[str] = None,
     ):
@@ -881,11 +881,11 @@ Context: {error_context[:200]}""")
 def create_agent(
     model: str = "llama3.1:latest",
     max_iterations: int = 10,
-    provider: str = "ollama",
+    provider: str = "groq",
     groq_api_key: Optional[str] = None,
     groq_base_url: str = "https://api.groq.com/openai/v1",
     ollama_base_url: str = "http://localhost:11434",
-    groq_fallback_to_ollama: bool = True,
+    groq_fallback_to_ollama: bool = False,
     ollama_fallback_model: str = "llama3.1:latest",
     user_id: Optional[str] = None,
 ) -> ReActAgent:

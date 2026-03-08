@@ -68,7 +68,7 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     if (!modelConfigLoaded || isAdmin || !config) return;
 
-    const current = config.llm_provider || 'ollama';
+    const current = config.llm_provider || 'groq';
     // Only act if the current provider just became disabled
     if (!isProviderEnabled(current) && enabledProviders.length > 0) {
       const newProvider = enabledProviders[0];

@@ -84,6 +84,8 @@ Desktop.ini
 # === Secrets ===
 .env
 .env.local
+.env.production
+!.env.production.example
 .env.*.local
 *.pem
 *.key

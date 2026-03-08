@@ -49,9 +49,9 @@ class RAGConfig:
     SEARCH_TYPE: str = "mmr"  # "mmr" or "similarity"
     
     # ===== LLM Provider Settings =====
-    LLM_PROVIDER: str = "ollama"  # "ollama" or "groq"
+    LLM_PROVIDER: str = "ollama"  # "ollama" (dev only) or "groq" (production)
     
-    # ===== Ollama LLM Settings =====
+    # ===== Ollama LLM Settings (Development only) =====
     OLLAMA_MODEL: str = "llama3.1:latest"
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_TEMPERATURE: float = 0.3
@@ -62,7 +62,7 @@ class RAGConfig:
     GROQ_API_KEY: Optional[str] = None
     GROQ_MODEL: str = "llama-3.3-70b-versatile"
     GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
-    GROQ_FALLBACK_TO_OLLAMA: bool = True  # Fallback to Ollama on Groq errors
+    GROQ_FALLBACK_TO_OLLAMA: bool = False  # Must be False in production
     
     # ===== Logging Settings =====
     ENABLE_DEBUG_LOGGING: bool = True
@@ -99,8 +99,13 @@ class RAGConfig:
         self.GROQ_MODEL = os.getenv("GROQ_MODEL", self.GROQ_MODEL)
         self.GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", self.GROQ_BASE_URL)
         self.GROQ_FALLBACK_TO_OLLAMA = os.getenv(
-            "GROQ_FALLBACK_TO_OLLAMA", "true"
+            "GROQ_FALLBACK_TO_OLLAMA", "false"
         ).lower() == "true"
+        
+        # Production guard: reject Ollama provider
+        environment = os.getenv("ENVIRONMENT", "development").lower()
+        if environment in ("staging", "production") and self.LLM_PROVIDER == "ollama":
+            self.LLM_PROVIDER = "groq"  # Force Groq in production
         
         # Logging
         self.ENABLE_DEBUG_LOGGING = os.getenv("RAG_DEBUG", "true").lower() == "true"

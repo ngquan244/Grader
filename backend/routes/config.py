@@ -84,6 +84,13 @@ def switch_provider(req: ProviderSwitchRequest, admin: AdminUser):
     if provider not in ("ollama", "groq"):
         raise BadRequestException("Provider không hợp lệ. Chọn 'ollama' hoặc 'groq'.")
 
+    # Ollama is development-only
+    if provider == "ollama" and settings.ENVIRONMENT != "development":
+        raise BadRequestException(
+            "Ollama chỉ khả dụng trong môi trường development. "
+            "Production chỉ hỗ trợ Groq Cloud."
+        )
+
     # Check if the provider is enabled by admin
     if not is_provider_enabled(provider):
         raise BadRequestException(f"Provider '{provider}' đã bị admin vô hiệu hóa.")

@@ -136,9 +136,15 @@ def update_model_config(updates: Dict[str, Any]) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def get_enabled_providers() -> List[str]:
-    """Return list of provider keys that are enabled."""
+    """Return list of provider keys that are enabled.
+    In non-development environments, Ollama is excluded."""
+    from backend.core.config import settings
     cfg = get_model_config()
-    return [p for p in ALL_PROVIDERS if cfg["providers"].get(p, True)]
+    providers = [p for p in ALL_PROVIDERS if cfg["providers"].get(p, True)]
+    # Ollama is development-only
+    if settings.ENVIRONMENT != "development":
+        providers = [p for p in providers if p != "ollama"]
+    return providers
 
 
 def get_enabled_models(provider: str) -> List[str]:
@@ -154,6 +160,10 @@ def get_enabled_models(provider: str) -> List[str]:
 
 
 def is_provider_enabled(provider: str) -> bool:
-    """Check if a specific provider is enabled."""
+    """Check if a specific provider is enabled.
+    Ollama is always disabled in non-development environments."""
+    from backend.core.config import settings
+    if provider == "ollama" and settings.ENVIRONMENT != "development":
+        return False
     cfg = get_model_config()
     return cfg["providers"].get(provider, True)
