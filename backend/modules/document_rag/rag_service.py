@@ -699,6 +699,7 @@ class RAGService:
         selected_documents: List[str] = None,
         user_id: Optional[str] = None,
         db_session: Optional[Session] = None,
+        groq_api_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Generate quiz questions from the document knowledge base.
@@ -778,28 +779,40 @@ class RAGService:
             
             n_resolved = len(target_hashes) if target_hashes is not None else 'all'
             
-            # If multiple topics, use the new multi-topic method
-            if len(topic_list) > 1:
-                result = self._quiz_generator.generate_quiz_multi_topics(
-                    topics=topic_list,
-                    num_questions=num_questions,
-                    difficulty=difficulty,
-                    language=language,
-                    k=k,
-                    target_file_hashes=target_hashes,
-                    user_id=user_id
-                )
-            else:
-                # Single topic - use existing method
-                result = self._quiz_generator.generate_quiz(
-                    topic=topic_list[0],
-                    num_questions=num_questions,
-                    difficulty=difficulty,
-                    language=language,
-                    k=k,
-                    target_file_hashes=target_hashes,
-                    user_id=user_id
-                )
+            # Temporarily override the quiz generator's LLM if a DB key was provided
+            _original_provider = None
+            if groq_api_key:
+                from .llm_providers import LLMFactory as _LLMFactory
+                _original_provider = self._quiz_generator._llm_provider
+                _temp_provider = _LLMFactory.create(groq_api_key=groq_api_key)
+                self._quiz_generator.set_llm_provider(_temp_provider)
+            
+            try:
+                # If multiple topics, use the new multi-topic method
+                if len(topic_list) > 1:
+                    result = self._quiz_generator.generate_quiz_multi_topics(
+                        topics=topic_list,
+                        num_questions=num_questions,
+                        difficulty=difficulty,
+                        language=language,
+                        k=k,
+                        target_file_hashes=target_hashes,
+                        user_id=user_id
+                    )
+                else:
+                    # Single topic - use existing method
+                    result = self._quiz_generator.generate_quiz(
+                        topic=topic_list[0],
+                        num_questions=num_questions,
+                        difficulty=difficulty,
+                        language=language,
+                        k=k,
+                        target_file_hashes=target_hashes,
+                        user_id=user_id
+                    )
+            finally:
+                if _original_provider is not None:
+                    self._quiz_generator.set_llm_provider(_original_provider)
             
             # Attach hash count for task-level summary logging
             result["_resolved_hashes"] = n_resolved
@@ -813,7 +826,7 @@ class RAGService:
                 "error": f"Lỗi khi tạo quiz: {str(e)}"
             }
     
-    def extract_topics(self, max_topics: int = 10, user_id: Optional[str] = None, db_session: Optional[Session] = None) -> Dict[str, Any]:
+    def extract_topics(self, max_topics: int = 10, user_id: Optional[str] = None, db_session: Optional[Session] = None, groq_api_key: Optional[str] = None) -> Dict[str, Any]:
         """
         Extract suggested topics from indexed documents (legacy method).
         
@@ -835,7 +848,16 @@ class RAGService:
             }
         
         try:
-            result = self._quiz_generator.extract_topics(max_topics=max_topics)
+            _original_provider = None
+            if groq_api_key:
+                from .llm_providers import LLMFactory as _LLMFactory
+                _original_provider = self._quiz_generator._llm_provider
+                self._quiz_generator.set_llm_provider(_LLMFactory.create(groq_api_key=groq_api_key))
+            try:
+                result = self._quiz_generator.extract_topics(max_topics=max_topics)
+            finally:
+                if _original_provider is not None:
+                    self._quiz_generator.set_llm_provider(_original_provider)
             return result
             
         except Exception as e:

@@ -6,8 +6,6 @@ Each tool is in its own module for better maintainability and extensibility.
 """
 
 from .base import logger
-from .exam_summary import ExamResultSummaryTool
-from .grading import GradingTool, get_grading_tool
 from .document_query import DocumentQueryTool, get_document_query_tool
 from .user_guide import UserGuideTool
 
@@ -29,8 +27,6 @@ def get_all_tools(
         user_id: Optional user ID for per-user workspace isolation
     """
     all_tools = [
-        get_grading_tool(user_id=user_id),
-        ExamResultSummaryTool(),
         get_document_query_tool(user_id=user_id or ""),
         UserGuideTool(),
     ]
@@ -62,9 +58,6 @@ def get_tool_by_name(tool_name: str) -> Optional[BaseTool]:
 
 __all__ = [
     # Tools
-    "ExamResultSummaryTool",
-    "GradingTool",
-    "get_grading_tool",
     "get_document_query_tool",
     "UserGuideTool",
     # Utility functions

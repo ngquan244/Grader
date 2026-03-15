@@ -289,8 +289,7 @@ def export_data(
         job_service.update_progress(job_uuid, 20, "Fetching data")
         
         if export_type == "grading_results":
-            from backend.services import grading_service
-            data = grading_service.get_all_results(filters or {})
+            data = {"error": "Grading feature has been removed"}
         else:
             data = {"error": f"Unknown export type: {export_type}"}
         

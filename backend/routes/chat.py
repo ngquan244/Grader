@@ -2,11 +2,14 @@
 Chat API routes - AI Agent Chat Interactions
 """
 import logging
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.auth.dependencies import CurrentUser
+from backend.database.base import get_async_session
 from backend.schemas import ChatRequest, ChatResponse, ToolUsage
 from backend.services import agent_service
+from backend.services.groq_key_service import get_effective_groq_key
 from backend.core.config import settings
 from backend.core import Messages, BadRequestException
 
@@ -15,17 +18,24 @@ router = APIRouter()
 
 
 @router.post("/send", response_model=ChatResponse)
-def send_message(request: ChatRequest, user: CurrentUser):
+async def send_message(
+    request: ChatRequest,
+    user: CurrentUser,
+    db: AsyncSession = Depends(get_async_session),
+):
     """Send a message to the AI agent and get response"""
     if not request.message.strip():
         raise BadRequestException(Messages.EMPTY_MESSAGE)
-    
+
+    # Resolve Groq API key: DB > env
+    db_groq_key, _source = await get_effective_groq_key(db)
+
     # Convert history format
     history = [
         {"role": msg.role, "content": msg.content}
         for msg in request.history
     ]
-    
+
     # Invoke agent with user context
     result = agent_service.invoke(
         message=request.message,
@@ -33,6 +43,7 @@ def send_message(request: ChatRequest, user: CurrentUser):
         model=request.model,
         max_iterations=request.max_iterations,
         user_id=str(user.id),
+        db_groq_key=db_groq_key,
     )
     
     # Format response

@@ -323,6 +323,7 @@ class LLMFactory:
         cls,
         provider: Optional[str] = None,
         model: Optional[str] = None,
+        groq_api_key: Optional[str] = None,
         **kwargs
     ) -> BaseLLM:
         """
@@ -354,7 +355,7 @@ class LLMFactory:
         if provider == LLMProvider.OLLAMA.value:
             return cls._create_ollama(model=model, **kwargs)
         elif provider == LLMProvider.GROQ.value:
-            return cls._create_groq(model=model, **kwargs)
+            return cls._create_groq(model=model, groq_api_key=groq_api_key, **kwargs)
         else:
             raise ValueError(f"Unknown LLM provider: {provider}. Supported: ollama, groq")
     
@@ -371,14 +372,15 @@ class LLMFactory:
         )
     
     @classmethod
-    def _create_groq(cls, model: Optional[str] = None, **kwargs) -> GroqLLM:
+    def _create_groq(cls, model: Optional[str] = None, groq_api_key: Optional[str] = None, **kwargs) -> GroqLLM:
         """Create Groq LLM instance"""
         from .config import rag_config
-        
-        if not rag_config.GROQ_API_KEY:
+
+        effective_key = groq_api_key or rag_config.GROQ_API_KEY
+        if not effective_key:
             raise ValueError(
-                "GROQ_API_KEY environment variable is required for Groq provider. "
-                "Set it in your .env file."
+                "GROQ_API_KEY is required for Groq provider. "
+                "Set it via the admin panel or in your .env file."
             )
         
         # Prepare Ollama fallback config
@@ -392,7 +394,7 @@ class LLMFactory:
         return GroqLLM(
             model=model or rag_config.GROQ_MODEL,
             temperature=kwargs.get("temperature", rag_config.OLLAMA_TEMPERATURE),
-            api_key=rag_config.GROQ_API_KEY,
+            api_key=effective_key,
             base_url=kwargs.get("base_url", rag_config.GROQ_BASE_URL),
             max_tokens=kwargs.get("max_tokens", 8192),
             fallback_to_ollama=rag_config.GROQ_FALLBACK_TO_OLLAMA,

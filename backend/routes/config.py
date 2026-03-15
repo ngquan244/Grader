@@ -3,13 +3,15 @@ Configuration API routes - App Settings
 """
 import logging
 from typing import Dict
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.schemas import ConfigResponse, ModelConfig
 from backend.core.config import settings
 from backend.core import BadRequestException, Messages
 from backend.auth.dependencies import CurrentUser, AdminUser
+from backend.database import get_db
 from backend.services.panel_config_service import get_panel_config, PANEL_LABELS
 from backend.services.model_config_service import (
     get_model_config,
@@ -45,7 +47,7 @@ def get_config(user: CurrentUser):
         default_model=settings.DEFAULT_MODEL,
         max_iterations=settings.MAX_ITERATIONS,
         llm_provider=settings.LLM_PROVIDER,
-        groq_available=bool(settings.GROQ_API_KEY),
+        groq_available=bool(settings.GROQ_API_KEY),  # env-level check; DB key checked at runtime
     )
 
 
@@ -78,7 +80,11 @@ def set_model(config: ModelConfig, user: CurrentUser):
 
 
 @router.post("/provider")
-def switch_provider(req: ProviderSwitchRequest, admin: AdminUser):
+async def switch_provider(
+    req: ProviderSwitchRequest,
+    admin: AdminUser,
+    db: AsyncSession = Depends(get_db),
+):
     """Switch LLM provider at runtime (ollama <-> groq)"""
     provider = req.provider.lower().strip()
     if provider not in ("ollama", "groq"):
@@ -95,8 +101,11 @@ def switch_provider(req: ProviderSwitchRequest, admin: AdminUser):
     if not is_provider_enabled(provider):
         raise BadRequestException(f"Provider '{provider}' đã bị admin vô hiệu hóa.")
 
-    if provider == "groq" and not settings.GROQ_API_KEY:
-        raise BadRequestException("Không thể chuyển sang Groq: chưa cấu hình GROQ_API_KEY.")
+    if provider == "groq":
+        from backend.services.groq_key_service import get_effective_groq_key
+        key, _source = await get_effective_groq_key(db)
+        if not key:
+            raise BadRequestException("Không thể chuyển sang Groq: chưa cấu hình GROQ_API_KEY.")
 
     # Mutate settings at runtime
     settings.LLM_PROVIDER = provider

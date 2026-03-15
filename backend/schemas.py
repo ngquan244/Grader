@@ -32,45 +32,6 @@ class ChatResponse(BaseModel):
     error: Optional[str] = None
 
 
-# ===== Upload Schemas =====
-class UploadResponse(BaseModel):
-    success: bool
-    message: str
-    files: List[str] = []
-    count: int = 0
-
-
-# ===== Grading Schemas =====
-class GradingRequest(BaseModel):
-    exam_code: Optional[str] = None
-
-
-class GradingResult(BaseModel):
-    student_id: str
-    full_name: str
-    email: str
-    exam_code: str
-    score: float
-    evaluation: str
-
-
-class GradingSummary(BaseModel):
-    total_students: int
-    average_score: float
-    max_score: float
-    min_score: float
-
-
-class GradingResponse(BaseModel):
-    success: bool
-    exam_code: str
-    summary: Optional[GradingSummary] = None
-    overall_assessment: Optional[str] = None
-    results: List[GradingResult] = []
-    excel_file: Optional[str] = None
-    error: Optional[str] = None
-
-
 # ===== Config Schemas =====
 class ConfigResponse(BaseModel):
     available_models: List[str]

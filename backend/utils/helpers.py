@@ -102,61 +102,9 @@ def list_files(
     return list(directory.glob(pattern))
 
 
-def calculate_score(correct: int, total: int, scale: float = 10.0) -> float:
-    """Calculate score on a given scale"""
-    if total == 0:
-        return 0.0
-    return round((correct / total) * scale, 2)
-
-
-def evaluate_score(score: float) -> str:
-    """Evaluate score and return assessment"""
-    from backend.core.constants import ScoreThresholds, ScoreEvaluation
-    
-    if score >= ScoreThresholds.EXCELLENT:
-        return ScoreEvaluation.EXCELLENT.value
-    elif score >= ScoreThresholds.GOOD:
-        return ScoreEvaluation.GOOD.value
-    elif score >= ScoreThresholds.PASS:
-        return ScoreEvaluation.PASS.value
-    return ScoreEvaluation.FAIL.value
-
-
 # =============================================================================
 # Per-user workspace helpers
 # =============================================================================
-
-def get_user_upload_dir(user_id: Union[str, UUID]) -> Path:
-    """
-    Get and ensure the per-user upload directory exists.
-    
-    Args:
-        user_id: User UUID (str or UUID)
-        
-    Returns:
-        Path to the user's filled images directory
-    """
-    from backend.core.config import settings
-    path = settings.get_user_filled_dir(str(user_id))
-    return ensure_directory(path)
-
-
-def get_user_result_path(user_id: Union[str, UUID]) -> Path:
-    """
-    Get the per-user grading result JSON file path.
-    Ensures the parent directory exists.
-    
-    Args:
-        user_id: User UUID (str or UUID)
-        
-    Returns:
-        Path to the user's result.json
-    """
-    from backend.core.config import settings
-    path = settings.get_user_result_file(str(user_id))
-    ensure_directory(path.parent)
-    return path
-
 
 def get_user_rag_dir(user_id: Union[str, UUID]) -> Path:
     """

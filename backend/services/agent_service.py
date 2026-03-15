@@ -10,12 +10,13 @@ from functools import lru_cache
 logger = logging.getLogger(__name__)
 
 
-def _get_provider_config() -> dict:
-    """Load LLM provider configuration from settings"""
+def _get_provider_config(db_groq_key: str | None = None) -> dict:
+    """Load LLM provider configuration from settings, with optional DB key override."""
     from backend.core.config import settings
+    groq_key = db_groq_key or settings.GROQ_API_KEY
     return {
         "provider": settings.LLM_PROVIDER,
-        "groq_api_key": settings.GROQ_API_KEY,
+        "groq_api_key": groq_key,
         "groq_base_url": settings.GROQ_BASE_URL,
         "ollama_base_url": settings.OLLAMA_BASE_URL,
         "groq_fallback_to_ollama": settings.GROQ_FALLBACK_TO_OLLAMA if settings.ENVIRONMENT == "development" else False,
@@ -34,9 +35,9 @@ class AgentService:
             cls._instance = super().__new__(cls)
         return cls._instance
     
-    def get_agent(self, model: str, max_iterations: int, user_id: Optional[str] = None):
+    def get_agent(self, model: str, max_iterations: int, user_id: Optional[str] = None, db_groq_key: Optional[str] = None):
         """Get or create an agent instance"""
-        provider_cfg = _get_provider_config()
+        provider_cfg = _get_provider_config(db_groq_key)
         # Include user_id in cache key so each user gets their own agent
         # (tools are bound with user-specific paths)
         user_key = user_id or "anonymous"
@@ -61,9 +62,10 @@ class AgentService:
         model: str,
         max_iterations: int,
         user_id: Optional[str] = None,
+        db_groq_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Invoke the AI agent with a message"""
-        agent = self.get_agent(model, max_iterations, user_id=user_id)
+        agent = self.get_agent(model, max_iterations, user_id=user_id, db_groq_key=db_groq_key)
         return agent.invoke(message, history)
     
     def clear_cache(self):

@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 
-from backend.routes import chat, upload, grading, config as config_routes
+from backend.routes import chat, config as config_routes
 from backend.routes import document_rag as document_rag_routes
 from backend.routes import canvas as canvas_routes
 from backend.routes import canvas_rag as canvas_rag_routes
@@ -78,6 +78,16 @@ async def lifespan(app: FastAPI):
         app_logger.info("RAG services preloaded successfully ✓")
     except Exception as e:
         app_logger.warning(f"Could not preload RAG services (non-fatal): {e}")
+
+    # ── Seed guide documents if DB table is empty ─────────────────────
+    try:
+        from backend.database.base import AsyncSessionLocal
+        from backend.services.guide_seed_service import seed_guides_if_empty
+        async with AsyncSessionLocal() as db:
+            await seed_guides_if_empty(db)
+        app_logger.info("Guide seed check completed ✓")
+    except Exception as e:
+        app_logger.warning(f"Could not seed guide documents (non-fatal): {e}")
     
     yield
     
@@ -138,8 +148,6 @@ async def general_exception_handler(request: Request, exc: Exception):
 # Include routers
 app.include_router(auth_router, prefix="/api", tags=["Authentication"])
 app.include_router(chat.router, prefix="/api/chat", tags=["Chat"])
-app.include_router(upload.router, prefix="/api/upload", tags=["Upload"])
-app.include_router(grading.router, prefix="/api/grading", tags=["Grading"])
 app.include_router(config_routes.router, prefix="/api/config", tags=["Configuration"])
 app.include_router(document_rag_routes.router, prefix="/api/document-rag", tags=["Document RAG"])
 app.include_router(canvas_routes.router, prefix="/api/canvas", tags=["Canvas LMS"])

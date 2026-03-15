@@ -1,6 +1,6 @@
 """
 Agent module for the Teaching Assistant Grader.
-Contains AI agent, tools, and grading functionality.
+Contains AI agent, tools, and functionality.
 """
 
 # Lazy imports to allow submodules to run without full dependencies
@@ -20,9 +20,6 @@ try:
     from .tools import (
         get_all_tools, 
         get_tool_by_name,
-        get_grading_tool,
-        ExamResultSummaryTool,
-        GradingTool,
     )
     _tools_available = True
 except ImportError:
@@ -30,9 +27,6 @@ except ImportError:
     # Provide stubs
     def get_all_tools(): return []
     def get_tool_by_name(name): return None
-    def get_grading_tool(): return None
-    ExamResultSummaryTool = None
-    GradingTool = None
 
 
 # Property-like access for ReActAgent
@@ -55,7 +49,4 @@ __all__ = [
     "ReActAgent",
     "get_all_tools",
     "get_tool_by_name",
-    "get_grading_tool",
-    "ExamResultSummaryTool",
-    "GradingTool",
 ]

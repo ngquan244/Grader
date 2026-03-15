@@ -5,7 +5,7 @@ import { usePanelConfig, getFirstVisibleTab } from './context/PanelConfigContext
 import { useModelConfig } from './context/ModelConfigContext';
 import { useAuth } from './context/AuthContext';
 import { useToast } from './context/ToastContext';
-import { Sidebar, ChatPanel, UploadPanel, GradingPanel, SettingsPanel, DocumentRAGPanel, CanvasFilesPanel, QuizBuilderPanel, GuidePanel, CanvasSimulationPanel, CanvasResultsPanel } from './components';
+import { Sidebar, ChatPanel, SettingsPanel, DocumentRAGPanel, CanvasFilesPanel, QuizBuilderPanel, GuidePanel, CanvasSimulationPanel, CanvasResultsPanel } from './components';
 import { Loader2 } from 'lucide-react';
 import { TABS, TAB_PATHS, pathToTab } from './types';
 import type { QuizQuestion } from './api/documentRag';
@@ -17,8 +17,6 @@ const ALL_TAB_KEYS = Object.values(TABS);
 /** Human-friendly panel names for toast messages */
 const TAB_LABELS: Record<string, string> = {
   chat: 'Chat AI',
-  upload: 'Upload',
-  grading: 'Chấm bài',
   document_rag: 'Tài liệu RAG',
   canvas: 'Canvas',
   canvas_quiz: 'Quiz Builder',
@@ -122,16 +120,6 @@ const AppContent: React.FC = () => {
         {checkVisible(TABS.CHAT) && (
           <div style={{ display: activeTab === TABS.CHAT ? 'block' : 'none', height: '100%' }}>
             <ChatPanel />
-          </div>
-        )}
-        {checkVisible(TABS.UPLOAD) && (
-          <div className="panel-padded" style={{ display: activeTab === TABS.UPLOAD ? 'block' : 'none', height: '100%' }}>
-            <UploadPanel />
-          </div>
-        )}
-        {checkVisible(TABS.GRADING) && (
-          <div className="panel-padded" style={{ display: activeTab === TABS.GRADING ? 'block' : 'none', height: '100%' }}>
-            <GradingPanel />
           </div>
         )}
         {checkVisible(TABS.DOCUMENT_RAG) && (

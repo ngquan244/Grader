@@ -1,8 +1,8 @@
 {
   "tools": {
-    "execute_notebook": false,
-    "summarize_exam_results": false,
     "document_query": false,
-    "user_guide": true
+    "user_guide": true,
+    "execute_notebook": true,
+    "summarize_exam_results": true
   }
 }

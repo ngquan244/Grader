@@ -23,6 +23,7 @@ from backend.core.config import settings
 from backend.core.logger import quiz_logger
 from backend.utils import get_user_rag_dir
 from backend.database.base import SessionLocal
+from backend.services.groq_key_service import get_effective_groq_key
 
 logger = logging.getLogger(__name__)
 
@@ -1185,6 +1186,8 @@ async def async_generate_quiz(
     try:
         job_service = JobService(db)
         
+        groq_api_key, _ = await get_effective_groq_key(db)
+        
         payload = {
             "topics": topics_list,
             "num_questions": request.num_questions,
@@ -1192,6 +1195,7 @@ async def async_generate_quiz(
             "language": request.language,
             "selected_documents": request.selected_documents,
             "user_id": str(user.id),
+            "groq_api_key": groq_api_key,
         }
         quiz_logger.info(f"Route async_generate_quiz: topics={topics_list}, selected_documents={request.selected_documents!r}, user={user.id}")
         
@@ -1238,6 +1242,8 @@ async def async_extract_topics(
     try:
         job_service = JobService(db)
         
+        groq_api_key, _ = await get_effective_groq_key(db)
+        
         job = await job_service.create_job(
             user_id=user.id,
             job_type=JobType.EXTRACT_TOPICS,
@@ -1250,7 +1256,7 @@ async def async_extract_topics(
         result = await apply_async_nonblocking(
             tasks.rag_tasks.extract_topics,
             args=[str(job.id)],
-            kwargs={"user_id": str(user.id)},
+            kwargs={"user_id": str(user.id), "groq_api_key": groq_api_key},
         )
         
         await job_service.set_celery_task_id(job.id, result.id)

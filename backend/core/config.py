@@ -211,18 +211,6 @@ class Settings(BaseSettings):
     @property
     def GUIDE_IMAGES_DIR(self) -> Path:
         return self.DATA_DIR / "guide_images"
-    
-    def get_user_filled_dir(self, user_id: str) -> Path:
-        """Get per-user directory for uploaded exam images."""
-        return self.USER_WORKSPACES_DIR / user_id / "filled"
-    
-    def get_user_results_dir(self, user_id: str) -> Path:
-        """Get per-user directory for grading results."""
-        return self.USER_WORKSPACES_DIR / user_id / "results"
-    
-    def get_user_result_file(self, user_id: str) -> Path:
-        """Get per-user grading result JSON file path."""
-        return self.get_user_results_dir(user_id) / "result.json"
 
     def get_user_rag_upload_dir(self, user_id: str) -> Path:
         """Get per-user directory for RAG document uploads."""
@@ -276,10 +264,12 @@ class Settings(BaseSettings):
                     "Ollama requires too much RAM for VPS deployment. "
                     "Set LLM_PROVIDER=groq in your .env file."
                 )
+            # Groq API key: now optional at startup (can be set via admin UI at runtime)
             if not self.GROQ_API_KEY or not self.GROQ_API_KEY.strip():
-                raise ValueError(
-                    "FATAL: GROQ_API_KEY is required in production. "
-                    "Get your API key from: https://console.groq.com/keys"
+                warnings.warn(
+                    "GROQ_API_KEY not set in environment. "
+                    "Admin can configure it at runtime via Settings panel. "
+                    "Get a key from: https://console.groq.com/keys"
                 )
             if self.GROQ_FALLBACK_TO_OLLAMA:
                 raise ValueError(

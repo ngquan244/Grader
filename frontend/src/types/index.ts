@@ -31,43 +31,6 @@ export interface ChatResponse {
   error?: string;
 }
 
-export interface UploadResponse {
-  success: boolean;
-  message: string;
-  files: string[];
-  count: number;
-}
-
-export interface GradingRequest {
-  exam_code?: string;
-}
-
-export interface GradingResult {
-  student_id: string;
-  full_name: string;
-  email: string;
-  exam_code: string;
-  score: number;
-  evaluation: string;
-}
-
-export interface GradingSummary {
-  total_students: number;
-  average_score: number;
-  max_score: number;
-  min_score: number;
-}
-
-export interface GradingResponse {
-  success: boolean;
-  exam_code: string;
-  summary?: GradingSummary;
-  overall_assessment?: string;
-  results: GradingResult[];
-  excel_file?: string;
-  error?: string;
-}
-
 export interface ConfigResponse {
   available_models: string[];
   default_model: string;
@@ -87,8 +50,6 @@ export interface ApiResponse<T = unknown> {
 // ===== Constants =====
 export const TABS = {
   CHAT: 'chat',
-  UPLOAD: 'upload',
-  GRADING: 'grading',
   DOCUMENT_RAG: 'document_rag',
   CANVAS: 'canvas',
   CANVAS_QUIZ: 'canvas_quiz',
@@ -103,8 +64,6 @@ export type TabType = typeof TABS[keyof typeof TABS];
 /** Map each tab → URL path segment (no leading slash) */
 export const TAB_PATHS: Record<TabType, string> = {
   [TABS.CHAT]: 'chat',
-  [TABS.UPLOAD]: 'upload',
-  [TABS.GRADING]: 'grading',
   [TABS.DOCUMENT_RAG]: 'rag',
   [TABS.CANVAS]: 'canvas',
   [TABS.CANVAS_QUIZ]: 'quiz-builder',

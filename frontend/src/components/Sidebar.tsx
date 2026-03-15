@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MessageSquare, FileUp, BarChart3, Settings, GraduationCap, FileText, FolderOpen, PenSquare, ShieldCheck, HelpCircle, PlayCircle, PieChart, Menu, X } from 'lucide-react';
+import { MessageSquare, Settings, GraduationCap, FileText, FolderOpen, PenSquare, ShieldCheck, HelpCircle, PlayCircle, PieChart, Menu, X } from 'lucide-react';
 import { TABS, TAB_PATHS, type TabType } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { usePanelConfig } from '../context/PanelConfigContext';
@@ -20,8 +20,6 @@ interface TabItem {
 const SIDEBAR_TABS: TabItem[] = [
   { id: TABS.GUIDE, label: 'Hướng dẫn', icon: HelpCircle },
   { id: TABS.CHAT, label: 'Chat AI', icon: MessageSquare },
-  { id: TABS.UPLOAD, label: 'Upload', icon: FileUp },
-  { id: TABS.GRADING, label: 'Chấm điểm', icon: BarChart3 },
   { id: TABS.DOCUMENT_RAG, label: 'Tài Liệu', icon: FileText },
   { id: TABS.CANVAS, label: 'Canvas LMS', icon: FolderOpen },
   { id: TABS.CANVAS_QUIZ, label: 'Tạo Canvas Quiz', icon: PenSquare },

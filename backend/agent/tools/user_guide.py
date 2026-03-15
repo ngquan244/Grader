@@ -1,9 +1,11 @@
 """
 User Guide Tool
-Provides application usage guidance based on an admin-editable guide document.
+Provides application usage guidance.
+Priority: DB guide_documents (admin-editable) → data/user_guide.md (fallback).
 The agent uses this tool to help users and always includes a link to /guide.
 """
 
+import asyncio
 import json
 from typing import Type
 
@@ -19,9 +21,6 @@ GUIDE_FILE = "data/user_guide.md"
 # Map guide section titles (lowercase) → panel config key
 SECTION_PANEL_MAP = {
     "chat ai": "chat",
-    "upload bài thi": "upload",
-    "upload": "upload",
-    "chấm điểm": "grading",
     "rag tài liệu": "document_rag",
     "canvas lms": "canvas",
     "tạo canvas quiz": "canvas_quiz",
@@ -30,10 +29,8 @@ SECTION_PANEL_MAP = {
 
 # FAQ question keywords → required panel keys
 FAQ_PANEL_MAP = [
-    {"keywords": ["chấm bài thi"], "panels": ["upload", "grading"]},
     {"keywords": ["tài liệu đã upload", "nội dung tài liệu"], "panels": ["document_rag"]},
     {"keywords": ["tính năng bị khóa"], "panels": ["chat"]},
-    {"keywords": ["lỗi khi chấm bài"], "panels": ["grading"]},
     {"keywords": ["ollama", "groq"], "panels": ["settings"]},
     {"keywords": ["quiz từ tài liệu", "đẩy lên canvas"], "panels": ["document_rag", "canvas_quiz"]},
 ]
@@ -49,8 +46,53 @@ def _get_hidden_panels() -> set:
         return set()
 
 
+def _read_guide_from_db() -> str | None:
+    """Try reading guide content from DB (guide_documents table).
+    Returns combined markdown string or None on failure."""
+    try:
+        from backend.database.base import AsyncSessionLocal
+        from backend.services.guide_service import list_guides
+
+        async def _fetch():
+            async with AsyncSessionLocal() as db:
+                guides = await list_guides(db, include_unpublished=False)
+                if not guides:
+                    return None
+                parts = []
+                for g in sorted(guides, key=lambda x: x.sort_order):
+                    if g.panel_key == "overview":
+                        parts.insert(0, g.content)
+                    else:
+                        parts.append(f"## {g.title}\n\n{g.content}")
+                return "\n\n---\n\n".join(parts) if parts else None
+
+        # Run in new event loop on a separate thread to avoid conflicts
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                result = pool.submit(lambda: asyncio.run(_fetch())).result(timeout=5)
+            return result
+        else:
+            return asyncio.run(_fetch())
+    except Exception as e:
+        logger.debug("Could not read guides from DB (falling back to file): %s", e)
+        return None
+
+
 def _read_guide() -> str:
-    """Read the guide markdown file, filtering out sections for hidden panels."""
+    """Read guide content: DB first, then markdown file fallback.
+    Filters out sections for hidden panels."""
+    # Try DB first
+    db_content = _read_guide_from_db()
+    if db_content and db_content.strip():
+        return db_content
+
+    # Fallback: read markdown file
     from pathlib import Path
     import re
 
@@ -74,8 +116,6 @@ def _read_guide() -> str:
                 # Remove bold feature names matching hidden panels
                 feature_names = {
                     "chat": "Chat AI",
-                    "upload": "Upload bài thi",
-                    "grading": "Chấm điểm tự động",
                     "document_rag": "RAG Tài Liệu",
                     "canvas": "Canvas LMS",
                     "canvas_quiz": "Tạo Canvas Quiz",

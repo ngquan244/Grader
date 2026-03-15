@@ -1,7 +1,5 @@
 {
   "chat": false,
-  "upload": false,
-  "grading": false,
   "document_rag": true,
   "canvas": true,
   "canvas_quiz": true,

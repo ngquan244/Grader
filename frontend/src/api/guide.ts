@@ -13,6 +13,7 @@ export interface GuideListItem {
   icon_name: string | null;
   sort_order: number;
   is_published: boolean;
+  source: 'db' | 'default';
 }
 
 export interface GuideListResponse {
@@ -28,6 +29,7 @@ export interface GuideDetailResponse {
   content: string;
   sort_order: number;
   is_published: boolean;
+  source: 'db' | 'default';
   success: boolean;
 }
 

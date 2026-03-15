@@ -733,3 +733,105 @@ async def get_invite_code_usages(
         page_size=page_size,
         pages=pages,
     )
+
+
+# =============================================================================
+# Groq API Key Endpoints
+# =============================================================================
+
+class GroqKeyStatusOut(BaseModel):
+    """Status of the system-wide Groq API key."""
+    has_key: bool
+    source: str  # "db" | "env" | "none"
+    masked_key: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class UpdateGroqKeyRequest(BaseModel):
+    """Request to set/update the Groq API key."""
+    api_key: str = Field(..., min_length=10, max_length=256)
+
+
+@router.get("/groq-key/status", response_model=GroqKeyStatusOut)
+async def get_groq_key_status(
+    admin: AdminUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the current Groq API key status (has key, source, masked preview)."""
+    from backend.services.groq_key_service import (
+        get_groq_api_key,
+        get_groq_key_record,
+        mask_key,
+    )
+    from backend.core.config import settings
+
+    # Check DB first
+    db_key = await get_groq_api_key(db)
+    if db_key:
+        record = await get_groq_key_record(db)
+        updated_at = None
+        if record and record.value:
+            updated_at = record.value.get("updated_at_iso")
+        return GroqKeyStatusOut(
+            has_key=True,
+            source="db",
+            masked_key=mask_key(db_key),
+            updated_at=updated_at,
+        )
+
+    # Check env var
+    env_key = settings.GROQ_API_KEY
+    if env_key and env_key.strip():
+        return GroqKeyStatusOut(
+            has_key=True,
+            source="env",
+            masked_key=mask_key(env_key),
+        )
+
+    return GroqKeyStatusOut(has_key=False, source="none")
+
+
+@router.put("/groq-key", response_model=MessageOut)
+async def update_groq_key(
+    body: UpdateGroqKeyRequest,
+    admin: AdminUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """Validate and store a new Groq API key (encrypted in DB)."""
+    from backend.services.groq_key_service import validate_groq_api_key, set_groq_api_key
+
+    # Validate key against Groq API
+    valid = await validate_groq_api_key(body.api_key)
+    if not valid:
+        raise HTTPException(
+            status_code=400,
+            detail="API key không hợp lệ. Vui lòng kiểm tra lại key từ console.groq.com.",
+        )
+
+    await set_groq_api_key(db, body.api_key, updated_by=admin.email)
+
+    # Clear agent cache so new agents pick up the new key
+    from backend.services.agent_service import agent_service
+    agent_service.clear_cache()
+
+    logger.info("Admin %s updated Groq API key", admin.email)
+    return MessageOut(success=True, message="Đã lưu Groq API key thành công.")
+
+
+@router.delete("/groq-key", response_model=MessageOut)
+async def delete_groq_key(
+    admin: AdminUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove Groq API key from DB (falls back to env var)."""
+    from backend.services.groq_key_service import delete_groq_api_key
+
+    deleted = await delete_groq_api_key(db)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Không có Groq API key trong database.")
+
+    from backend.services.agent_service import agent_service
+    agent_service.clear_cache()
+
+    logger.info("Admin %s removed Groq API key from DB", admin.email)
+    return MessageOut(success=True, message="Đã xoá Groq API key. Hệ thống sẽ dùng biến môi trường nếu có.")

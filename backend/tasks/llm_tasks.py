@@ -51,6 +51,7 @@ def generate_quiz(
     selected_documents: Optional[List[str]] = None,
     user_id: Optional[str] = None,
     source: str = "document",  # "document" or "canvas"
+    groq_api_key: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Generate quiz questions from indexed documents.
@@ -95,6 +96,7 @@ def generate_quiz(
                 selected_documents=selected_documents,
                 user_id=user_id,
                 db_session=rag_db,
+                groq_api_key=groq_api_key,
             )
         
         duration = round(time.time() - t0, 1)

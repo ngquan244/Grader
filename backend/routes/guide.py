@@ -18,6 +18,7 @@ from backend.auth.dependencies import CurrentUser, AdminUser
 from backend.database.base import get_async_session
 from backend.database.models.user import UserRole
 from backend.services import guide_service
+from backend.services.guide_seed_service import get_all_default_guides, get_fallback_guide
 from backend.services.panel_config_service import get_panel_config
 from backend.core.config import settings
 
@@ -41,6 +42,7 @@ class GuideListItem(BaseModel):
     icon_name: Optional[str] = None
     sort_order: int = 0
     is_published: bool = True
+    source: str = "db"  # "db" or "default"
 
     class Config:
         from_attributes = True
@@ -59,6 +61,7 @@ class GuideDetailResponse(BaseModel):
     content: str
     sort_order: int = 0
     is_published: bool = True
+    source: str = "db"  # "db" or "default"
     success: bool = True
 
     class Config:
@@ -127,9 +130,33 @@ async def list_guides(
             icon_name=g.icon_name,
             sort_order=g.sort_order,
             is_published=g.is_published,
+            source="db",
         )
         for g in guides
     ]
+
+    # Supplement missing panels with defaults from user_guide.md
+    existing_keys = {g.panel_key for g in guides}
+    for default in get_all_default_guides():
+        if default.panel_key in existing_keys:
+            continue
+        # For non-admin, only show defaults for visible panels
+        always_visible = {"overview", "faq"}
+        if not is_admin and default.panel_key not in always_visible:
+            visible = _get_visible_panels()
+            if default.panel_key not in visible:
+                continue
+        items.append(GuideListItem(
+            panel_key=default.panel_key,
+            title=default.title,
+            description=default.description,
+            icon_name=default.icon_name,
+            sort_order=default.sort_order,
+            is_published=True,
+            source="default",
+        ))
+
+    items.sort(key=lambda x: x.sort_order)
     return GuideListResponse(guides=items)
 
 
@@ -144,10 +171,36 @@ async def get_guide(
     Non-admin users can only view published guides for visible panels.
     """
     guide = await guide_service.get_guide_by_panel_key(db, panel_key)
-    if not guide:
-        raise HTTPException(status_code=404, detail="Guide document not found")
 
     is_admin = user.role == UserRole.ADMIN
+
+    # If not in DB, try fallback from user_guide.md
+    if not guide:
+        fallback = get_fallback_guide(panel_key)
+        if not fallback:
+            raise HTTPException(status_code=404, detail="Guide document not found")
+
+        # Non-admin visibility check
+        if not is_admin:
+            always_visible = {"overview", "faq"}
+            if panel_key not in always_visible:
+                visible = _get_visible_panels()
+                if panel_key not in visible:
+                    raise HTTPException(
+                        status_code=403,
+                        detail="This guide is not available for your current configuration"
+                    )
+
+        return GuideDetailResponse(
+            panel_key=fallback.panel_key,
+            title=fallback.title,
+            description=fallback.description,
+            icon_name=fallback.icon_name,
+            content=fallback.content,
+            sort_order=fallback.sort_order,
+            is_published=True,
+            source="default",
+        )
 
     if not is_admin:
         if not guide.is_published:
@@ -171,6 +224,7 @@ async def get_guide(
         content=guide.content,
         sort_order=guide.sort_order,
         is_published=guide.is_published,
+        source="db",
     )
 
 

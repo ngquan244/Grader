@@ -16,22 +16,16 @@ logger = logging.getLogger(__name__)
 # All known tools — must match the tool names from agent/tools/
 # ---------------------------------------------------------------------------
 ALL_TOOLS: List[str] = [
-    "execute_notebook",
-    "summarize_exam_results",
     "document_query",
     "user_guide",
 ]
 
 TOOL_LABELS: Dict[str, str] = {
-    "execute_notebook": "Chấm bài trắc nghiệm",
-    "summarize_exam_results": "Tổng hợp kết quả thi",
     "document_query": "Hỏi đáp tài liệu RAG",
     "user_guide": "Hướng dẫn sử dụng",
 }
 
 TOOL_DESCRIPTIONS: Dict[str, str] = {
-    "execute_notebook": "Chấm bài trắc nghiệm từ ảnh scan bằng SIFT/OpenCV, phát hiện đáp án, tính điểm và lưu DB.",
-    "summarize_exam_results": "Tổng hợp kết quả chấm bài theo mã đề, xuất Excel, gửi email.",
     "document_query": "Truy vấn và trả lời câu hỏi dựa trên tài liệu PDF đã upload vào hệ thống RAG.",
     "user_guide": "Hướng dẫn người dùng sử dụng các tính năng của ứng dụng dựa trên tài liệu hướng dẫn do admin biên soạn.",
 }
