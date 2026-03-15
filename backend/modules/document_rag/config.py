@@ -4,9 +4,7 @@ Document RAG Configuration
 Configuration settings for the Document RAG module.
 All settings can be overridden via environment variables.
 
-Supports multiple LLM providers:
-- Ollama (local inference)
-- Groq Cloud (OpenAI-compatible API)
+Uses Groq Cloud as the LLM provider.
 """
 
 import os
@@ -49,20 +47,13 @@ class RAGConfig:
     SEARCH_TYPE: str = "mmr"  # "mmr" or "similarity"
     
     # ===== LLM Provider Settings =====
-    LLM_PROVIDER: str = "ollama"  # "ollama" (dev only) or "groq" (production)
-    
-    # ===== Ollama LLM Settings (Development only) =====
-    OLLAMA_MODEL: str = "llama3.1:latest"
-    OLLAMA_BASE_URL: str = "http://localhost:11434"
-    OLLAMA_TEMPERATURE: float = 0.3
-    OLLAMA_TOP_P: float = 0.9
-    OLLAMA_NUM_CTX: int = 4096
+    LLM_PROVIDER: str = "groq"
     
     # ===== Groq Cloud Settings =====
     GROQ_API_KEY: Optional[str] = None
     GROQ_MODEL: str = "llama-3.3-70b-versatile"
     GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
-    GROQ_FALLBACK_TO_OLLAMA: bool = False  # Must be False in production
+    GROQ_TEMPERATURE: float = 0.3
     
     # ===== Logging Settings =====
     ENABLE_DEBUG_LOGGING: bool = True
@@ -89,23 +80,11 @@ class RAGConfig:
         # LLM Provider
         self.LLM_PROVIDER = os.getenv("LLM_PROVIDER", self.LLM_PROVIDER).lower()
         
-        # Ollama
-        self.OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", self.OLLAMA_MODEL)
-        self.OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", self.OLLAMA_BASE_URL)
-        self.OLLAMA_TEMPERATURE = float(os.getenv("OLLAMA_TEMPERATURE", self.OLLAMA_TEMPERATURE))
-        
         # Groq Cloud
         self.GROQ_API_KEY = os.getenv("GROQ_API_KEY")
         self.GROQ_MODEL = os.getenv("GROQ_MODEL", self.GROQ_MODEL)
         self.GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", self.GROQ_BASE_URL)
-        self.GROQ_FALLBACK_TO_OLLAMA = os.getenv(
-            "GROQ_FALLBACK_TO_OLLAMA", "false"
-        ).lower() == "true"
-        
-        # Production guard: reject Ollama provider
-        environment = os.getenv("ENVIRONMENT", "development").lower()
-        if environment in ("staging", "production") and self.LLM_PROVIDER == "ollama":
-            self.LLM_PROVIDER = "groq"  # Force Groq in production
+        self.GROQ_TEMPERATURE = float(os.getenv("GROQ_TEMPERATURE", self.GROQ_TEMPERATURE))
         
         # Logging
         self.ENABLE_DEBUG_LOGGING = os.getenv("RAG_DEBUG", "true").lower() == "true"

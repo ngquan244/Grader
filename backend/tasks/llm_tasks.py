@@ -51,6 +51,7 @@ def generate_quiz(
     selected_documents: Optional[List[str]] = None,
     user_id: Optional[str] = None,
     source: str = "document",  # "document" or "canvas"
+    groq_api_key: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Generate quiz questions from indexed documents.
@@ -95,6 +96,7 @@ def generate_quiz(
                 selected_documents=selected_documents,
                 user_id=user_id,
                 db_session=rag_db,
+                groq_api_key=groq_api_key,
             )
         
         duration = round(time.time() - t0, 1)
@@ -120,60 +122,6 @@ def generate_quiz(
         duration = round(time.time() - t0, 1)
         app_logger.error(f"[QUIZ] exception duration={duration}s selected_docs={n_selected} error=\"{e}\"")
         quiz_logger.exception(f"Exception in generate_quiz task: {e}")
-        job_service.fail_job(job_uuid, str(e))
-        raise
-    finally:
-        db_session.close()
-
-
-@shared_task(
-    bind=True,
-    base=RateLimitedLLMTask,
-    name="backend.tasks.llm_tasks.agent_invoke",
-    queue="llm",
-    max_retries=2,
-    soft_time_limit=120,
-    time_limit=180,
-)
-def agent_invoke(
-    self,
-    job_id: str,
-    message: str,
-    history: List[Dict[str, str]],
-    model: str,
-    max_iterations: int = 10,
-    user_id: Optional[str] = None,
-) -> Dict[str, Any]:
-    """
-    Invoke the AI agent with a message.
-    
-    Args:
-        job_id: Job ID for tracking
-        message: User message
-        history: Conversation history
-        model: Model to use
-        max_iterations: Max agent iterations
-    """
-    from backend.services import agent_service
-    
-    job_service, db_session = get_sync_job_service()
-    job_uuid = uuid.UUID(job_id)
-    
-    try:
-        job_service.start_job(job_uuid, "Processing with AI agent")
-        
-        result = agent_service.invoke(
-            message=message,
-            history=history,
-            model=model,
-            max_iterations=max_iterations,
-        )
-        
-        job_service.complete_job(job_uuid, result)
-        return result
-        
-    except Exception as e:
-        app_logger.exception(f"Error in agent_invoke task: {e}")
         job_service.fail_job(job_uuid, str(e))
         raise
     finally:

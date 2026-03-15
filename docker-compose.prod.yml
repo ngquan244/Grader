@@ -124,7 +124,6 @@ services:
       - INVITE_SECRET=${INVITE_SECRET}
       - LLM_PROVIDER=groq
       - GROQ_API_KEY=${GROQ_API_KEY}
-      - GROQ_FALLBACK_TO_OLLAMA=false
       - RUN_MIGRATIONS=true
     
     # Backend is NOT exposed externally — nginx proxies to it
@@ -175,7 +174,6 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
       - LLM_PROVIDER=groq
       - GROQ_API_KEY=${GROQ_API_KEY}
-      - GROQ_FALLBACK_TO_OLLAMA=false
 
   worker-llm:
     environment:
@@ -189,7 +187,6 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
       - LLM_PROVIDER=groq
       - GROQ_API_KEY=${GROQ_API_KEY}
-      - GROQ_FALLBACK_TO_OLLAMA=false
       - LLM_RATE_LIMIT=${LLM_RATE_LIMIT:-10}
 
   worker-canvas:
@@ -203,21 +200,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
       - LLM_PROVIDER=groq
-      - GROQ_FALLBACK_TO_OLLAMA=false
       - CANVAS_RATE_LIMIT=${CANVAS_RATE_LIMIT:-50}
-
-  worker-misc:
-    environment:
-      - ENVIRONMENT=production
-      - REDIS_HOST=redis
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      - POSTGRES_HOST=postgres
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
-      - LLM_PROVIDER=groq
-      - GROQ_FALLBACK_TO_OLLAMA=false
 
   # Flower — internal only, access via SSH tunnel: ssh -L 5555:localhost:5555 root@VPS
   flower:

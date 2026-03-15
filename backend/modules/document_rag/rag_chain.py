@@ -2,7 +2,7 @@
 RAG Chain Module
 ================
 Build and execute the RAG chain using configurable LLM backends.
-Supports Ollama (local) and Groq Cloud (API).
+Supports Groq Cloud (API).
 """
 
 import logging
@@ -41,7 +41,7 @@ class RAGChain:
     RAG Chain for question answering using configurable LLM backends.
     
     Features:
-    - Supports multiple LLM providers (Ollama, Groq)
+    - Supports Groq Cloud LLM provider
     - Returns answers with source citations
     - Configurable model and parameters
     - Runtime provider switching
@@ -113,14 +113,14 @@ class RAGChain:
         """Get current model name."""
         if self._llm_provider:
             return self._llm_provider.model
-        return self._model_override or rag_config.OLLAMA_MODEL
+        return self._model_override or rag_config.GROQ_MODEL
     
     @property
     def base_url(self) -> str:
         """Get current base URL."""
         if self._llm_provider and hasattr(self._llm_provider, 'base_url'):
             return self._llm_provider.base_url
-        return self._base_url_override or rag_config.OLLAMA_BASE_URL
+        return self._base_url_override or "https://api.groq.com/openai/v1"
     
     def set_llm_provider(self, provider: BaseLLM):
         """
@@ -181,7 +181,7 @@ class RAGChain:
         chain = self.prompt | self.llm
         
         try:
-            logger.info("Generating answer with Ollama...")
+            logger.info("Generating answer with LLM...")
             
             response = chain.invoke({
                 "context": context,
@@ -269,10 +269,9 @@ class RAGChain:
             "sources": sources
         }
     
-    def check_ollama_connection(self) -> Dict[str, Any]:
+    def check_connection(self) -> Dict[str, Any]:
         """
-        Check if the LLM provider is accessible.
-        Kept for backwards compatibility - now checks current provider.
+        Check if the current LLM provider is accessible.
         
         Returns:
             Dictionary with connection status
@@ -281,12 +280,3 @@ class RAGChain:
             self._init_llm()
         
         return self._llm_provider.check_connection()
-    
-    def check_connection(self) -> Dict[str, Any]:
-        """
-        Check if the current LLM provider is accessible.
-        
-        Returns:
-            Dictionary with connection status
-        """
-        return self.check_ollama_connection()

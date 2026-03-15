@@ -19,6 +19,7 @@ from backend.modules.document_rag.canvas_rag_service import get_canvas_rag_servi
 from backend.database.base import SessionLocal
 from backend.services.canvas_permission import canvas_permission
 from backend.services.canvas_headers import extract_canvas_headers
+from backend.services.groq_key_service import get_effective_groq_key
 
 logger = logging.getLogger(__name__)
 
@@ -578,6 +579,8 @@ async def async_canvas_generate_quiz(
     try:
         job_service = JobService(db)
 
+        groq_api_key, _ = await get_effective_groq_key(db)
+
         payload = {
             "topics": request.topics,
             "num_questions": request.num_questions,
@@ -586,6 +589,7 @@ async def async_canvas_generate_quiz(
             "selected_documents": request.selected_documents,
             "user_id": str(user.id),
             "source": "canvas",
+            "groq_api_key": groq_api_key,
         }
 
         job = await job_service.create_job(

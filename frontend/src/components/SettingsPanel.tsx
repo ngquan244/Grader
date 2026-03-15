@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
-import { useModelConfig } from '../context/ModelConfigContext';
 import { authApi } from '../api/auth';
+import { groqKeyApi, type GroqKeyStatus } from '../api/groqKey';
 import { clearCanvasTokenCache } from '../api/canvas';
 import { clearCanvasRagTokenCache } from '../api/canvasRag';
 import {
@@ -18,6 +18,10 @@ import {
   Loader2,
   Edit2,
   X,
+  Cloud,
+  Database,
+  Trash2,
+  Save,
 } from 'lucide-react';
 import PanelHelpButton from './PanelHelpButton';
 
@@ -25,8 +29,7 @@ const DEFAULT_CANVAS_URL = 'https://lms.uet.vnu.edu.vn';
 
 const SettingsPanel: React.FC = () => {
   const navigate = useNavigate();
-  const { config, model, setModel, maxIterations, setMaxIterations } = useApp();
-  const { showModelSelector, getEnabledModels } = useModelConfig();
+  const { model } = useApp();
   const { canvasTokens, refreshProfile, isAuthenticated, user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
 
@@ -44,6 +47,29 @@ const SettingsPanel: React.FC = () => {
   // Check if canvas is configured from DB
   const canvasConfigured = canvasTokens.length > 0;
   const activeToken = canvasTokens[0];
+
+  // ── Groq API Key state (admin only) ──
+  const [groqKeyStatus, setGroqKeyStatus] = useState<GroqKeyStatus | null>(null);
+  const [groqKeyInput, setGroqKeyInput] = useState('');
+  const [showGroqKey, setShowGroqKey] = useState(false);
+  const [groqKeyLoading, setGroqKeyLoading] = useState(false);
+  const [groqKeyError, setGroqKeyError] = useState<string | null>(null);
+  const [groqKeySaved, setGroqKeySaved] = useState(false);
+  const [groqKeyEditMode, setGroqKeyEditMode] = useState(false);
+
+  const fetchGroqKeyStatus = useCallback(async () => {
+    if (!isAdmin) return;
+    try {
+      const status = await groqKeyApi.getStatus();
+      setGroqKeyStatus(status);
+    } catch {
+      // Non-fatal — admin may not have access in dev
+    }
+  }, [isAdmin]);
+
+  useEffect(() => {
+    fetchGroqKeyStatus();
+  }, [fetchGroqKeyStatus]);
 
   // Load Canvas settings from auth context on mount
   useEffect(() => {
@@ -401,6 +427,230 @@ const SettingsPanel: React.FC = () => {
         )}
       </div>
 
+      {/* Groq API Key Section — Admin Only */}
+      {isAdmin && (
+        <div className="settings-section canvas-integration-section">
+          <div className="section-header">
+            <h3>
+              <Cloud size={20} />
+              Groq API Key
+            </h3>
+            {groqKeyStatus?.has_key && (
+              <div className="security-badge">
+                <CheckCircle size={14} />
+                <span>{groqKeyStatus.source === 'db' ? 'DB (mã hoá)' : 'Biến môi trường'}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Status View (not editing) */}
+          {!groqKeyEditMode && (
+            <div className="canvas-status-card">
+              <div className="status-header">
+                <div className={`status-indicator ${groqKeyStatus?.has_key ? 'active' : ''}`}>
+                  {groqKeyStatus?.has_key ? (
+                    <>
+                      <CheckCircle size={18} />
+                      <span>Đã cấu hình</span>
+                    </>
+                  ) : (
+                    <>
+                      <AlertTriangle size={18} />
+                      <span>Chưa cấu hình</span>
+                    </>
+                  )}
+                </div>
+                <button
+                  className="btn-secondary btn-sm"
+                  onClick={() => {
+                    setGroqKeyEditMode(true);
+                    setGroqKeyError(null);
+                    setGroqKeyInput('');
+                    setShowGroqKey(false);
+                  }}
+                >
+                  <Edit2 size={14} />
+                  {groqKeyStatus?.has_key ? 'Thay đổi' : 'Thêm Key'}
+                </button>
+              </div>
+
+              {groqKeyStatus?.has_key && (
+                <div className="status-info">
+                  <div className="info-row">
+                    <span className="info-label">Nguồn:</span>
+                    <span className="info-value">
+                      {groqKeyStatus.source === 'db' ? (
+                        <><Database size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} /> Database (mã hoá Fernet)</>
+                      ) : (
+                        <><Settings size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} /> Biến môi trường (.env)</>
+                      )}
+                    </span>
+                  </div>
+                  <div className="info-row">
+                    <span className="info-label">API Key:</span>
+                    <span className="info-value" style={{ fontFamily: 'monospace' }}>
+                      {groqKeyStatus.masked_key || '***'}
+                    </span>
+                  </div>
+                  {groqKeyStatus.updated_at && (
+                    <div className="info-row">
+                      <span className="info-label">Cập nhật:</span>
+                      <span className="info-value">
+                        {new Date(groqKeyStatus.updated_at).toLocaleString()}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Delete button — only if key is in DB */}
+                  {groqKeyStatus.source === 'db' && (
+                    <div className="form-actions-row" style={{ marginTop: '1rem' }}>
+                      <button
+                        className="btn-danger btn-revoke"
+                        onClick={async () => {
+                          setGroqKeyLoading(true);
+                          setGroqKeyError(null);
+                          try {
+                            await groqKeyApi.deleteKey();
+                            await fetchGroqKeyStatus();
+                          } catch (err: unknown) {
+                            setGroqKeyError(err instanceof Error ? err.message : 'Xoá thất bại');
+                          } finally {
+                            setGroqKeyLoading(false);
+                          }
+                        }}
+                        disabled={groqKeyLoading}
+                      >
+                        <Trash2 size={14} />
+                        {groqKeyLoading ? 'Đang xoá...' : 'Xoá key khỏi DB'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!groqKeyStatus?.has_key && (
+                <div className="edit-mode-notice" style={{ marginTop: '0.75rem' }}>
+                  <AlertTriangle size={16} />
+                  <span>
+                    Chưa có Groq API key. Hệ thống cần key để sử dụng Groq Cloud.
+                    Lấy key miễn phí tại{' '}
+                    <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer">
+                      console.groq.com
+                    </a>.
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Edit Mode */}
+          {groqKeyEditMode && (
+            <div className="canvas-config-form">
+              <div className="form-group">
+                <label className="form-label">
+                  Groq API Key
+                  <span className="required">*</span>
+                </label>
+                <div className="token-input-wrapper">
+                  <input
+                    type={showGroqKey ? 'text' : 'password'}
+                    value={groqKeyInput}
+                    onChange={(e) => setGroqKeyInput(e.target.value)}
+                    placeholder="gsk_..."
+                    className="input-field token-input"
+                    disabled={groqKeyLoading}
+                  />
+                  <button
+                    type="button"
+                    className="token-toggle-btn"
+                    onClick={() => setShowGroqKey(!showGroqKey)}
+                    title={showGroqKey ? 'Ẩn' : 'Hiện'}
+                  >
+                    {showGroqKey ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+                <div className="field-hint">
+                  <span>
+                    Lấy key tại{' '}
+                    <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer">
+                      console.groq.com/keys
+                    </a>
+                    {' '}— Key sẽ được mã hoá và lưu an toàn trong database.
+                  </span>
+                </div>
+              </div>
+
+              <div className="form-actions-row">
+                <button
+                  className="btn-primary btn-save"
+                  onClick={async () => {
+                    if (!groqKeyInput.trim()) return;
+                    setGroqKeyLoading(true);
+                    setGroqKeyError(null);
+                    try {
+                      await groqKeyApi.updateKey(groqKeyInput.trim());
+                      setGroqKeySaved(true);
+                      setGroqKeyEditMode(false);
+                      setGroqKeyInput('');
+                      setShowGroqKey(false);
+                      await fetchGroqKeyStatus();
+                      setTimeout(() => setGroqKeySaved(false), 3000);
+                    } catch (err: unknown) {
+                      const msg = err instanceof Error ? err.message : 'Lưu thất bại';
+                      // Try to extract detail from API response
+                      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+                      setGroqKeyError(detail || msg);
+                    } finally {
+                      setGroqKeyLoading(false);
+                    }
+                  }}
+                  disabled={!groqKeyInput.trim() || groqKeyLoading}
+                >
+                  {groqKeyLoading ? (
+                    <>
+                      <Loader2 size={16} className="spin" />
+                      Đang kiểm tra &amp; lưu...
+                    </>
+                  ) : (
+                    <>
+                      <Save size={16} />
+                      Lưu API Key
+                    </>
+                  )}
+                </button>
+                <button
+                  className="btn-secondary"
+                  onClick={() => {
+                    setGroqKeyEditMode(false);
+                    setGroqKeyError(null);
+                    setGroqKeyInput('');
+                    setShowGroqKey(false);
+                  }}
+                  disabled={groqKeyLoading}
+                >
+                  <X size={16} />
+                  Huỷ
+                </button>
+              </div>
+
+              {groqKeyError && (
+                <div className="alert alert-error">
+                  <AlertTriangle size={18} />
+                  <span>{groqKeyError}</span>
+                </div>
+              )}
+
+              {groqKeySaved && (
+                <div className="alert alert-success">
+                  <CheckCircle size={18} />
+                  <span>Groq API key đã được lưu thành công!</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* AI Model Section - Admin Only */}
       {isAdmin && (
         <div className="settings-section">
@@ -411,42 +661,15 @@ const SettingsPanel: React.FC = () => {
 
           {/* Provider Badge */}
           <div className="provider-badge-wrapper">
-            <span className={`provider-badge provider-${config?.llm_provider || 'ollama'}`}>
-              {config?.llm_provider === 'groq' ? '⚡ Groq Cloud' : '🖥️ Ollama Local'}
+            <span className="provider-badge provider-groq">
+              ⚡ Groq Cloud
             </span>
-            {config?.llm_provider === 'groq' && (
-              <span className="provider-hint">Xử lý nhanh</span>
-            )}
+            <span className="provider-hint">Xử lý nhanh</span>
           </div>
 
           <div className="form-group">
-            <label>Chọn model:</label>
-            {showModelSelector(config?.llm_provider || 'ollama') ? (
-              <select value={model} onChange={(e) => setModel(e.target.value)}>
-                {(getEnabledModels(config?.llm_provider || 'ollama').length > 0
-                  ? getEnabledModels(config?.llm_provider || 'ollama')
-                  : config?.available_models || []
-                ).map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <span className="provider-label-static">{model}</span>
-            )}
-          </div>
-
-          <div className="form-group">
-            <label>Độ sâu phân tích:</label>
-            <input
-              type="range"
-              min={5}
-              max={20}
-              value={maxIterations}
-              onChange={(e) => setMaxIterations(parseInt(e.target.value))}
-            />
-            <span className="range-value">{maxIterations}</span>
+            <label>Model hiện tại:</label>
+            <span className="provider-label-static">{model}</span>
           </div>
         </div>
       )}

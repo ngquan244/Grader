@@ -5,73 +5,8 @@
 // ===== Common Types =====
 export type MessageRole = 'user' | 'assistant';
 
-// ===== Chat Types =====
-export interface ChatMessage {
-  role: MessageRole;
-  content: string;
-}
-
-export interface ToolUsage {
-  tool: string;
-  args: Record<string, unknown>;
-}
-
-export interface ChatRequest {
-  message: string;
-  history: ChatMessage[];
-  model: string;
-  max_iterations: number;
-}
-
-export interface ChatResponse {
-  response: string;
-  iterations: number;
-  tools_used: ToolUsage[];
-  success: boolean;
-  error?: string;
-}
-
-export interface UploadResponse {
-  success: boolean;
-  message: string;
-  files: string[];
-  count: number;
-}
-
-export interface GradingRequest {
-  exam_code?: string;
-}
-
-export interface GradingResult {
-  student_id: string;
-  full_name: string;
-  email: string;
-  exam_code: string;
-  score: number;
-  evaluation: string;
-}
-
-export interface GradingSummary {
-  total_students: number;
-  average_score: number;
-  max_score: number;
-  min_score: number;
-}
-
-export interface GradingResponse {
-  success: boolean;
-  exam_code: string;
-  summary?: GradingSummary;
-  overall_assessment?: string;
-  results: GradingResult[];
-  excel_file?: string;
-  error?: string;
-}
-
 export interface ConfigResponse {
-  available_models: string[];
   default_model: string;
-  max_iterations: number;
   llm_provider: string;
   groq_available: boolean;
 }
@@ -86,9 +21,6 @@ export interface ApiResponse<T = unknown> {
 
 // ===== Constants =====
 export const TABS = {
-  CHAT: 'chat',
-  UPLOAD: 'upload',
-  GRADING: 'grading',
   DOCUMENT_RAG: 'document_rag',
   CANVAS: 'canvas',
   CANVAS_QUIZ: 'canvas_quiz',
@@ -102,9 +34,6 @@ export type TabType = typeof TABS[keyof typeof TABS];
 
 /** Map each tab → URL path segment (no leading slash) */
 export const TAB_PATHS: Record<TabType, string> = {
-  [TABS.CHAT]: 'chat',
-  [TABS.UPLOAD]: 'upload',
-  [TABS.GRADING]: 'grading',
   [TABS.DOCUMENT_RAG]: 'rag',
   [TABS.CANVAS]: 'canvas',
   [TABS.CANVAS_QUIZ]: 'quiz-builder',
@@ -114,7 +43,7 @@ export const TAB_PATHS: Record<TabType, string> = {
   [TABS.SETTINGS]: 'settings',
 };
 
-/** Reverse lookup: URL path segment → TabType. Falls back to CHAT. */
+/** Reverse lookup: URL path segment → TabType. Falls back to GUIDE. */
 export function pathToTab(path: string): TabType {
   // strip leading slash(es)
   const segment = path.replace(/^\/+/, '').split('/')[0] || '';

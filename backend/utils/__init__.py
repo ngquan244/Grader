@@ -10,10 +10,6 @@ from .helpers import (
     safe_filename,
     copy_file_safely,
     list_files,
-    calculate_score,
-    evaluate_score,
-    get_user_upload_dir,
-    get_user_result_path,
     get_user_rag_dir,
     cleanup_user_workspace,
 )
@@ -29,10 +25,6 @@ __all__ = [
     "safe_filename",
     "copy_file_safely",
     "list_files",
-    "calculate_score",
-    "evaluate_score",
-    "get_user_upload_dir",
-    "get_user_result_path",
     "get_user_rag_dir",
     "cleanup_user_workspace",
 ]

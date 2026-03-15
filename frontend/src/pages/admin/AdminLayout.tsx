@@ -12,8 +12,6 @@ import {
   ArrowLeft,
   ShieldCheck,
   PanelTop,
-  Cpu,
-  Wrench,
   Ticket,
   Menu,
   X,
@@ -26,8 +24,6 @@ const ADMIN_NAV = [
   { to: '/admin/users', icon: Users, label: 'Quản lý Users' },
   { to: '/admin/jobs', icon: Activity, label: 'Quản lý Jobs' },
   { to: '/admin/panels', icon: PanelTop, label: 'Quản lý Panel' },
-  { to: '/admin/models', icon: Cpu, label: 'Quản lý Model' },
-  { to: '/admin/tools', icon: Wrench, label: 'Quản lý Tools' },
   { to: '/admin/invite-codes', icon: Ticket, label: 'Quản lý Mã mời' },
 ];
 

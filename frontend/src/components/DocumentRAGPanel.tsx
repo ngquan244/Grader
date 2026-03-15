@@ -43,19 +43,18 @@ const generateRAGStars = (count: number) =>
 import {
   getRAGStats,
   resetRAGIndex,
-  checkOllamaStatus,
+  checkLLMStatus,
   listUploadedFiles,
   exportQuizToQTI,
   getDocumentTopics,
   updateDocumentTopics,
   listIndexedDocuments,
   getLLMProviderInfo,
-  setLLMProvider,
   asyncUploadAndIndex,
   asyncGenerateQuiz,
   type RAGIndexStats,
   type RAGUploadedFile,
-  type OllamaStatus,
+  type LLMStatus,
   type QuizQuestion,
   type TopicSuggestion,
   type LLMProviderInfo,
@@ -70,7 +69,6 @@ import {
   asyncCanvasGenerateQuiz,
 } from '../api/canvasRag';
 import CanvasImportModal from './CanvasImportModal';
-import { useModelConfig } from '../context/ModelConfigContext';
 
 // Indexed document info
 interface IndexedDocument {
@@ -172,7 +170,7 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
   
   // Status states
   const [indexStats, setIndexStats] = useState<RAGIndexStats | null>(null);
-  const [ollamaStatus, setOllamaStatus] = useState<OllamaStatus | null>(null);
+  const [llmStatus, setLlmStatus] = useState<LLMStatus | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<RAGUploadedFile[]>([]);
   const [uploadedPage, setUploadedPage] = useState(1);
   const [uploadedPages, setUploadedPages] = useState(1);
@@ -185,20 +183,16 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
   const [uploadMessage, setUploadMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
   
-  // Model config (admin filtering)
-  const { showProviderSwitch, isProviderEnabled } = useModelConfig();
 
   // LLM Provider states
   const [llmProviderInfo, setLlmProviderInfo] = useState<LLMProviderInfo | null>(null);
-  const [isSwitchingProvider, setIsSwitchingProvider] = useState(false);
-  const [providerMessage, setProviderMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load initial data
   useEffect(() => {
     loadIndexStats();
-    loadOllamaStatus();
+    loadLLMStatus();
     loadUploadedFiles();
     loadIndexedDocuments();
     loadCanvasIndexedDocuments();
@@ -277,43 +271,6 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
     }
   };
 
-  // Handle LLM provider switch
-  const handleSwitchProvider = async (provider: 'ollama' | 'groq') => {
-    if (isSwitchingProvider) return;
-    
-    setIsSwitchingProvider(true);
-    setProviderMessage(null);
-    
-    try {
-      const response = await setLLMProvider({ provider });
-      
-      if (response.success) {
-        setProviderMessage({
-          type: 'success',
-          text: `Đã chuyển sang ${provider === 'groq' ? 'Groq Cloud' : 'Ollama'} thành công!`
-        });
-        // Reload provider info and status
-        await loadLLMProviderInfo();
-        await loadOllamaStatus();
-      } else {
-        setProviderMessage({
-          type: 'error',
-          text: response.error || `Không thể chuyển sang ${provider}`
-        });
-      }
-    } catch (error) {
-      console.error('Error switching provider:', error);
-      setProviderMessage({
-        type: 'error',
-        text: `Lỗi khi chuyển mô hình AI: ${error}`
-      });
-    } finally {
-      setIsSwitchingProvider(false);
-      // Clear message after 5 seconds
-      setTimeout(() => setProviderMessage(null), 5000);
-    }
-  };
-
   // Load indexed documents with topics
   const loadIndexedDocuments = async (page?: number) => {
     try {
@@ -341,15 +298,15 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
     }
   };
 
-  const loadOllamaStatus = async () => {
+  const loadLLMStatus = async () => {
     try {
-      const status = await checkOllamaStatus();
-      setOllamaStatus(status);
+      const status = await checkLLMStatus();
+      setLlmStatus(status);
     } catch (error) {
-      console.error('Error checking Ollama:', error);
-      setOllamaStatus({
+      console.error('Error checking LLM status:', error);
+      setLlmStatus({
         connected: false,
-        message: 'Không thể kết nối đến Ollama',
+        message: 'Không thể kết nối đến LLM provider',
         error: String(error),
       });
     }
@@ -1024,37 +981,14 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
         <div className="rag-header-chips">
           <div className="rag-chip rag-chip-provider">
             <Zap size={13} />
-            {showProviderSwitch ? (
-              <div className="provider-dropdown-wrapper">
-                <select
-                  className="provider-dropdown-inline"
-                  value={llmProviderInfo?.current_provider || 'ollama'}
-                  onChange={(e) => handleSwitchProvider(e.target.value as 'ollama' | 'groq')}
-                  disabled={isSwitchingProvider}
-                >
-                  {isProviderEnabled('ollama') && <option value="ollama">🖥️ Ollama</option>}
-                  {isProviderEnabled('groq') && (
-                    <option value="groq" disabled={!llmProviderInfo?.groq_configured}>
-                      ☁️ Groq {!llmProviderInfo?.groq_configured ? '(N/A)' : ''}
-                    </option>
-                  )}
-                </select>
-                {isSwitchingProvider && (
-                  <Loader2 size={12} className="spin provider-dropdown-loading" />
-                )}
-              </div>
-            ) : (
-              <span className="rag-chip-text">
-                {(llmProviderInfo?.current_provider || 'ollama') === 'groq' ? '⚡ Groq' : '🖥️ Ollama'}
-              </span>
-            )}
+            <span className="rag-chip-text">⚡ Groq</span>
           </div>
           <div className="rag-chip-divider" />
-          <div className={`rag-chip rag-chip-model ${ollamaStatus?.connected ? 'connected' : 'disconnected'}`}>
-            {ollamaStatus?.connected ? (
+          <div className={`rag-chip rag-chip-model ${llmStatus?.connected ? 'connected' : 'disconnected'}`}>
+            {llmStatus?.connected ? (
               <>
                 <CheckCircle size={12} className="rag-chip-status-icon" />
-                <span className="rag-chip-model-name">{llmProviderInfo?.current_model || ollamaStatus.model || 'Sẵn sàng'}</span>
+                <span className="rag-chip-model-name">{llmProviderInfo?.current_model || llmStatus.model || 'Sẵn sàng'}</span>
               </>
             ) : (
               <>
@@ -1069,7 +1003,7 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
           className="btn-hero-refresh"
           onClick={() => {
             loadIndexStats();
-            loadOllamaStatus();
+            loadLLMStatus();
             loadUploadedFiles();
             loadLLMProviderInfo();
           }}
@@ -1274,15 +1208,6 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
               )}
           </div>
         </div>
-
-        {/* Provider Switch Message */}
-        {providerMessage && (
-          <div className={`message provider-message ${providerMessage.type}`}>
-            {providerMessage.type === 'success' && <CheckCircle size={16} />}
-            {providerMessage.type === 'error' && <AlertCircle size={16} />}
-            {providerMessage.text}
-          </div>
-        )}
 
         {/* Quiz Generation Section */}
           <div className="quiz-section">

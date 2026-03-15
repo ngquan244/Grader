@@ -905,6 +905,7 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
         selected_documents: Optional[List[str]] = None,
         user_id: Optional[str] = None,
         db_session: Optional[Session] = None,
+        groq_api_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Generate quiz from Canvas documents."""
         self._ensure_initialized()
@@ -957,29 +958,40 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
 
             n_resolved = len(target_hashes) if target_hashes is not None else 'all'
 
-            # If multiple topics, use the multi-topic method
-            if len(topics) > 1:
-                result = self._quiz_generator.generate_quiz_multi_topics(
-                    topics=topics,
-                    num_questions=num_questions,
-                    difficulty=difficulty,
-                    language=language,
-                    k=k,
-                    target_file_hashes=target_hashes,
-                    user_id=user_id
-                )
-            else:
-                # Single topic
-                result = self._quiz_generator.generate_quiz(
-                    topic=topics[0],
-                    num_questions=num_questions,
-                    difficulty=difficulty,
-                    language=language,
-                    k=k,
-                    target_file_hashes=target_hashes,
-                    user_id=user_id
-                )
-            
+            # Temporarily override the quiz generator's LLM if a DB key was provided
+            _original_provider = None
+            if groq_api_key:
+                from .llm_providers import LLMFactory as _LLMFactory
+                _original_provider = self._quiz_generator._llm_provider
+                self._quiz_generator.set_llm_provider(_LLMFactory.create(groq_api_key=groq_api_key))
+
+            try:
+                # If multiple topics, use the multi-topic method
+                if len(topics) > 1:
+                    result = self._quiz_generator.generate_quiz_multi_topics(
+                        topics=topics,
+                        num_questions=num_questions,
+                        difficulty=difficulty,
+                        language=language,
+                        k=k,
+                        target_file_hashes=target_hashes,
+                        user_id=user_id
+                    )
+                else:
+                    # Single topic
+                    result = self._quiz_generator.generate_quiz(
+                        topic=topics[0],
+                        num_questions=num_questions,
+                        difficulty=difficulty,
+                        language=language,
+                        k=k,
+                        target_file_hashes=target_hashes,
+                        user_id=user_id
+                    )
+            finally:
+                if _original_provider is not None:
+                    self._quiz_generator.set_llm_provider(_original_provider)
+
             result["_resolved_hashes"] = n_resolved
             return result
             

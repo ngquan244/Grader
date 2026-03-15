@@ -24,22 +24,6 @@ from backend.services.panel_config_service import (
     PANEL_LABELS,
     ALL_PANELS,
 )
-from backend.services.model_config_service import (
-    get_model_config as get_model_cfg,
-    update_model_config,
-    ALL_PROVIDERS,
-    ALL_MODELS,
-    PROVIDER_LABELS,
-    PROVIDER_DESCRIPTIONS,
-    MODEL_LABELS,
-)
-from backend.services.tool_config_service import (
-    get_tool_config as get_tool_cfg,
-    update_tool_config,
-    ALL_TOOLS,
-    TOOL_LABELS,
-    TOOL_DESCRIPTIONS,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -347,106 +331,6 @@ async def update_panels(
 
 
 # =============================================================================
-# Model / Provider Management
-# =============================================================================
-
-class ModelConfigOut(BaseModel):
-    """Full model config for admin view."""
-    providers: dict          # { "ollama": true, "groq": false }
-    models: dict             # { "ollama": { "llama3.1:latest": true, ... }, ... }
-    all_providers: List[str]
-    all_models: dict         # same structure as ALL_MODELS
-    provider_labels: dict
-    provider_descriptions: dict
-    model_labels: dict
-
-
-class UpdateModelConfigRequest(BaseModel):
-    """Partial update for model config."""
-    providers: Optional[dict] = None  # { "ollama": true, "groq": false }
-    models: Optional[dict] = None     # { "ollama": { "phi3:latest": false }, ... }
-
-
-def _model_config_out(config: dict) -> ModelConfigOut:
-    return ModelConfigOut(
-        providers=config["providers"],
-        models=config["models"],
-        all_providers=ALL_PROVIDERS,
-        all_models=ALL_MODELS,
-        provider_labels=PROVIDER_LABELS,
-        provider_descriptions=PROVIDER_DESCRIPTIONS,
-        model_labels=MODEL_LABELS,
-    )
-
-
-@router.get("/models", response_model=ModelConfigOut)
-async def get_models_admin(admin: AdminUser):
-    """Get current model/provider config."""
-    config = get_model_cfg()
-    return _model_config_out(config)
-
-
-@router.put("/models", response_model=ModelConfigOut)
-async def update_models_admin(
-    body: UpdateModelConfigRequest,
-    admin: AdminUser,
-):
-    """Update model/provider visibility."""
-    updates: dict = {}
-    if body.providers is not None:
-        updates["providers"] = body.providers
-    if body.models is not None:
-        updates["models"] = body.models
-    config = update_model_config(updates)
-    logger.info("Admin %s updated model config: %s", admin.email, config)
-    return _model_config_out(config)
-
-
-# =============================================================================
-# Tool Management
-# =============================================================================
-
-class ToolConfigOut(BaseModel):
-    """Full tool config for admin view."""
-    tools: dict               # { "execute_notebook": true, ... }
-    all_tools: List[str]
-    tool_labels: dict
-    tool_descriptions: dict
-
-
-class UpdateToolConfigRequest(BaseModel):
-    """Partial update for tool config."""
-    tools: dict  # { "tool_name": bool, ... }
-
-
-def _tool_config_out(config: dict) -> ToolConfigOut:
-    return ToolConfigOut(
-        tools=config["tools"],
-        all_tools=ALL_TOOLS,
-        tool_labels=TOOL_LABELS,
-        tool_descriptions=TOOL_DESCRIPTIONS,
-    )
-
-
-@router.get("/tools", response_model=ToolConfigOut)
-async def get_tools_admin(admin: AdminUser):
-    """Get current tool config."""
-    config = get_tool_cfg()
-    return _tool_config_out(config)
-
-
-@router.put("/tools", response_model=ToolConfigOut)
-async def update_tools_admin(
-    body: UpdateToolConfigRequest,
-    admin: AdminUser,
-):
-    """Update tool enabled/disabled states."""
-    config = update_tool_config(body.tools)
-    logger.info("Admin %s updated tool config: %s", admin.email, config)
-    return _tool_config_out(config)
-
-
-# =============================================================================
 # Invite Code Schemas
 # =============================================================================
 
@@ -733,3 +617,98 @@ async def get_invite_code_usages(
         page_size=page_size,
         pages=pages,
     )
+
+
+# =============================================================================
+# Groq API Key Endpoints
+# =============================================================================
+
+class GroqKeyStatusOut(BaseModel):
+    """Status of the system-wide Groq API key."""
+    has_key: bool
+    source: str  # "db" | "env" | "none"
+    masked_key: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class UpdateGroqKeyRequest(BaseModel):
+    """Request to set/update the Groq API key."""
+    api_key: str = Field(..., min_length=10, max_length=256)
+
+
+@router.get("/groq-key/status", response_model=GroqKeyStatusOut)
+async def get_groq_key_status(
+    admin: AdminUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the current Groq API key status (has key, source, masked preview)."""
+    from backend.services.groq_key_service import (
+        get_groq_api_key,
+        get_groq_key_record,
+        mask_key,
+    )
+    from backend.core.config import settings
+
+    # Check DB first
+    db_key = await get_groq_api_key(db)
+    if db_key:
+        record = await get_groq_key_record(db)
+        updated_at = None
+        if record and record.value:
+            updated_at = record.value.get("updated_at_iso")
+        return GroqKeyStatusOut(
+            has_key=True,
+            source="db",
+            masked_key=mask_key(db_key),
+            updated_at=updated_at,
+        )
+
+    # Check env var
+    env_key = settings.GROQ_API_KEY
+    if env_key and env_key.strip():
+        return GroqKeyStatusOut(
+            has_key=True,
+            source="env",
+            masked_key=mask_key(env_key),
+        )
+
+    return GroqKeyStatusOut(has_key=False, source="none")
+
+
+@router.put("/groq-key", response_model=MessageOut)
+async def update_groq_key(
+    body: UpdateGroqKeyRequest,
+    admin: AdminUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """Validate and store a new Groq API key (encrypted in DB)."""
+    from backend.services.groq_key_service import validate_groq_api_key, set_groq_api_key
+
+    # Validate key against Groq API
+    valid = await validate_groq_api_key(body.api_key)
+    if not valid:
+        raise HTTPException(
+            status_code=400,
+            detail="API key không hợp lệ. Vui lòng kiểm tra lại key từ console.groq.com.",
+        )
+
+    await set_groq_api_key(db, body.api_key, updated_by=admin.email)
+
+    logger.info("Admin %s updated Groq API key", admin.email)
+    return MessageOut(success=True, message="Đã lưu Groq API key thành công.")
+
+
+@router.delete("/groq-key", response_model=MessageOut)
+async def delete_groq_key(
+    admin: AdminUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove Groq API key from DB (falls back to env var)."""
+    from backend.services.groq_key_service import delete_groq_api_key
+
+    deleted = await delete_groq_api_key(db)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Không có Groq API key trong database.")
+
+    logger.info("Admin %s removed Groq API key from DB", admin.email)
+    return MessageOut(success=True, message="Đã xoá Groq API key. Hệ thống sẽ dùng biến môi trường nếu có.")

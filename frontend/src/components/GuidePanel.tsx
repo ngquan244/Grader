@@ -13,12 +13,12 @@ import {
   BookOpen, Edit3, Save, X, Loader2, AlertCircle, CheckCircle2,
   MessageSquare, Upload, CheckSquare, BookText,
   GraduationCap, PenSquare, Settings, HelpCircle, Home, ChevronRight,
-  ArrowLeft, ImagePlus,
+  ArrowLeft, ImagePlus, Database, FileText,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
-  getGuideList, getGuideByPanel, updateGuide, uploadGuideImage,
+  getGuideList, getGuideByPanel, updateGuide, createGuide, uploadGuideImage,
   type GuideListItem, type GuideDetailResponse,
 } from '../api/guide';
 import { getGuideSectionFromPath } from '../types';
@@ -205,6 +205,33 @@ const GuidePanel: React.FC = () => {
     }
   };
 
+  /* ---------- Customize a default guide (create DB entry) ---------- */
+  const handleCustomize = async () => {
+    if (!activeDetail) return;
+    try {
+      setSaving(true);
+      setError('');
+      const res = await createGuide({
+        panel_key: activeDetail.panel_key,
+        title: activeDetail.title,
+        content: activeDetail.content,
+        description: activeDetail.description ?? undefined,
+        icon_name: activeDetail.icon_name ?? undefined,
+        sort_order: activeDetail.sort_order,
+        is_published: true,
+      });
+      setActiveDetail(res);
+      fetchGuideList();
+      setSuccess('Đã tạo bản tùy chỉnh. Bạn có thể chỉnh sửa nội dung.');
+      setTimeout(() => setSuccess(''), 4000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Không thể tạo bản tùy chỉnh';
+      setError(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   /* ---------- Image paste handler ---------- */
   const handleEditorPaste = useCallback(async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const items = e.clipboardData?.items;
@@ -327,11 +354,18 @@ const GuidePanel: React.FC = () => {
           <div className="guide-title-icon"><BookOpen size={24} /></div>
           <h1>Hướng dẫn sử dụng</h1>
         </div>
-        {isAdmin && activeSection && !editing && (
-          <button className="guide-edit-btn" onClick={handleEdit}>
-            <Edit3 size={16} />
-            Chỉnh sửa
-          </button>
+        {isAdmin && activeSection && !editing && activeDetail && (
+          activeDetail.source === 'default' ? (
+            <button className="guide-edit-btn" onClick={handleCustomize} disabled={saving}>
+              {saving ? <Loader2 className="spin" size={16} /> : <Edit3 size={16} />}
+              Tùy chỉnh
+            </button>
+          ) : (
+            <button className="guide-edit-btn" onClick={handleEdit}>
+              <Edit3 size={16} />
+              Chỉnh sửa
+            </button>
+          )
         )}
         {isAdmin && editing && (
           <div className="guide-edit-actions">
@@ -455,6 +489,15 @@ const GuidePanel: React.FC = () => {
                   {isAdmin && !activeDetail.is_published && (
                     <span className="guide-unpublished-badge">Ẩn</span>
                   )}
+                  {isAdmin && (
+                    <span className={`guide-source-badge ${activeDetail.source === 'db' ? 'guide-source-db' : 'guide-source-default'}`}>
+                      {activeDetail.source === 'db' ? (
+                        <><Database size={12} /> Tùy chỉnh</>
+                      ) : (
+                        <><FileText size={12} /> Mặc định</>
+                      )}
+                    </span>
+                  )}
                 </div>
                 <div
                   className="guide-section-body"
@@ -521,6 +564,11 @@ const GuidePanel: React.FC = () => {
                     {isAdmin && !g.is_published && (
                       <span className="guide-unpublished-badge">Ẩn</span>
                     )}
+                    {isAdmin && (
+                      <span className={`guide-source-badge-sm ${g.source === 'db' ? 'guide-source-db' : 'guide-source-default'}`}>
+                        {g.source === 'db' ? 'Tùy chỉnh' : 'Mặc định'}
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -529,9 +577,11 @@ const GuidePanel: React.FC = () => {
         </div>
       ) : (
         <div className="guide-empty">
-          <BookOpen size={48} strokeWidth={1.2} />
-          <p>Chưa có nội dung hướng dẫn.</p>
-          {isAdmin && <p>Vào từng mục để tạo nội dung hướng dẫn cho người dùng.</p>}
+          <AlertCircle size={48} strokeWidth={1.2} />
+          <p>Không thể tải hướng dẫn. Vui lòng thử lại sau.</p>
+          <button className="guide-edit-btn" onClick={fetchGuideList}>
+            Thử lại
+          </button>
         </div>
       )}
     </div>

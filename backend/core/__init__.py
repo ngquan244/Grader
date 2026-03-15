@@ -1,5 +1,5 @@
 # Core package
-from .constants import MessageRole, Messages, ScoreThresholds, FileLimits
+from .constants import MessageRole, Messages, FileLimits
 from .exceptions import (
     BaseAPIException,
     NotFoundException,
@@ -26,7 +26,6 @@ __all__ = [
     # Constants
     "MessageRole",
     "Messages",
-    "ScoreThresholds",
     "FileLimits",
     # Exceptions
     "BaseAPIException",

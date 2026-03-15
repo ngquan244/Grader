@@ -7,7 +7,7 @@ This module is SEPARATE from the existing chatbot/agent logic and provides:
 - PDF document ingestion and chunking
 - Vector storage with ChromaDB (persistent)
 - Retrieval using embeddings
-- Generation using configurable LLM backends (Ollama/Groq)
+- Generation using Groq Cloud LLM backend
 - Quiz generation from documents
 - Runtime LLM provider switching
 
@@ -40,7 +40,6 @@ from .collection_manager import (
 )
 from .llm_providers import (
     BaseLLM,
-    OllamaLLM,
     GroqLLM,
     LLMFactory,
     LLMProvider,
@@ -62,7 +61,6 @@ __all__ = [
     "get_uploads_collection_manager",
     "get_canvas_collection_manager",
     "BaseLLM",
-    "OllamaLLM",
     "GroqLLM",
     "LLMFactory",
     "LLMProvider",

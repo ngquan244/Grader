@@ -1,11 +1,10 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AppProvider, useApp } from './context/AppContext';
 import { usePanelConfig, getFirstVisibleTab } from './context/PanelConfigContext';
-import { useModelConfig } from './context/ModelConfigContext';
 import { useAuth } from './context/AuthContext';
 import { useToast } from './context/ToastContext';
-import { Sidebar, ChatPanel, UploadPanel, GradingPanel, SettingsPanel, DocumentRAGPanel, CanvasFilesPanel, QuizBuilderPanel, GuidePanel, CanvasSimulationPanel, CanvasResultsPanel } from './components';
+import { Sidebar, SettingsPanel, DocumentRAGPanel, CanvasFilesPanel, QuizBuilderPanel, GuidePanel, CanvasSimulationPanel, CanvasResultsPanel } from './components';
 import { Loader2 } from 'lucide-react';
 import { TABS, TAB_PATHS, pathToTab } from './types';
 import type { QuizQuestion } from './api/documentRag';
@@ -16,9 +15,6 @@ const ALL_TAB_KEYS = Object.values(TABS);
 
 /** Human-friendly panel names for toast messages */
 const TAB_LABELS: Record<string, string> = {
-  chat: 'Chat AI',
-  upload: 'Upload',
-  grading: 'Chấm bài',
   document_rag: 'Tài liệu RAG',
   canvas: 'Canvas',
   canvas_quiz: 'Quiz Builder',
@@ -29,11 +25,10 @@ const TAB_LABELS: Record<string, string> = {
 };
 
 const AppContent: React.FC = () => {
-  const { loading, config, switchProvider } = useApp();
+  const { loading } = useApp();
   const location = useLocation();
   const navigate = useNavigate();
   const { isPanelVisible, loaded: panelConfigLoaded } = usePanelConfig();
-  const { isProviderEnabled, enabledProviders, loaded: modelConfigLoaded } = useModelConfig();
   const { user } = useAuth();
   const { showToast } = useToast();
 
@@ -62,27 +57,6 @@ const AppContent: React.FC = () => {
       navigate('/' + TAB_PATHS[redirect], { replace: true });
     }
   }, [activeTab, isPanelVisible, panelConfigLoaded, isAdmin, navigate, showToast]);
-
-  // Auto-switch provider if current provider was disabled by admin
-  const prevProviderRef = useRef(config?.llm_provider);
-  useEffect(() => {
-    if (!modelConfigLoaded || isAdmin || !config) return;
-
-    const current = config.llm_provider || 'groq';
-    // Only act if the current provider just became disabled
-    if (!isProviderEnabled(current) && enabledProviders.length > 0) {
-      const newProvider = enabledProviders[0];
-      // Prevent duplicate switches
-      if (prevProviderRef.current !== newProvider) {
-        prevProviderRef.current = newProvider;
-        const provLabel = current === 'groq' ? 'Groq' : 'Ollama';
-        showToast(`Provider "${provLabel}" đã bị tắt bởi quản trị viên. Tự động chuyển sang ${enabledProviders[0]}.`, 'warning', 5000);
-        switchProvider(enabledProviders[0] as 'ollama' | 'groq');
-      }
-    } else {
-      prevProviderRef.current = current;
-    }
-  }, [modelConfigLoaded, isAdmin, config, isProviderEnabled, enabledProviders, switchProvider, showToast]);
 
   // Shared state: questions to inject into QuizBuilder from other panels
   const [quizBuilderQuestions, setQuizBuilderQuestions] = useState<QuizBuilderQuestion[]>([]);
@@ -119,21 +93,6 @@ const AppContent: React.FC = () => {
     <div className="app">
       <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
       <main className="main-content">
-        {checkVisible(TABS.CHAT) && (
-          <div style={{ display: activeTab === TABS.CHAT ? 'block' : 'none', height: '100%' }}>
-            <ChatPanel />
-          </div>
-        )}
-        {checkVisible(TABS.UPLOAD) && (
-          <div className="panel-padded" style={{ display: activeTab === TABS.UPLOAD ? 'block' : 'none', height: '100%' }}>
-            <UploadPanel />
-          </div>
-        )}
-        {checkVisible(TABS.GRADING) && (
-          <div className="panel-padded" style={{ display: activeTab === TABS.GRADING ? 'block' : 'none', height: '100%' }}>
-            <GradingPanel />
-          </div>
-        )}
         {checkVisible(TABS.DOCUMENT_RAG) && (
           <div style={{ display: activeTab === TABS.DOCUMENT_RAG ? 'block' : 'none', height: '100%' }}>
             <DocumentRAGPanel onDeployToCanvas={handleDeployToQuizBuilder} />

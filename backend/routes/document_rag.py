@@ -23,6 +23,7 @@ from backend.core.config import settings
 from backend.core.logger import quiz_logger
 from backend.utils import get_user_rag_dir
 from backend.database.base import SessionLocal
+from backend.services.groq_key_service import get_effective_groq_key
 
 logger = logging.getLogger(__name__)
 
@@ -392,34 +393,6 @@ def reset_index(user: CurrentUser):
         raise HTTPException(status_code=500, detail="Đã xảy ra lỗi khi xử lý yêu cầu")
 
 
-@router.get("/ollama-status")
-def check_ollama_status(user: CurrentUser):
-    """
-    Check if Ollama is running and the model is available.
-    Development only — returns unavailable in production.
-    """
-    from backend.core.config import settings
-    if settings.ENVIRONMENT != "development":
-        return {
-            "connected": False,
-            "error": "Ollama is not available in production",
-            "message": "Production chỉ hỗ trợ Groq Cloud. Ollama chỉ dùng trong development."
-        }
-    try:
-        rag_service = get_rag_service()
-        status = rag_service.check_ollama_status()
-        
-        return status
-        
-    except Exception as e:
-        logger.exception("Error checking Ollama status")
-        return {
-            "connected": False,
-            "error": "Connection check failed",
-            "message": "Không thể kết nối tới Ollama"
-        }
-
-
 @router.get("/config")
 def get_rag_config(user: CurrentUser):
     """
@@ -518,7 +491,7 @@ def generate_quiz_from_documents(request: GenerateQuizRequest, user: CurrentUser
 
     This endpoint:
     1. Retrieves relevant context from indexed documents based on topic(s)
-    2. Uses LLM (Ollama) to generate multiple choice questions
+    2. Uses LLM to generate multiple choice questions
     3. Returns formatted quiz with questions, options, and answers
     
     Supports both single topic (legacy) and multiple topics (new).
@@ -620,7 +593,7 @@ class ExportQuizRequest(BaseModel):
 
 class SetLLMProviderRequest(BaseModel):
     """Request model for setting LLM provider"""
-    provider: str  # "ollama" or "groq"
+    provider: str = "groq"
     model: Optional[str] = None  # Optional model override
 
 
@@ -874,9 +847,7 @@ def set_llm_provider(request: SetLLMProviderRequest, admin: AdminUser):
     """
     Set the LLM provider at runtime.
     
-    Allows switching between:
-    - "ollama": Local Ollama instance
-    - "groq": Groq Cloud API (requires GROQ_API_KEY in .env)
+    Currently only supports "groq" (Groq Cloud API).
     
     Args:
         request: Provider name and optional model override
@@ -887,27 +858,10 @@ def set_llm_provider(request: SetLLMProviderRequest, admin: AdminUser):
     logger.info(f"Setting LLM provider: {request.provider}, model: {request.model}")
     
     # Validate provider
-    valid_providers = ["ollama", "groq"]
-    if request.provider.lower() not in valid_providers:
+    if request.provider.lower() != "groq":
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid provider: {request.provider}. Valid options: {valid_providers}"
-        )
-    
-    # Ollama is development-only
-    from backend.core.config import settings as core_settings
-    if request.provider.lower() == "ollama" and core_settings.ENVIRONMENT != "development":
-        raise HTTPException(
-            status_code=400,
-            detail="Ollama is only available in development. Production supports Groq Cloud only."
-        )
-    
-    # Check if provider is enabled by admin
-    from backend.services.model_config_service import is_provider_enabled
-    if not is_provider_enabled(request.provider.lower()):
-        raise HTTPException(
-            status_code=403,
-            detail=f"Provider '{request.provider}' is currently disabled by the administrator."
+            detail=f"Invalid provider: {request.provider}. Only 'groq' is supported."
         )
     
     try:
@@ -1185,6 +1139,8 @@ async def async_generate_quiz(
     try:
         job_service = JobService(db)
         
+        groq_api_key, _ = await get_effective_groq_key(db)
+        
         payload = {
             "topics": topics_list,
             "num_questions": request.num_questions,
@@ -1192,6 +1148,7 @@ async def async_generate_quiz(
             "language": request.language,
             "selected_documents": request.selected_documents,
             "user_id": str(user.id),
+            "groq_api_key": groq_api_key,
         }
         quiz_logger.info(f"Route async_generate_quiz: topics={topics_list}, selected_documents={request.selected_documents!r}, user={user.id}")
         
@@ -1238,6 +1195,8 @@ async def async_extract_topics(
     try:
         job_service = JobService(db)
         
+        groq_api_key, _ = await get_effective_groq_key(db)
+        
         job = await job_service.create_job(
             user_id=user.id,
             job_type=JobType.EXTRACT_TOPICS,
@@ -1250,7 +1209,7 @@ async def async_extract_topics(
         result = await apply_async_nonblocking(
             tasks.rag_tasks.extract_topics,
             args=[str(job.id)],
-            kwargs={"user_id": str(user.id)},
+            kwargs={"user_id": str(user.id), "groq_api_key": groq_api_key},
         )
         
         await job_service.set_celery_task_id(job.id, result.id)

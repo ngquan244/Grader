@@ -249,6 +249,7 @@ def extract_topics(
     self,
     job_id: str,
     user_id: Optional[str] = None,
+    groq_api_key: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Extract topics from indexed documents.
@@ -261,7 +262,7 @@ def extract_topics(
         
         rag_service = _get_rag_service()
         with SessionLocal() as rag_db:
-            result = rag_service.extract_topics(user_id=user_id, db_session=rag_db)
+            result = rag_service.extract_topics(user_id=user_id, db_session=rag_db, groq_api_key=groq_api_key)
         
         job_service.complete_job(job_uuid, result)
         return result
