@@ -120,6 +120,7 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-grader_db}
     volumes:
       - ./data:/app/data
+      - ./exports:/app/exports
     depends_on:
       redis:
         condition: service_healthy
@@ -154,6 +155,7 @@ services:
       - LLM_RATE_LIMIT=${LLM_RATE_LIMIT:-10}
     volumes:
       - ./data:/app/data
+      - ./exports:/app/exports
     depends_on:
       redis:
         condition: service_healthy
@@ -164,9 +166,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: 3G
         reservations:
-          memory: 256M
+          memory: 512M
 
   # Canvas Worker: Canvas API operations
   worker-canvas:
