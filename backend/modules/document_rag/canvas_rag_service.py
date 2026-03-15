@@ -13,6 +13,7 @@ import uuid as _uuid
 import hashlib
 import json
 import logging
+import threading
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Union
 from datetime import datetime
@@ -140,6 +141,8 @@ class CanvasRAGService:
     """
     
     _instance: Optional["CanvasRAGService"] = None
+    _instance_lock = threading.Lock()
+    _init_lock = threading.Lock()
     
     # Canvas-specific paths
     CANVAS_RAG_DIR = Path("./data/canvas_rag_uploads")
@@ -175,9 +178,16 @@ class CanvasRAGService:
         self._initialized = False
     
     def _ensure_initialized(self):
+        """Ensure all components are initialized (double-checked locking)."""
         if self._initialized:
             return
-        
+        with self._init_lock:
+            if self._initialized:
+                return
+            self._do_initialize()
+
+    def _do_initialize(self):
+        """Actual initialization — must be called under _init_lock."""
         logger.info("Initializing Canvas RAG components with per-file collection manager...")
         
         # Initialize per-file collection manager for Canvas files
@@ -219,8 +229,11 @@ class CanvasRAGService:
     
     @classmethod
     def get_instance(cls) -> "CanvasRAGService":
+        """Get singleton instance (double-checked locking)."""
         if cls._instance is None:
-            cls._instance = CanvasRAGService()
+            with cls._instance_lock:
+                if cls._instance is None:
+                    cls._instance = CanvasRAGService()
         return cls._instance
     
     # ===== Per-user directory helpers =====
@@ -893,6 +906,8 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
     ) -> Dict[str, Any]:
         """Query the Canvas document knowledge base."""
         self._ensure_initialized()
+        # Sync registry state for cross-process freshness (fast mtime check).
+        self._collection_manager.ensure_fresh_state()
         return self._rag_chain.query(question, k=k, return_context=return_context)
     
     def generate_quiz(
@@ -921,12 +936,9 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
         quiz_logger.info(f"canvas generate_quiz called: selected_documents={selected_documents}, user_id={user_id}, db_session={'present' if db_session else 'None'}")
         
         try:
-            # CRITICAL: Always reload registry from disk before retrieval.
-            # In multi-process Docker (backend + worker-llm), the backend process
-            # updates the registry JSON after ingest, but this worker's in-memory
-            # registry is stale from startup. Without reload, query_collection()
-            # falls back to generating wrong collection name (doc_* instead of
-            # canvas_*), pointing to an empty/nonexistent Chroma → 0 docs.
+            # Sync registry state. With --pool=threads this is a fast mtime check (no-op
+            # when state is already fresh). Kept as defense-in-depth for backend process
+            # isolation and future-proofing.
             self._collection_manager.ensure_fresh_state()
 
             # Resolve target file hashes from selected_documents
@@ -958,39 +970,38 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
 
             n_resolved = len(target_hashes) if target_hashes is not None else 'all'
 
-            # Temporarily override the quiz generator's LLM if a DB key was provided
-            _original_provider = None
+            # Use a local QuizGenerator if a custom API key was provided,
+            # avoiding shared singleton mutation (thread-safety fix).
+            quiz_gen = self._quiz_generator
             if groq_api_key:
                 from .llm_providers import LLMFactory as _LLMFactory
-                _original_provider = self._quiz_generator._llm_provider
-                self._quiz_generator.set_llm_provider(_LLMFactory.create(groq_api_key=groq_api_key))
+                quiz_gen = QuizGenerator(
+                    retriever=self._multi_retriever,
+                    llm_provider=_LLMFactory.create(groq_api_key=groq_api_key),
+                )
 
-            try:
-                # If multiple topics, use the multi-topic method
-                if len(topics) > 1:
-                    result = self._quiz_generator.generate_quiz_multi_topics(
-                        topics=topics,
-                        num_questions=num_questions,
-                        difficulty=difficulty,
-                        language=language,
-                        k=k,
-                        target_file_hashes=target_hashes,
-                        user_id=user_id
-                    )
-                else:
-                    # Single topic
-                    result = self._quiz_generator.generate_quiz(
-                        topic=topics[0],
-                        num_questions=num_questions,
-                        difficulty=difficulty,
-                        language=language,
-                        k=k,
-                        target_file_hashes=target_hashes,
-                        user_id=user_id
-                    )
-            finally:
-                if _original_provider is not None:
-                    self._quiz_generator.set_llm_provider(_original_provider)
+            # If multiple topics, use the multi-topic method
+            if len(topics) > 1:
+                result = quiz_gen.generate_quiz_multi_topics(
+                    topics=topics,
+                    num_questions=num_questions,
+                    difficulty=difficulty,
+                    language=language,
+                    k=k,
+                    target_file_hashes=target_hashes,
+                    user_id=user_id
+                )
+            else:
+                # Single topic
+                result = quiz_gen.generate_quiz(
+                    topic=topics[0],
+                    num_questions=num_questions,
+                    difficulty=difficulty,
+                    language=language,
+                    k=k,
+                    target_file_hashes=target_hashes,
+                    user_id=user_id
+                )
 
             result["_resolved_hashes"] = n_resolved
             return result
