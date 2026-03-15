@@ -2,7 +2,7 @@
 Quiz Generator Module
 =====================
 Generate quiz questions from documents using RAG + configurable LLM backends.
-Supports Ollama (local) and Groq Cloud (API) with strict JSON output.
+Supports Groq Cloud (API) with strict JSON output.
 """
 
 import logging
@@ -288,7 +288,7 @@ class QuizGenerator:
     @property
     def model(self) -> str:
         """Get current model name."""
-        return self._llm_provider.model if self._llm_provider else self._model_override or rag_config.OLLAMA_MODEL
+        return self._llm_provider.model if self._llm_provider else self._model_override or rag_config.GROQ_MODEL
     
     def set_llm_provider(self, provider: BaseLLM):
         """

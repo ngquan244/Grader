@@ -5,36 +5,8 @@
 // ===== Common Types =====
 export type MessageRole = 'user' | 'assistant';
 
-// ===== Chat Types =====
-export interface ChatMessage {
-  role: MessageRole;
-  content: string;
-}
-
-export interface ToolUsage {
-  tool: string;
-  args: Record<string, unknown>;
-}
-
-export interface ChatRequest {
-  message: string;
-  history: ChatMessage[];
-  model: string;
-  max_iterations: number;
-}
-
-export interface ChatResponse {
-  response: string;
-  iterations: number;
-  tools_used: ToolUsage[];
-  success: boolean;
-  error?: string;
-}
-
 export interface ConfigResponse {
-  available_models: string[];
   default_model: string;
-  max_iterations: number;
   llm_provider: string;
   groq_available: boolean;
 }
@@ -49,7 +21,6 @@ export interface ApiResponse<T = unknown> {
 
 // ===== Constants =====
 export const TABS = {
-  CHAT: 'chat',
   DOCUMENT_RAG: 'document_rag',
   CANVAS: 'canvas',
   CANVAS_QUIZ: 'canvas_quiz',
@@ -63,7 +34,6 @@ export type TabType = typeof TABS[keyof typeof TABS];
 
 /** Map each tab → URL path segment (no leading slash) */
 export const TAB_PATHS: Record<TabType, string> = {
-  [TABS.CHAT]: 'chat',
   [TABS.DOCUMENT_RAG]: 'rag',
   [TABS.CANVAS]: 'canvas',
   [TABS.CANVAS_QUIZ]: 'quiz-builder',
@@ -73,7 +43,7 @@ export const TAB_PATHS: Record<TabType, string> = {
   [TABS.SETTINGS]: 'settings',
 };
 
-/** Reverse lookup: URL path segment → TabType. Falls back to CHAT. */
+/** Reverse lookup: URL path segment → TabType. Falls back to GUIDE. */
 export function pathToTab(path: string): TabType {
   // strip leading slash(es)
   const segment = path.replace(/^\/+/, '').split('/')[0] || '';

@@ -63,7 +63,7 @@ export interface RAGFilesResponse {
   pages: number;
 }
 
-export interface OllamaStatus {
+export interface LLMStatus {
   connected: boolean;
   model?: string;
   base_url?: string;
@@ -71,7 +71,6 @@ export interface OllamaStatus {
   error?: string;
   provider?: string;
   error_type?: string;
-  fallback_available?: boolean;
 }
 
 export interface RAGConfig {
@@ -80,8 +79,7 @@ export interface RAGConfig {
   llm_provider: string;
   llm_model: string;
   available_providers: string[];
-  ollama_model: string;
-  ollama_base_url: string;
+
   groq_model: string;
   groq_configured: boolean;
   chunk_size: number;
@@ -98,11 +96,10 @@ export interface LLMProviderInfo {
   current_model: string;
   available_providers: string[];
   groq_configured: boolean;
-  ollama_base_url: string;
 }
 
 export interface SetLLMProviderRequest {
-  provider: 'ollama' | 'groq';
+  provider: 'groq';
   model?: string;
 }
 
@@ -112,7 +109,7 @@ export interface SetLLMProviderResponse {
   model?: string;
   message?: string;
   error?: string;
-  connection?: OllamaStatus;
+  connection?: LLMStatus;
 }
 
 // Quiz Generation Types
@@ -261,10 +258,10 @@ export const resetRAGIndex = async (): Promise<{ success: boolean; message?: str
 };
 
 /**
- * Check Ollama connection status
+ * Check LLM connection status
  */
-export const checkOllamaStatus = async (): Promise<OllamaStatus> => {
-  const response = await apiClient.get<OllamaStatus>('/api/document-rag/ollama-status');
+export const checkLLMStatus = async (): Promise<LLMStatus> => {
+  const response = await apiClient.get<LLMStatus>('/api/document-rag/llm-status');
   return response.data;
 };
 
@@ -425,13 +422,7 @@ export const setLLMProvider = async (request: SetLLMProviderRequest): Promise<Se
   return response.data;
 };
 
-/**
- * Check LLM provider connection status
- */
-export const checkLLMStatus = async (): Promise<OllamaStatus> => {
-  const response = await apiClient.get<OllamaStatus>('/api/document-rag/llm-status');
-  return response.data;
-};
+
 
 // ===== Async (Celery) API Functions =====
 

@@ -14,12 +14,8 @@ python-multipart==0.0.21
 email-validator==2.2.0
 
 # === AI & Language Models ===
-langgraph==1.0.5
-langchain==1.2.1
 langchain-community==0.4.1
-langchain-ollama==1.0.1
 langchain-openai==1.1.7
-ollama==0.6.1
 
 # === Environment Configuration ===
 python-dotenv==1.2.1

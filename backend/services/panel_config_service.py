@@ -13,7 +13,6 @@ logger = logging.getLogger(__name__)
 
 # All panel keys (matching frontend TABS constant)
 ALL_PANELS = [
-    "chat",
     "upload",
     "grading",
     "document_rag",
@@ -27,7 +26,6 @@ ALL_PANELS = [
 
 # Human-readable labels for each panel
 PANEL_LABELS: Dict[str, str] = {
-    "chat": "Chat AI",
     "upload": "Upload",
     "grading": "Chấm điểm",
     "document_rag": "Tài Liệu",

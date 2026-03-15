@@ -1,5 +1,4 @@
 export { default as Sidebar } from './Sidebar';
-export { default as ChatPanel } from './ChatPanel';
 export { default as SettingsPanel } from './SettingsPanel';
 export { default as DocumentRAGPanel } from './DocumentRAGPanel';
 export { default as CanvasFilesPanel } from './CanvasFilesPanel';

@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 
-from backend.routes import chat, config as config_routes
+from backend.routes import config as config_routes
 from backend.routes import document_rag as document_rag_routes
 from backend.routes import canvas as canvas_routes
 from backend.routes import canvas_rag as canvas_rag_routes
@@ -147,7 +147,6 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 # Include routers
 app.include_router(auth_router, prefix="/api", tags=["Authentication"])
-app.include_router(chat.router, prefix="/api/chat", tags=["Chat"])
 app.include_router(config_routes.router, prefix="/api/config", tags=["Configuration"])
 app.include_router(document_rag_routes.router, prefix="/api/document-rag", tags=["Document RAG"])
 app.include_router(canvas_routes.router, prefix="/api/canvas", tags=["Canvas LMS"])

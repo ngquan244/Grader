@@ -17,7 +17,6 @@ from pydantic_settings import BaseSettings
 
 class LLMProviderType(str, Enum):
     """Supported LLM providers."""
-    OLLAMA = "ollama"
     GROQ = "groq"
 
 
@@ -257,12 +256,11 @@ class Settings(BaseSettings):
                     f"ENVIRONMENT={self.ENVIRONMENT}."
                 )
 
-            # LLM Provider: Ollama is development-only
-            if self.LLM_PROVIDER == "ollama":
+            # LLM Provider: only Groq is supported
+            if self.LLM_PROVIDER != "groq":
                 raise ValueError(
-                    "FATAL: LLM_PROVIDER='ollama' is not supported in production. "
-                    "Ollama requires too much RAM for VPS deployment. "
-                    "Set LLM_PROVIDER=groq in your .env file."
+                    f"FATAL: LLM_PROVIDER='{self.LLM_PROVIDER}' is not supported. "
+                    "Only 'groq' is supported. Set LLM_PROVIDER=groq in your .env file."
                 )
             # Groq API key: now optional at startup (can be set via admin UI at runtime)
             if not self.GROQ_API_KEY or not self.GROQ_API_KEY.strip():
@@ -270,11 +268,6 @@ class Settings(BaseSettings):
                     "GROQ_API_KEY not set in environment. "
                     "Admin can configure it at runtime via Settings panel. "
                     "Get a key from: https://console.groq.com/keys"
-                )
-            if self.GROQ_FALLBACK_TO_OLLAMA:
-                raise ValueError(
-                    "FATAL: GROQ_FALLBACK_TO_OLLAMA must be False in production. "
-                    "Set GROQ_FALLBACK_TO_OLLAMA=false in your .env file."
                 )
 
             # CORS: ensure origins have been explicitly set (no localhost-only)
@@ -311,18 +304,12 @@ class Settings(BaseSettings):
     # ==========================================================================
     # LLM Provider Configuration
     # ==========================================================================
-    LLM_PROVIDER: str = "ollama"  # "ollama" (dev only) or "groq" (production)
-    
-    # Ollama settings (local LLM)
-    OLLAMA_MODEL: str = "llama3.1:latest"
-    OLLAMA_BASE_URL: str = "http://localhost:11434"
-    OLLAMA_TEMPERATURE: float = 0.3
+    LLM_PROVIDER: str = "groq"  # Only "groq" is supported
     
     # Groq Cloud settings
     GROQ_API_KEY: Optional[str] = None
     GROQ_MODEL: str = "llama-3.3-70b-versatile"
     GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
-    GROQ_FALLBACK_TO_OLLAMA: bool = True
     
     # Groq available models
     GROQ_AVAILABLE_MODELS: List[str] = [
@@ -332,16 +319,7 @@ class Settings(BaseSettings):
         "mixtral-8x7b-32768",
     ]
     
-    # Ollama available models
-    OLLAMA_AVAILABLE_MODELS: List[str] = [
-        "llama3.1:latest",
-        "phi3:latest",
-        "mistral:latest",
-        "gemma2:latest",
-    ]
-    
     # AI Model settings
-    MAX_ITERATIONS: int = 10
     TEMPERATURE: float = 0.3
     
     # ==========================================================================
@@ -353,15 +331,11 @@ class Settings(BaseSettings):
     
     @property
     def DEFAULT_MODEL(self) -> str:
-        if self.LLM_PROVIDER == "groq":
-            return self.GROQ_MODEL
-        return self.OLLAMA_MODEL
+        return self.GROQ_MODEL
     
     @property
     def AVAILABLE_MODELS(self) -> List[str]:
-        if self.LLM_PROVIDER == "groq":
-            return self.GROQ_AVAILABLE_MODELS
-        return self.OLLAMA_AVAILABLE_MODELS
+        return self.GROQ_AVAILABLE_MODELS
     
     class Config:
         env_file = ".env"

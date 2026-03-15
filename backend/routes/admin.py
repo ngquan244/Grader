@@ -24,22 +24,6 @@ from backend.services.panel_config_service import (
     PANEL_LABELS,
     ALL_PANELS,
 )
-from backend.services.model_config_service import (
-    get_model_config as get_model_cfg,
-    update_model_config,
-    ALL_PROVIDERS,
-    ALL_MODELS,
-    PROVIDER_LABELS,
-    PROVIDER_DESCRIPTIONS,
-    MODEL_LABELS,
-)
-from backend.services.tool_config_service import (
-    get_tool_config as get_tool_cfg,
-    update_tool_config,
-    ALL_TOOLS,
-    TOOL_LABELS,
-    TOOL_DESCRIPTIONS,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -344,106 +328,6 @@ async def update_panels(
         labels=PANEL_LABELS,
         all_panels=ALL_PANELS,
     )
-
-
-# =============================================================================
-# Model / Provider Management
-# =============================================================================
-
-class ModelConfigOut(BaseModel):
-    """Full model config for admin view."""
-    providers: dict          # { "ollama": true, "groq": false }
-    models: dict             # { "ollama": { "llama3.1:latest": true, ... }, ... }
-    all_providers: List[str]
-    all_models: dict         # same structure as ALL_MODELS
-    provider_labels: dict
-    provider_descriptions: dict
-    model_labels: dict
-
-
-class UpdateModelConfigRequest(BaseModel):
-    """Partial update for model config."""
-    providers: Optional[dict] = None  # { "ollama": true, "groq": false }
-    models: Optional[dict] = None     # { "ollama": { "phi3:latest": false }, ... }
-
-
-def _model_config_out(config: dict) -> ModelConfigOut:
-    return ModelConfigOut(
-        providers=config["providers"],
-        models=config["models"],
-        all_providers=ALL_PROVIDERS,
-        all_models=ALL_MODELS,
-        provider_labels=PROVIDER_LABELS,
-        provider_descriptions=PROVIDER_DESCRIPTIONS,
-        model_labels=MODEL_LABELS,
-    )
-
-
-@router.get("/models", response_model=ModelConfigOut)
-async def get_models_admin(admin: AdminUser):
-    """Get current model/provider config."""
-    config = get_model_cfg()
-    return _model_config_out(config)
-
-
-@router.put("/models", response_model=ModelConfigOut)
-async def update_models_admin(
-    body: UpdateModelConfigRequest,
-    admin: AdminUser,
-):
-    """Update model/provider visibility."""
-    updates: dict = {}
-    if body.providers is not None:
-        updates["providers"] = body.providers
-    if body.models is not None:
-        updates["models"] = body.models
-    config = update_model_config(updates)
-    logger.info("Admin %s updated model config: %s", admin.email, config)
-    return _model_config_out(config)
-
-
-# =============================================================================
-# Tool Management
-# =============================================================================
-
-class ToolConfigOut(BaseModel):
-    """Full tool config for admin view."""
-    tools: dict               # { "execute_notebook": true, ... }
-    all_tools: List[str]
-    tool_labels: dict
-    tool_descriptions: dict
-
-
-class UpdateToolConfigRequest(BaseModel):
-    """Partial update for tool config."""
-    tools: dict  # { "tool_name": bool, ... }
-
-
-def _tool_config_out(config: dict) -> ToolConfigOut:
-    return ToolConfigOut(
-        tools=config["tools"],
-        all_tools=ALL_TOOLS,
-        tool_labels=TOOL_LABELS,
-        tool_descriptions=TOOL_DESCRIPTIONS,
-    )
-
-
-@router.get("/tools", response_model=ToolConfigOut)
-async def get_tools_admin(admin: AdminUser):
-    """Get current tool config."""
-    config = get_tool_cfg()
-    return _tool_config_out(config)
-
-
-@router.put("/tools", response_model=ToolConfigOut)
-async def update_tools_admin(
-    body: UpdateToolConfigRequest,
-    admin: AdminUser,
-):
-    """Update tool enabled/disabled states."""
-    config = update_tool_config(body.tools)
-    logger.info("Admin %s updated tool config: %s", admin.email, config)
-    return _tool_config_out(config)
 
 
 # =============================================================================
@@ -810,10 +694,6 @@ async def update_groq_key(
 
     await set_groq_api_key(db, body.api_key, updated_by=admin.email)
 
-    # Clear agent cache so new agents pick up the new key
-    from backend.services.agent_service import agent_service
-    agent_service.clear_cache()
-
     logger.info("Admin %s updated Groq API key", admin.email)
     return MessageOut(success=True, message="Đã lưu Groq API key thành công.")
 
@@ -829,9 +709,6 @@ async def delete_groq_key(
     deleted = await delete_groq_api_key(db)
     if not deleted:
         raise HTTPException(status_code=404, detail="Không có Groq API key trong database.")
-
-    from backend.services.agent_service import agent_service
-    agent_service.clear_cache()
 
     logger.info("Admin %s removed Groq API key from DB", admin.email)
     return MessageOut(success=True, message="Đã xoá Groq API key. Hệ thống sẽ dùng biến môi trường nếu có.")

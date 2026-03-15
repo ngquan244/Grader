@@ -4,9 +4,7 @@ RAG Service Module
 Main service class that coordinates all RAG operations.
 This is the primary interface for the Document RAG feature.
 
-Supports multiple LLM providers:
-- Ollama (local inference)
-- Groq Cloud (OpenAI-compatible API)
+Supports Groq Cloud LLM provider.
 """
 
 import os
@@ -73,7 +71,6 @@ class RAGService:
         self,
         persist_directory: Optional[str] = None,
         collection_name: Optional[str] = None,
-        ollama_model: Optional[str] = None,
         llm_provider: Optional[str] = None
     ):
         """
@@ -82,12 +79,10 @@ class RAGService:
         Args:
             persist_directory: Directory for vector store persistence
             collection_name: Name of the vector collection (deprecated, now per-file)
-            ollama_model: Model to use for generation (legacy, for backwards compatibility)
-            llm_provider: LLM provider to use ("ollama" or "groq")
+            llm_provider: LLM provider to use ("groq")
         """
         self.persist_directory = persist_directory or rag_config.PERSIST_DIRECTORY
         self.collection_name = collection_name or rag_config.COLLECTION_NAME
-        self.ollama_model = ollama_model or rag_config.OLLAMA_MODEL
         self._llm_provider_name = llm_provider or rag_config.LLM_PROVIDER
         
         logger.info("Initializing RAG Service with per-file collections...")
@@ -564,18 +559,6 @@ class RAGService:
                 "error": str(e)
             }
     
-    def check_ollama_status(self) -> Dict[str, Any]:
-        """
-        Check LLM provider connection status.
-        Kept for backwards compatibility - now checks current provider.
-        
-        Returns:
-            Dictionary with provider status
-        """
-        self._ensure_initialized()
-        
-        return self._rag_chain.check_connection()
-    
     def check_llm_status(self) -> Dict[str, Any]:
         """
         Check current LLM provider connection status.
@@ -583,7 +566,9 @@ class RAGService:
         Returns:
             Dictionary with provider status
         """
-        return self.check_ollama_status()
+        self._ensure_initialized()
+        
+        return self._rag_chain.check_connection()
     
     def set_llm_provider(
         self,
@@ -594,7 +579,7 @@ class RAGService:
         Switch LLM provider at runtime.
         
         Args:
-            provider: Provider name ("ollama" or "groq")
+            provider: Provider name ("groq")
             model: Optional model name override
             
         Returns:
@@ -659,7 +644,6 @@ class RAGService:
             "current_model": current["model"],
             "available_providers": current["available_providers"],
             "groq_configured": bool(rag_config.GROQ_API_KEY),
-            "ollama_base_url": rag_config.OLLAMA_BASE_URL
         }
     
     def get_config(self) -> Dict[str, Any]:
@@ -677,8 +661,6 @@ class RAGService:
             "llm_provider": llm_info["provider"],
             "llm_model": llm_info["model"],
             "available_providers": llm_info["available_providers"],
-            "ollama_model": rag_config.OLLAMA_MODEL,
-            "ollama_base_url": rag_config.OLLAMA_BASE_URL,
             "groq_model": rag_config.GROQ_MODEL,
             "groq_configured": bool(rag_config.GROQ_API_KEY),
             "chunk_size": rag_config.CHUNK_SIZE,

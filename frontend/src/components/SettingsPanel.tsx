@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
-import { useModelConfig } from '../context/ModelConfigContext';
 import { authApi } from '../api/auth';
 import { groqKeyApi, type GroqKeyStatus } from '../api/groqKey';
 import { clearCanvasTokenCache } from '../api/canvas';
@@ -30,8 +29,7 @@ const DEFAULT_CANVAS_URL = 'https://lms.uet.vnu.edu.vn';
 
 const SettingsPanel: React.FC = () => {
   const navigate = useNavigate();
-  const { config, model, setModel, maxIterations, setMaxIterations } = useApp();
-  const { showModelSelector, getEnabledModels } = useModelConfig();
+  const { model } = useApp();
   const { canvasTokens, refreshProfile, isAuthenticated, user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
 
@@ -663,42 +661,15 @@ const SettingsPanel: React.FC = () => {
 
           {/* Provider Badge */}
           <div className="provider-badge-wrapper">
-            <span className={`provider-badge provider-${config?.llm_provider || 'ollama'}`}>
-              {config?.llm_provider === 'groq' ? '⚡ Groq Cloud' : '🖥️ Ollama Local'}
+            <span className="provider-badge provider-groq">
+              ⚡ Groq Cloud
             </span>
-            {config?.llm_provider === 'groq' && (
-              <span className="provider-hint">Xử lý nhanh</span>
-            )}
+            <span className="provider-hint">Xử lý nhanh</span>
           </div>
 
           <div className="form-group">
-            <label>Chọn model:</label>
-            {showModelSelector(config?.llm_provider || 'ollama') ? (
-              <select value={model} onChange={(e) => setModel(e.target.value)}>
-                {(getEnabledModels(config?.llm_provider || 'ollama').length > 0
-                  ? getEnabledModels(config?.llm_provider || 'ollama')
-                  : config?.available_models || []
-                ).map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <span className="provider-label-static">{model}</span>
-            )}
-          </div>
-
-          <div className="form-group">
-            <label>Độ sâu phân tích:</label>
-            <input
-              type="range"
-              min={5}
-              max={20}
-              value={maxIterations}
-              onChange={(e) => setMaxIterations(parseInt(e.target.value))}
-            />
-            <span className="range-value">{maxIterations}</span>
+            <label>Model hiện tại:</label>
+            <span className="provider-label-static">{model}</span>
           </div>
         </div>
       )}
