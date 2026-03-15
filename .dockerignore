@@ -58,6 +58,26 @@ test_*.py
 # Docker
 docker-compose*.yml
 Dockerfile*
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.cache/
+
+# Generic Node
+node_modules/
+dist/
+build/
+
+# Python local caches
+.ruff_cache/
+.cache/
+
+# Local env variants
+.env.production
+.env.development
+.env.test
 .docker/
 
 # Misc
