@@ -734,7 +734,7 @@ class RAGService:
         quiz_logger.info(f"generate_quiz called: selected_documents={selected_documents}, user_id={user_id}, db_session={'present' if db_session else 'None'}")
         
         # Validate num_questions
-        num_questions = max(1, min(30, num_questions))
+        num_questions = max(1, min(50, num_questions))
         
         # Check if index has documents
         stats = self.get_index_stats(user_id=user_id, db_session=db_session)

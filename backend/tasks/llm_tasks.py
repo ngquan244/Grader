@@ -114,7 +114,10 @@ def generate_quiz(
             app_logger.error(f"[QUIZ] failed duration={duration}s selected_docs={n_selected} resolved_hashes={n_resolved} error=\"{error_msg}\"")
             quiz_logger.error(f"Quiz failed: {error_msg}, result_keys={list(result.keys())}")
             result.pop("_resolved_hashes", None)
-            job_service.fail_job(job_uuid, error_msg)
+            if result.get("questions"):
+                job_service.complete_job(job_uuid, result)
+            else:
+                job_service.fail_job(job_uuid, error_msg)
         
         return result
         

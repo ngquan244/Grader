@@ -1795,17 +1795,6 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
                             </div>
                           ))}
                         </div>
-
-                        <div className="edit-explanation">
-                          <label>Giải thích:</label>
-                          <textarea
-                            value={editingQuestion.explanation || ''}
-                            onChange={(e) => handleEditQuestion('explanation', e.target.value)}
-                            rows={2}
-                            placeholder="Nhập giải thích (tùy chọn)..."
-                          />
-                        </div>
-                        
                         <div className="question-edit-actions">
                           <button
                             className="btn btn-sm btn-secondary"
@@ -1841,12 +1830,6 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
                             </div>
                           ))}
                         </div>
-
-                        {q.explanation && (
-                          <div className="question-explanation">
-                            <strong>Giải thích:</strong> {q.explanation}
-                          </div>
-                        )}
                       </>
                     )}
                   </div>

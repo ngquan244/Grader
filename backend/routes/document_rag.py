@@ -85,7 +85,6 @@ class QuizQuestion(BaseModel):
     question: str
     options: dict
     correct_answer: str
-    explanation: Optional[str] = None
 
 
 class GenerateQuizResponse(BaseModel):
@@ -547,13 +546,22 @@ def generate_quiz_from_documents(request: GenerateQuizRequest, user: CurrentUser
             )
         
         if not result.get("success"):
+            partial_questions = [
+                QuizQuestion(
+                    question_number=q.get("question_number", 0),
+                    question=q.get("question", ""),
+                    options=q.get("options", {}),
+                    correct_answer=q.get("correct_answer", ""),
+                )
+                for q in result.get("questions", [])
+            ]
             return GenerateQuizResponse(
                 success=False,
                 error=result.get("error", "Failed to generate quiz"),
-                questions=[],
+                questions=partial_questions,
                 topic=", ".join(topics_list),
                 num_questions_requested=request.num_questions,
-                num_questions_generated=0
+                num_questions_generated=len(partial_questions)
             )
         
         # Convert questions to response model
@@ -564,7 +572,6 @@ def generate_quiz_from_documents(request: GenerateQuizRequest, user: CurrentUser
                 question=q.get("question", ""),
                 options=q.get("options", {}),
                 correct_answer=q.get("correct_answer", ""),
-                explanation=q.get("explanation")
             ))
         
         return GenerateQuizResponse(

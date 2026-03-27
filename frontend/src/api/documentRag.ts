@@ -123,7 +123,6 @@ export interface QuizQuestion {
     D: string;
   };
   correct_answer: string;
-  explanation?: string;
 }
 
 export interface GenerateQuizRequest {

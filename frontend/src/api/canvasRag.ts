@@ -180,7 +180,6 @@ export interface CanvasQuizQuestion {
     D: string;
   };
   correct_answer: string;
-  explanation?: string;
 }
 
 export interface CanvasQuizResponse {
