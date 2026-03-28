@@ -4,7 +4,7 @@
 # Production-ready PostgreSQL setup with proper security and persistence
 #
 # Usage:
-#   Development:  docker-compose up -d
+#   Development:  docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 #   Production:   docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 #   Stop:         docker-compose down
 #   With volumes: docker-compose down -v (removes data!)
@@ -28,10 +28,6 @@ services:
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.UTF-8"
       # Timezone
       TZ: UTC
-    
-    # Port mapping (exposed for DBeaver and local development)
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
     
     # Persistent volume for data
     volumes:
@@ -75,9 +71,6 @@ services:
     
     # Redis configuration
     command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
-    
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
     
     volumes:
       - redis_data:/data
@@ -153,7 +146,7 @@ services:
       dockerfile: Dockerfile
     container_name: grader_worker_canvas
     restart: unless-stopped
-    command: celery -A backend.celery_app worker -Q canvas -c 4 --loglevel=INFO -n canvas@%h
+    command: celery -A backend.celery_app worker -Q canvas --pool=threads -c 4 --loglevel=INFO -n canvas@%h
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -189,8 +182,6 @@ services:
     container_name: grader_flower
     restart: unless-stopped
     command: celery -A backend.celery_app flower --port=5555 --broker=redis://redis:6379/0
-    ports:
-      - "${FLOWER_PORT:-5555}:5555"
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379

@@ -9,6 +9,8 @@ import logging
 from pathlib import Path
 from typing import Dict
 
+from backend.utils.file_state import locked_json_state, read_json_file
+
 logger = logging.getLogger(__name__)
 
 # All panel keys (matching frontend TABS constant)
@@ -44,9 +46,8 @@ def _default_config() -> Dict[str, bool]:
 def get_panel_config() -> Dict[str, bool]:
     """Read panel visibility config from disk. Returns default if file missing."""
     try:
-        if CONFIG_FILE.exists():
-            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-            # Ensure all panels are present (forward-compatible)
+        data = read_json_file(CONFIG_FILE, dict)
+        if data:
             config = _default_config()
             config.update({k: bool(v) for k, v in data.items() if k in ALL_PANELS})
             return config
@@ -68,9 +69,9 @@ def update_panel_config(updates: Dict[str, bool]) -> Dict[str, bool]:
     # Ensure the data directory exists
     CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-    CONFIG_FILE.write_text(
-        json.dumps(config, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    with locked_json_state(CONFIG_FILE, dict) as state:
+        state.clear()
+        state.update(config)
+
     logger.info("Panel config updated: %s", config)
     return config

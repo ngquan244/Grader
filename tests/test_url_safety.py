@@ -1,3 +1,7 @@
+import os
+
+os.environ["DEBUG"] = "false"
+
 from fastapi import HTTPException
 import pytest
 

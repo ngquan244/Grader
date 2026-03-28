@@ -281,13 +281,14 @@ class MultiCollectionRetriever:
             return []
         
         # Map hashes to filenames for debug — detail to file
-        # Try user-scoped first, fall back to all entries (canvas has user_id=null)
         hash_to_name = {}
-        for meta in self.collection_manager.registry.get_all(user_id=user_id):
+        registry_entries = (
+            self.collection_manager.registry.get_all(user_id=user_id)
+            if user_id is not None
+            else self.collection_manager.registry.get_all()
+        )
+        for meta in registry_entries:
             hash_to_name[meta.file_hash] = meta.filename
-        if not hash_to_name:
-            for meta in self.collection_manager.registry.get_all():
-                hash_to_name[meta.file_hash] = meta.filename
         hash_info = [(h[:8], hash_to_name.get(h, '?')) for h in resolved_hashes]
         quiz_logger.info(f"Retrieving from {len(resolved_hashes)} collections: {hash_info}, k={k}, target_file_hashes_was={'None' if target_file_hashes is None else f'list[{len(target_file_hashes)}]'}")
         
@@ -298,7 +299,8 @@ class MultiCollectionRetriever:
                 docs = self.collection_manager.query_collection(
                     file_hash=file_hash,
                     query=query,
-                    k=k
+                    k=k,
+                    user_id=user_id,
                 )
                 all_documents.extend(docs)
                 logger.debug(f"Retrieved {len(docs)} docs from collection for {file_hash[:8]}")
@@ -345,6 +347,7 @@ class MultiCollectionRetriever:
                 file_hash=file_hash,
                 query=query,
                 k=max_total_docs,
+                user_id=user_id,
             )
             logger.info(
                 "Budgeted retrieval (single collection): requested=%s returned=%s",
@@ -365,6 +368,7 @@ class MultiCollectionRetriever:
                     file_hash=file_hash,
                     query=query,
                     k=fetch_per_collection,
+                    user_id=user_id,
                 )
                 per_collection_docs[file_hash] = docs
             except Exception as e:

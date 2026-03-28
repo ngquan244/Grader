@@ -1,36 +1,34 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Grader — VPS Deployment Script (Hetzner / GCP Compute Engine / Ubuntu 24.04)
+# Grader - VPS Deployment Script (Hetzner / GCP Compute Engine / Ubuntu 24.04)
 # =============================================================================
 # Usage:
-#   1. Create a VPS (Hetzner) or VM (GCP Compute Engine) with Ubuntu 24.04
-#   2. SSH in: ssh root@YOUR_SERVER_IP
-#   3. Run:    bash deploy.sh
-#
-#   On subsequent deployments (updates):
-#              bash deploy.sh update
-#
-# Provider detection:
-#   - Auto-detects GCP via metadata server; defaults to Hetzner otherwise.
-#   - Override: DEPLOY_PROVIDER=gcp bash deploy.sh
-#   - Or set DEPLOY_PROVIDER in .env
+#   First deploy:   bash deploy.sh
+#   Update deploy:  bash deploy.sh update
+#   Restore backup: bash deploy.sh restore <backup-file>
 # =============================================================================
 
 set -euo pipefail
 
 REPO_DIR="/root/grader"
-COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMPOSE_FILES=(-f docker-compose.yml -f docker-compose.prod.yml)
+APP_UID=10001
+APP_GID=10001
 
-# Colors
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
 info()  { echo -e "${GREEN}[INFO]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# PROVIDER DETECTION
-# ─────────────────────────────────────────────────────────────────────────────
+compose() {
+    docker compose "${COMPOSE_FILES[@]}" "$@"
+}
+
 PROVIDER="${DEPLOY_PROVIDER:-auto}"
 if [ "$PROVIDER" = "auto" ]; then
     if curl -sf -m 2 -H "Metadata-Flavor: Google" http://169.254.169.254/computeMetadata/v1/ > /dev/null 2>&1; then
@@ -41,9 +39,213 @@ if [ "$PROVIDER" = "auto" ]; then
 fi
 info "Provider detected: $PROVIDER"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# UPDATE MODE — pull latest code and restart
-# ─────────────────────────────────────────────────────────────────────────────
+require_real_value() {
+    local var_name="$1"
+    local value="${!var_name:-}"
+    if [ -z "$value" ]; then
+        error "$var_name is not set in .env"
+    fi
+
+    case "$value" in
+        CHANGE_ME_GENERATE_WITH_COMMAND_ABOVE|CHANGE_ME_USE_A_STRONG_PASSWORD|gsk_XXXXXXXXXXXXXXXXXXXXXXXXX|your-email@example.com|grader.yourdomain.com)
+            error "$var_name still contains a template placeholder"
+            ;;
+    esac
+}
+
+validate_domain() {
+    case "${PRODUCTION_DOMAIN:-}" in
+        ""|grader.yourdomain.com|yourdomain.com|example.com|*.example.com|localhost)
+            error "PRODUCTION_DOMAIN must be set to the real production domain"
+            ;;
+    esac
+}
+
+validate_cors_origins() {
+    local expected_origin="https://${PRODUCTION_DOMAIN}"
+    if [[ "${CORS_ORIGINS:-}" != *"${expected_origin}"* ]]; then
+        error "CORS_ORIGINS must include ${expected_origin}"
+    fi
+}
+
+validate_environment() {
+    source .env
+
+    validate_domain
+    require_real_value LETSENCRYPT_EMAIL
+    require_real_value GROQ_API_KEY
+    require_real_value POSTGRES_PASSWORD
+    require_real_value REDIS_PASSWORD
+    require_real_value JWT_SECRET_KEY
+    require_real_value JWT_REFRESH_SECRET_KEY
+    require_real_value ENCRYPTION_KEY
+    require_real_value SIGNUP_INVITE_CODE
+    require_real_value INVITE_SECRET
+    require_real_value FLOWER_PASSWORD
+    validate_cors_origins
+
+    info "Environment variables validated."
+}
+
+ensure_runtime_directories() {
+    mkdir -p \
+        data/canvas_downloads \
+        data/canvas_rag_uploads \
+        data/chroma \
+        data/guide_images \
+        data/quiz \
+        data/rag_uploads \
+        data/user_workspaces \
+        exports \
+        logs \
+        frontend/dist
+}
+
+ensure_runtime_permissions() {
+    ensure_runtime_directories
+    chown -R "${APP_UID}:${APP_GID}" data exports logs frontend/dist
+}
+
+assert_internal_ports_are_not_published() {
+    local rendered
+    rendered="$(compose config)"
+    if grep -Eq 'published: "?(5432|6379|5555)"?' <<<"$rendered"; then
+        error "Merged production compose still publishes an internal port. Check docker-compose files."
+    fi
+    info "Production compose exposes only the intended public ports."
+}
+
+wait_for_container_health() {
+    local container_name="$1"
+    local timeout_seconds="${2:-180}"
+    local start_ts
+    start_ts="$(date +%s)"
+
+    info "Waiting for ${container_name} to become healthy..."
+    while true; do
+        local status
+        status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_name" 2>/dev/null || true)"
+        if [ "$status" = "healthy" ] || [ "$status" = "running" ]; then
+            return 0
+        fi
+        if [ "$status" = "exited" ] || [ "$status" = "dead" ]; then
+            compose logs --tail=200
+            error "Container ${container_name} stopped before becoming healthy"
+        fi
+        if [ $(( "$(date +%s)" - start_ts )) -ge "$timeout_seconds" ]; then
+            compose logs --tail=200
+            error "Timed out waiting for ${container_name}"
+        fi
+        sleep 5
+    done
+}
+
+build_frontend() {
+    info "Building frontend..."
+    compose --profile build run --rm frontend-build
+}
+
+build_images() {
+    info "Building backend and worker images..."
+    compose build
+}
+
+start_infra() {
+    info "Starting infrastructure services..."
+    compose up -d postgres redis
+    wait_for_container_health grader_postgres 180
+    wait_for_container_health grader_redis 120
+}
+
+run_migrations() {
+    info "Running database migrations..."
+    compose run --rm backend alembic upgrade head
+}
+
+start_application_stack() {
+    info "Starting backend and workers..."
+    compose up -d backend worker-doc worker-canvas
+    wait_for_container_health grader_backend 180
+}
+
+start_nginx() {
+    info "Starting nginx..."
+    compose up -d nginx
+    wait_for_container_health grader_nginx 120
+}
+
+backup_nginx_template() {
+    cp docker/nginx/nginx.conf docker/nginx/nginx.conf.deploy-backup
+}
+
+restore_nginx_template() {
+    if [ -f docker/nginx/nginx.conf.deploy-backup ]; then
+        mv docker/nginx/nginx.conf.deploy-backup docker/nginx/nginx.conf
+    fi
+}
+
+switch_nginx_to_http_template() {
+    backup_nginx_template
+    cp docker/nginx/nginx.dev.conf docker/nginx/nginx.conf
+}
+
+request_ssl_certificate() {
+    info "Requesting SSL certificate from Let's Encrypt..."
+    compose --profile ssl run --rm certbot certonly \
+        --webroot -w /var/www/certbot \
+        -d "$PRODUCTION_DOMAIN" \
+        --agree-tos \
+        -m "${LETSENCRYPT_EMAIL}" \
+        --non-interactive
+}
+
+install_maintenance_cron() {
+    info "=== Phase 7: Setting Up Maintenance ==="
+
+    mkdir -p /root/backups
+
+    local cron_ssl
+    local cron_backup
+    local cron_data
+
+    cron_ssl="0 3,15 * * * cd $REPO_DIR && docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile ssl run --rm certbot renew --quiet && docker compose -f docker-compose.yml -f docker-compose.prod.yml restart nginx"
+    cron_backup="0 2 * * * cd $REPO_DIR && docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T postgres pg_dump -U \${POSTGRES_USER} \${POSTGRES_DB} | gzip > /root/backups/grader_\$(date +\\%Y\\%m\\%d).sql.gz"
+    cron_data="0 3 * * 0 tar czf /root/backups/grader_data_\$(date +\\%Y\\%m\\%d).tar.gz -C $REPO_DIR data/ exports/ 2>/dev/null || true"
+
+    (crontab -l 2>/dev/null | grep -v certbot; echo "$cron_ssl") | crontab -
+    (crontab -l 2>/dev/null | grep -v pg_dump; echo "$cron_backup") | crontab -
+    (crontab -l 2>/dev/null | grep -v grader_data; echo "$cron_data") | crontab -
+
+    info "Cron jobs installed: SSL renewal + daily DB backup + weekly data/exports backup."
+    warn "DB backup covers PostgreSQL only. data/ and exports/ are backed up weekly."
+}
+
+verify_deployment() {
+    info "=== Phase 6: Verification ==="
+    compose ps
+    echo ""
+    info "Testing health endpoint..."
+    if curl -sf "https://${PRODUCTION_DOMAIN}/health" > /dev/null 2>&1; then
+        info "HTTPS health check passed."
+    elif curl -sf "http://${PRODUCTION_DOMAIN}/health" > /dev/null 2>&1; then
+        warn "HTTP works but HTTPS may need a moment. Check https://${PRODUCTION_DOMAIN}"
+    else
+        warn "Health check did not respond yet. Services may still be starting."
+        warn "Check logs with: cd $REPO_DIR && docker compose -f docker-compose.yml -f docker-compose.prod.yml logs backend"
+    fi
+}
+
+run_deploy_sequence() {
+    assert_internal_ports_are_not_published
+    ensure_runtime_directories
+    build_frontend
+    ensure_runtime_permissions
+    build_images
+    start_infra
+    run_migrations
+    start_application_stack
+}
+
 if [ "${1:-}" = "restore" ]; then
     BACKUP_FILE="${2:-}"
     if [ -z "$BACKUP_FILE" ]; then
@@ -60,24 +262,23 @@ if [ "${1:-}" = "restore" ]; then
     cd "$REPO_DIR"
 
     if [[ "$BACKUP_FILE" == *.sql.gz ]]; then
-        # ── DB restore ──
         source .env
         warn "This will REPLACE the current database with: $BACKUP_FILE"
         warn "Note: This restores PostgreSQL only. To also restore files, run again with a .tar.gz backup."
         read -rp "Type 'yes' to confirm: " CONFIRM
         [ "$CONFIRM" != "yes" ] && error "Aborted."
         info "Restoring database..."
-        gunzip < "$BACKUP_FILE" | $COMPOSE exec -T postgres psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" --quiet
-        info "=== Database restored from $BACKUP_FILE ==="
+        gunzip < "$BACKUP_FILE" | compose exec -T postgres psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" --quiet
+        info "Database restored from $BACKUP_FILE"
     elif [[ "$BACKUP_FILE" == *.tar.gz ]]; then
-        # ── Data/exports restore ──
         warn "This will OVERWRITE data/ and exports/ with: $BACKUP_FILE"
         warn "Note: This restores files only. To also restore the database, run again with a .sql.gz backup."
         read -rp "Type 'yes' to confirm: " CONFIRM
         [ "$CONFIRM" != "yes" ] && error "Aborted."
         info "Restoring data and exports..."
         tar xzf "$BACKUP_FILE" -C "$REPO_DIR"
-        info "=== Data/exports restored from $BACKUP_FILE ==="
+        ensure_runtime_permissions
+        info "Data/exports restored from $BACKUP_FILE"
     else
         error "Unrecognized backup format. Expected .sql.gz (DB) or .tar.gz (data/exports)."
     fi
@@ -87,29 +288,21 @@ fi
 if [ "${1:-}" = "update" ]; then
     info "=== Update Deployment ==="
     cd "$REPO_DIR"
-    
+
     info "Pulling latest code..."
     git pull origin main
-    
-    info "Building frontend..."
-    $COMPOSE --profile build run --rm frontend-build
-    
-    info "Rebuilding and restarting services..."
-    $COMPOSE up -d --build
-    
-    info "Waiting for health check..."
-    sleep 15
-    $COMPOSE ps
-    
+
+    validate_environment
+    run_deploy_sequence
+    start_nginx
+    compose restart nginx
+    wait_for_container_health grader_nginx 120
+    compose ps
+
     info "=== Update complete ==="
     exit 0
 fi
 
-# ─────────────────────────────────────────────────────────────────────────────
-# INITIAL SETUP
-# ─────────────────────────────────────────────────────────────────────────────
-
-# === Phase 2: System Setup ===
 info "=== Phase 2: System Preparation ==="
 
 info "Updating system packages..."
@@ -130,12 +323,10 @@ if ! docker compose version &> /dev/null; then
     apt-get install -y docker-compose-plugin
 fi
 
-# Verify Docker is working
 docker version >/dev/null 2>&1 || error "Docker is not working"
 docker compose version >/dev/null 2>&1 || error "Docker Compose is not working"
 info "Docker verified: $(docker --version)"
 
-# Firewall — provider-specific
 if [ "$PROVIDER" = "hetzner" ]; then
     info "Configuring firewall (UFW)..."
     ufw allow OpenSSH
@@ -148,7 +339,6 @@ else
     info "Ensure GCP firewall allows TCP 22, 80, 443 for this VM."
 fi
 
-# SSH hardening
 info "Hardening SSH..."
 SSHD_CONFIG="/etc/ssh/sshd_config"
 if grep -q "^PasswordAuthentication yes" "$SSHD_CONFIG" 2>/dev/null; then
@@ -161,7 +351,6 @@ fi
 systemctl reload sshd 2>/dev/null || true
 info "SSH: password auth disabled, root login key-only."
 
-# Install fail2ban
 if ! command -v fail2ban-client &> /dev/null; then
     info "Installing fail2ban..."
     apt-get install -y fail2ban
@@ -169,7 +358,6 @@ if ! command -v fail2ban-client &> /dev/null; then
     systemctl start fail2ban
 fi
 
-# Swap (2GB — helpful for VPS/VM with limited RAM, works on both Hetzner and GCE)
 if [ ! -f /swapfile ]; then
     info "Creating 2GB swap..."
     fallocate -l 2G /swapfile
@@ -181,7 +369,6 @@ if [ ! -f /swapfile ]; then
     echo 'vm.swappiness=10' >> /etc/sysctl.conf
 fi
 
-# === Clone Repository ===
 info "=== Cloning Repository ==="
 if [ ! -d "$REPO_DIR" ]; then
     read -rp "Enter your Git repository URL: " GIT_URL
@@ -192,11 +379,8 @@ else
 fi
 cd "$REPO_DIR"
 
-# === Phase 3: Environment Configuration ===
 info "=== Phase 3: Environment Configuration ==="
-
 if [ ! -f .env ]; then
-    # Try multiple locations for .env.production
     ENV_SOURCE=""
     if [ -f .env.production ]; then
         ENV_SOURCE=".env.production"
@@ -208,126 +392,47 @@ if [ ! -f .env ]; then
 
     if [ -n "$ENV_SOURCE" ]; then
         cp "$ENV_SOURCE" .env
-        warn "Copied $ENV_SOURCE → .env"
-        warn ">>> EDIT .env NOW with your real secrets before continuing! <<<"
-        warn ">>> Run: nano .env <<<"
-        read -rp "Press Enter after editing .env to continue..."
+        warn "Copied $ENV_SOURCE -> .env"
+        warn "Edit .env now with freshly rotated production secrets before continuing."
+        warn "Run: nano .env"
+        read -rp "Press Enter after editing .env to continue... " _
     else
         warn ".env.production not found in project, $SCRIPT_DIR, or /root/"
-        warn "You can provide a path, or press Enter to abort."
         read -rp "Path to .env.production (or Enter to abort): " ENV_PATH
         if [ -n "$ENV_PATH" ] && [ -f "$ENV_PATH" ]; then
             cp "$ENV_PATH" .env
-            warn "Copied $ENV_PATH → .env"
-            warn ">>> EDIT .env NOW with your real secrets before continuing! <<<"
-            read -rp "Press Enter after editing .env to continue..."
+            warn "Copied $ENV_PATH -> .env"
+            warn "Edit .env now with freshly rotated production secrets before continuing."
+            read -rp "Press Enter after editing .env to continue... " _
         else
-            error "No .env file found. Upload .env.production to the server first:\n  scp .env.production root@VPS_IP:/root/.env.production"
+            error "No .env file found. Upload a production env file to the server first."
         fi
     fi
 else
     info ".env already exists."
 fi
 
-# Validate critical env vars
-source .env
-[ -z "${PRODUCTION_DOMAIN:-}" ] && error "PRODUCTION_DOMAIN is not set in .env"
-[ -z "${GROQ_API_KEY:-}" ] && error "GROQ_API_KEY is not set in .env"
-[ "${POSTGRES_PASSWORD:-}" = "CHANGE_ME_GENERATE_WITH_COMMAND_ABOVE" ] && error "POSTGRES_PASSWORD has not been changed from the template"
-[ "${JWT_SECRET_KEY:-}" = "CHANGE_ME_GENERATE_WITH_COMMAND_ABOVE" ] && error "JWT_SECRET_KEY has not been changed from the template"
-[ "${REDIS_PASSWORD:-}" = "CHANGE_ME_GENERATE_WITH_COMMAND_ABOVE" ] && error "REDIS_PASSWORD has not been changed from the template"
-[ "${ENCRYPTION_KEY:-}" = "CHANGE_ME_GENERATE_WITH_COMMAND_ABOVE" ] && error "ENCRYPTION_KEY has not been changed from the template"
-[ -z "${FLOWER_PASSWORD:-}" ] && error "FLOWER_PASSWORD is not set in .env (required for Flower dashboard auth)"
-[ "${FLOWER_PASSWORD:-}" = "CHANGE_ME_USE_A_STRONG_PASSWORD" ] && error "FLOWER_PASSWORD has not been changed from the template"
-[ -z "${LETSENCRYPT_EMAIL:-}" ] && error "LETSENCRYPT_EMAIL is not set in .env (required for SSL certificate)"
-info "Environment variables validated."
+validate_environment
 
-# === Phase 4: Build & Deploy ===
 info "=== Phase 4: Build & Deploy ==="
+run_deploy_sequence
 
-info "Creating required directories..."
-mkdir -p data/canvas_downloads data/canvas_rag_uploads data/chroma \
-         data/guide_images data/quiz data/rag_uploads data/user_workspaces \
-         exports logs frontend/dist
-
-info "Building frontend..."
-$COMPOSE --profile build run --rm frontend-build
-
-info "Building backend image..."
-$COMPOSE build
-
-# === Phase 5: SSL Setup (Two-step) ===
 info "=== Phase 5: SSL Certificate ==="
+switch_nginx_to_http_template
+trap restore_nginx_template EXIT
 
-# Step 1: Start with HTTP-only nginx for certbot validation
-info "Starting HTTP-only nginx for certificate issuance..."
-cp docker/nginx/nginx.dev.conf docker/nginx/nginx.conf.bak
-cp docker/nginx/nginx.dev.conf docker/nginx/nginx.conf.tmp
+start_nginx
+request_ssl_certificate
+restore_nginx_template
+trap - EXIT
 
-# Temporarily use dev config for initial cert
-ORIG_CONF="docker/nginx/nginx.conf"
-cp "$ORIG_CONF" "${ORIG_CONF}.https"
-cp docker/nginx/nginx.dev.conf "$ORIG_CONF"
+info "Restarting nginx with HTTPS configuration..."
+compose restart nginx
+wait_for_container_health grader_nginx 120
 
-info "Starting all services (HTTP mode)..."
-$COMPOSE up -d
+verify_deployment
+install_maintenance_cron
 
-info "Waiting for services to stabilize..."
-sleep 20
-
-info "Requesting SSL certificate from Let's Encrypt..."
-$COMPOSE --profile ssl run --rm certbot certonly \
-    --webroot -w /var/www/certbot \
-    -d "$PRODUCTION_DOMAIN" \
-    --agree-tos \
-    -m "${LETSENCRYPT_EMAIL}" \
-    --non-interactive
-
-# Step 2: Restore HTTPS config and restart
-info "Switching to HTTPS nginx configuration..."
-cp "${ORIG_CONF}.https" "$ORIG_CONF"
-rm -f "${ORIG_CONF}.https" docker/nginx/nginx.conf.bak docker/nginx/nginx.conf.tmp
-
-$COMPOSE restart nginx
-
-info "Waiting for HTTPS..."
-sleep 10
-
-# === Phase 6: Verify ===
-info "=== Phase 6: Verification ==="
-
-$COMPOSE ps
-echo ""
-info "Testing health endpoint..."
-if curl -sf "https://${PRODUCTION_DOMAIN}/health" > /dev/null 2>&1; then
-    info "✓ HTTPS health check passed!"
-elif curl -sf "http://${PRODUCTION_DOMAIN}/health" > /dev/null 2>&1; then
-    warn "HTTP works but HTTPS may need a moment. Check: https://${PRODUCTION_DOMAIN}"
-else
-    warn "Health check did not respond yet. Services may still be starting."
-    warn "Check logs: $COMPOSE logs backend"
-fi
-
-# === Phase 7: Cron Jobs ===
-info "=== Phase 7: Setting Up Maintenance ==="
-
-# Auto-renew SSL (twice daily)
-CRON_SSL="0 3,15 * * * cd $REPO_DIR && $COMPOSE --profile ssl run --rm certbot renew --quiet && $COMPOSE restart nginx"
-(crontab -l 2>/dev/null | grep -v certbot; echo "$CRON_SSL") | crontab -
-
-# Daily backup — PostgreSQL
-CRON_BACKUP="0 2 * * * cd $REPO_DIR && docker compose exec -T postgres pg_dump -U \${POSTGRES_USER} \${POSTGRES_DB} | gzip > /root/backups/grader_\$(date +\\%Y\\%m\\%d).sql.gz"
-mkdir -p /root/backups
-(crontab -l 2>/dev/null | grep -v pg_dump; echo "$CRON_BACKUP") | crontab -
-
-# Weekly backup — data/ and exports/ (uploaded files, ChromaDB, workspaces)
-CRON_DATA="0 3 * * 0 tar czf /root/backups/grader_data_\$(date +\\%Y\\%m\\%d).tar.gz -C $REPO_DIR data/ exports/ 2>/dev/null || true"
-(crontab -l 2>/dev/null | grep -v grader_data; echo "$CRON_DATA") | crontab -
-
-info "Cron jobs installed: SSL renewal + daily DB backup + weekly data/exports backup."
-warn "Note: DB backup covers PostgreSQL only. data/ (uploads, ChromaDB, workspaces) and exports/ are backed up weekly (Sunday 3AM)."
-
-# ─────────────────────────────────────────────────────────────────────────────
 echo ""
 info "================================================================"
 info "  Deployment complete!"
@@ -337,11 +442,11 @@ info "  Flower:   ssh -L 5555:localhost:5555 root@SERVER, then http://localhost:
 info "================================================================"
 info ""
 info "  Useful commands:"
-info "    Logs:     cd $REPO_DIR && $COMPOSE logs -f backend"
-info "    Status:   cd $REPO_DIR && $COMPOSE ps"
+info "    Logs:     cd $REPO_DIR && docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f backend"
+info "    Status:   cd $REPO_DIR && docker compose -f docker-compose.yml -f docker-compose.prod.yml ps"
 info "    Update:   cd $REPO_DIR && bash deploy.sh update"
-info "    Restart:  cd $REPO_DIR && $COMPOSE restart"
+info "    Restart:  cd $REPO_DIR && docker compose -f docker-compose.yml -f docker-compose.prod.yml restart"
 info "    Backup:   ls /root/backups/"
 info "    Restore DB:    cd $REPO_DIR && bash deploy.sh restore /root/backups/<file>.sql.gz"
-    info "    Restore data:  cd $REPO_DIR && bash deploy.sh restore /root/backups/<file>.tar.gz"
+info "    Restore data:  cd $REPO_DIR && bash deploy.sh restore /root/backups/<file>.tar.gz"
 info "================================================================"

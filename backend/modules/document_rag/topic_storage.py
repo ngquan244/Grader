@@ -12,6 +12,7 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 
 from .config import rag_config
+from backend.utils.file_state import locked_json_state, read_json_file
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +53,8 @@ class TopicStorage:
         """Load topics from disk."""
         with self._lock:
             try:
-                if self.storage_file.exists():
-                    with open(self.storage_file, 'r', encoding='utf-8') as f:
-                        self._topics = json.load(f)
+                self._topics = read_json_file(self.storage_file, dict)
+                if self._topics:
                     logger.info(f"Loaded topics for {len(self._topics)} documents")
             except Exception as e:
                 logger.warning(f"Could not load topics: {e}")
@@ -64,8 +64,10 @@ class TopicStorage:
         """Save topics to disk."""
         with self._lock:
             try:
-                with open(self.storage_file, 'w', encoding='utf-8') as f:
-                    json.dump(self._topics, f, ensure_ascii=False, indent=2)
+                with locked_json_state(self.storage_file, dict) as state:
+                    state.clear()
+                    state.update(self._topics)
+                    self._topics = dict(state)
                 logger.info(f"Saved topics for {len(self._topics)} documents")
             except Exception as e:
                 logger.error(f"Could not save topics: {e}")
