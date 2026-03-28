@@ -69,6 +69,7 @@ import {
   updateCanvasDocumentTopics,
   asyncCanvasGenerateQuiz,
 } from '../api/canvasRag';
+import { fetchCourses } from '../api/canvas';
 import CanvasImportModal from './CanvasImportModal';
 
 // Indexed document info
@@ -77,6 +78,7 @@ interface IndexedDocument {
   original_filename: string;
   topic_count: number;
   indexed_at: string;
+  course_id?: number;
 }
 
 // Topic source type
@@ -149,6 +151,10 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
   const [canvasIndexedDocuments, setCanvasIndexedDocuments] = useState<IndexedDocument[]>([]);
   const [canvasTopicsCache, setCanvasTopicsCache] = useState<Record<string, TopicSuggestion[]>>({});
   
+  // Course name resolution for Canvas documents
+  const [courseNameMap, setCourseNameMap] = useState<Record<number, string>>({});
+  const [collapsedCourses, setCollapsedCourses] = useState<Set<number>>(new Set());
+
   // Edit topics modal states
   const [showEditTopicsModal, setShowEditTopicsModal] = useState(false);
   const [editingDocumentFilename, setEditingDocumentFilename] = useState<string>('');
@@ -199,6 +205,7 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
     loadIndexedDocuments();
     loadCanvasIndexedDocuments();
     loadLLMProviderInfo();
+    loadCourseNames();
   }, []);
 
   // Handle quiz job completion — extract result into component state
@@ -259,12 +266,31 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
           original_filename: d.original_filename || d.filename,
           topic_count: d.topic_count,
           indexed_at: d.indexed_at,
+          course_id: d.course_id,
         }));
         setCanvasIndexedDocuments(docs);
         console.log('Set canvasIndexedDocuments:', docs.length, 'documents');
       }
     } catch (error) {
       console.error('Error loading Canvas indexed documents:', error);
+    }
+  };
+
+  // Load course names for Canvas course grouping
+  const loadCourseNames = async () => {
+    try {
+      const response = await fetchCourses();
+      if (response.success && response.courses) {
+        const map: Record<number, string> = {};
+        for (const c of response.courses) {
+          map[c.id] = c.name;
+        }
+        setCourseNameMap(map);
+      } else {
+        console.warn('Could not load course names:', response.error);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch courses for name resolution:', err);
     }
   };
 
@@ -1480,119 +1506,285 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
                   <span className="summary-label">
                     <CheckCircle size={16} />
                     Đã chọn {tempSelectedTopics.length} chủ đề từ {tempSelectedDocuments.length} tài liệu
+                    {topicSource === 'canvas' && (() => {
+                      const courseIds = new Set(
+                        tempSelectedTopics
+                          .map(t => canvasIndexedDocuments.find(d => d.filename === t.documentFilename)?.course_id)
+                          .filter((id): id is number => id != null)
+                      );
+                      return courseIds.size > 1 ? ` (${courseIds.size} khóa học)` : '';
+                    })()}
                   </span>
                 </div>
               )}
 
               {/* Document list */}
               <div className="modal-documents">
-                {(topicSource === 'upload' ? indexedDocuments : canvasIndexedDocuments).length === 0 ? (
-                  <div className="modal-empty-state">
-                    <FileText size={32} />
-                    <p>
-                      {topicSource === 'upload' 
-                        ? 'Chưa có tài liệu nào được index. Vui lòng upload và index tài liệu trước.'
-                        : 'Chưa có tài liệu Canvas nào được index. Vui lòng vào tab Canvas LMS để tải và index tài liệu.'
-                      }
-                    </p>
-                  </div>
-                ) : (topicSource === 'upload' ? indexedDocuments : canvasIndexedDocuments).map((doc) => {
-                  const isDocSelected = tempSelectedDocuments.includes(doc.filename);
-                  const docTopics = tempTopicsByDocument[doc.filename] || [];
-                  const selectedCount = tempSelectedTopics.filter(t => t.documentFilename === doc.filename).length;
-                  
-                  return (
-                    <div 
-                      key={doc.filename} 
-                      className={`modal-doc-card ${isDocSelected ? 'expanded' : ''}`}
-                    >
+                {topicSource === 'upload' ? (
+                  /* === UPLOAD TAB: flat list (unchanged) === */
+                  indexedDocuments.length === 0 ? (
+                    <div className="modal-empty-state">
+                      <FileText size={32} />
+                      <p>Chưa có tài liệu nào được index. Vui lòng upload và index tài liệu trước.</p>
+                    </div>
+                  ) : indexedDocuments.map((doc) => {
+                    const isDocSelected = tempSelectedDocuments.includes(doc.filename);
+                    const docTopics = tempTopicsByDocument[doc.filename] || [];
+                    const selectedCount = tempSelectedTopics.filter(t => t.documentFilename === doc.filename).length;
+                    
+                    return (
                       <div 
-                        className="modal-doc-header"
-                        onClick={() => toggleDocumentInModal(doc.filename)}
+                        key={doc.filename} 
+                        className={`modal-doc-card ${isDocSelected ? 'expanded' : ''}`}
                       >
-                        <div className="modal-doc-checkbox">
-                          <input 
-                            type="checkbox" 
-                            checked={isDocSelected} 
-                            onChange={() => toggleDocumentInModal(doc.filename)}
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                        </div>
-                        <div className="modal-doc-info">
-                          <FileText size={18} className="doc-icon" />
-                          <div className="modal-doc-details">
-                            <span className="modal-doc-name">{doc.original_filename}</span>
-                            <span className="modal-doc-meta">{doc.topic_count} chủ đề</span>
+                        <div 
+                          className="modal-doc-header"
+                          onClick={() => toggleDocumentInModal(doc.filename)}
+                        >
+                          <div className="modal-doc-checkbox">
+                            <input 
+                              type="checkbox" 
+                              checked={isDocSelected} 
+                              onChange={() => toggleDocumentInModal(doc.filename)}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </div>
+                          <div className="modal-doc-info">
+                            <FileText size={18} className="doc-icon" />
+                            <div className="modal-doc-details">
+                              <span className="modal-doc-name">{doc.original_filename}</span>
+                              <span className="modal-doc-meta">{doc.topic_count} chủ đề</span>
+                            </div>
+                          </div>
+                          <div className="modal-doc-status">
+                            {selectedCount > 0 && (
+                              <span className="modal-selected-badge">{selectedCount} đã chọn</span>
+                            )}
+                            <span className={`modal-expand-icon ${isDocSelected ? 'expanded' : ''}`}>
+                              {isDocSelected ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                            </span>
                           </div>
                         </div>
-                        <div className="modal-doc-status">
-                          {selectedCount > 0 && (
-                            <span className="modal-selected-badge">{selectedCount} đã chọn</span>
-                          )}
-                          <span className={`modal-expand-icon ${isDocSelected ? 'expanded' : ''}`}>
-                            {isDocSelected ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                          </span>
-                        </div>
+                        
+                        {isDocSelected && (
+                          <div className="modal-doc-topics">
+                            {docTopics.length > 0 ? (
+                              <>
+                                <div className="modal-topics-toolbar">
+                                  <button
+                                    type="button"
+                                    className="btn-modal-select-all"
+                                    onClick={() => areAllTopicsSelectedInModal(doc.filename) 
+                                      ? deselectAllTopicsInModal(doc.filename)
+                                      : selectAllTopicsInModal(doc.filename)
+                                    }
+                                  >
+                                    {areAllTopicsSelectedInModal(doc.filename) ? (
+                                      <><X size={14} /> Bỏ chọn tất cả</>
+                                    ) : (
+                                      <><Check size={14} /> Chọn tất cả</>
+                                    )}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn-modal-edit-topics"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openEditTopicsModal(doc.filename);
+                                    }}
+                                  >
+                                    <Pencil size={14} /> Sửa chủ đề
+                                  </button>
+                                </div>
+                                <div className="modal-topics-grid">
+                                  {docTopics.map((topic, idx) => {
+                                    const isSelected = isTopicSelectedInModal(topic.name, doc.filename);
+                                    return (
+                                      <button
+                                        key={idx}
+                                        type="button"
+                                        className={`modal-topic-tag ${isSelected ? 'selected' : ''}`}
+                                        onClick={() => toggleTopicInModal(topic.name, doc.filename)}
+                                      >
+                                        {isSelected && <Check size={14} className="check-icon" />}
+                                        <span>{topic.name}</span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </>
+                            ) : (
+                              <div className="modal-loading-topics">
+                                <Loader2 size={16} className="spin" />
+                                <span>Đang tải chủ đề...</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
-                      
-                      {isDocSelected && (
-                        <div className="modal-doc-topics">
-                          {docTopics.length > 0 ? (
-                            <>
-                              <div className="modal-topics-toolbar">
-                                <button
-                                  type="button"
-                                  className="btn-modal-select-all"
-                                  onClick={() => areAllTopicsSelectedInModal(doc.filename) 
-                                    ? deselectAllTopicsInModal(doc.filename)
-                                    : selectAllTopicsInModal(doc.filename)
-                                  }
-                                >
-                                  {areAllTopicsSelectedInModal(doc.filename) ? (
-                                    <><X size={14} /> Bỏ chọn tất cả</>
-                                  ) : (
-                                    <><Check size={14} /> Chọn tất cả</>
-                                  )}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="btn-modal-edit-topics"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openEditTopicsModal(doc.filename);
-                                  }}
-                                >
-                                  <Pencil size={14} /> Sửa chủ đề
-                                </button>
-                              </div>
-                              <div className="modal-topics-grid">
-                                {docTopics.map((topic, idx) => {
-                                  const isSelected = isTopicSelectedInModal(topic.name, doc.filename);
-                                  return (
-                                    <button
-                                      key={idx}
-                                      type="button"
-                                      className={`modal-topic-tag ${isSelected ? 'selected' : ''}`}
-                                      onClick={() => toggleTopicInModal(topic.name, doc.filename)}
+                    );
+                  })
+                ) : (
+                  /* === CANVAS TAB: grouped by course === */
+                  canvasIndexedDocuments.length === 0 ? (
+                    <div className="modal-empty-state">
+                      <FileText size={32} />
+                      <p>Chưa có tài liệu Canvas nào được index. Vui lòng vào tab Canvas LMS để tải và index tài liệu.</p>
+                    </div>
+                  ) : (() => {
+                    // Group documents by course_id
+                    const grouped: Record<number, IndexedDocument[]> = {};
+                    for (const doc of canvasIndexedDocuments) {
+                      const cid = doc.course_id ?? 0;
+                      if (!grouped[cid]) grouped[cid] = [];
+                      grouped[cid].push(doc);
+                    }
+                    // Sort course IDs by resolved name
+                    const sortedCourseIds = Object.keys(grouped)
+                      .map(Number)
+                      .sort((a, b) => {
+                        const nameA = courseNameMap[a] || `Course #${a}`;
+                        const nameB = courseNameMap[b] || `Course #${b}`;
+                        return nameA.localeCompare(nameB);
+                      });
+
+                    return sortedCourseIds.map(courseId => {
+                      const courseDocs = grouped[courseId];
+                      const courseName = courseNameMap[courseId] || `Course #${courseId}`;
+                      const isCollapsed = collapsedCourses.has(courseId);
+                      const courseSelectedCount = tempSelectedTopics.filter(t =>
+                        courseDocs.some(d => d.filename === t.documentFilename)
+                      ).length;
+
+                      return (
+                        <div key={courseId} className="course-group">
+                          <div
+                            className="course-group-header"
+                            onClick={() => {
+                              setCollapsedCourses(prev => {
+                                const next = new Set(prev);
+                                if (next.has(courseId)) next.delete(courseId);
+                                else next.add(courseId);
+                                return next;
+                              });
+                            }}
+                          >
+                            <span className={`course-expand-icon ${isCollapsed ? '' : 'expanded'}`}>
+                              {isCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+                            </span>
+                            <FolderOpen size={16} className="course-icon" />
+                            <span className="course-group-name">{courseName}</span>
+                            <span className="course-group-badge">{courseDocs.length} tài liệu</span>
+                            {courseSelectedCount > 0 && (
+                              <span className="modal-selected-badge">{courseSelectedCount} chủ đề đã chọn</span>
+                            )}
+                          </div>
+                          {!isCollapsed && (
+                            <div className="course-group-docs">
+                              {courseDocs.map((doc) => {
+                                const isDocSelected = tempSelectedDocuments.includes(doc.filename);
+                                const docTopics = tempTopicsByDocument[doc.filename] || [];
+                                const selectedCount = tempSelectedTopics.filter(t => t.documentFilename === doc.filename).length;
+
+                                return (
+                                  <div 
+                                    key={doc.filename} 
+                                    className={`modal-doc-card ${isDocSelected ? 'expanded' : ''}`}
+                                  >
+                                    <div 
+                                      className="modal-doc-header"
+                                      onClick={() => toggleDocumentInModal(doc.filename)}
                                     >
-                                      {isSelected && <Check size={14} className="check-icon" />}
-                                      <span>{topic.name}</span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </>
-                          ) : (
-                            <div className="modal-loading-topics">
-                              <Loader2 size={16} className="spin" />
-                              <span>Đang tải chủ đề...</span>
+                                      <div className="modal-doc-checkbox">
+                                        <input 
+                                          type="checkbox" 
+                                          checked={isDocSelected} 
+                                          onChange={() => toggleDocumentInModal(doc.filename)}
+                                          onClick={(e) => e.stopPropagation()}
+                                        />
+                                      </div>
+                                      <div className="modal-doc-info">
+                                        <FileText size={18} className="doc-icon" />
+                                        <div className="modal-doc-details">
+                                          <span className="modal-doc-name">{doc.original_filename}</span>
+                                          <span className="modal-doc-meta">{doc.topic_count} chủ đề</span>
+                                        </div>
+                                      </div>
+                                      <div className="modal-doc-status">
+                                        {selectedCount > 0 && (
+                                          <span className="modal-selected-badge">{selectedCount} đã chọn</span>
+                                        )}
+                                        <span className={`modal-expand-icon ${isDocSelected ? 'expanded' : ''}`}>
+                                          {isDocSelected ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    
+                                    {isDocSelected && (
+                                      <div className="modal-doc-topics">
+                                        {docTopics.length > 0 ? (
+                                          <>
+                                            <div className="modal-topics-toolbar">
+                                              <button
+                                                type="button"
+                                                className="btn-modal-select-all"
+                                                onClick={() => areAllTopicsSelectedInModal(doc.filename) 
+                                                  ? deselectAllTopicsInModal(doc.filename)
+                                                  : selectAllTopicsInModal(doc.filename)
+                                                }
+                                              >
+                                                {areAllTopicsSelectedInModal(doc.filename) ? (
+                                                  <><X size={14} /> Bỏ chọn tất cả</>
+                                                ) : (
+                                                  <><Check size={14} /> Chọn tất cả</>
+                                                )}
+                                              </button>
+                                              <button
+                                                type="button"
+                                                className="btn-modal-edit-topics"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  openEditTopicsModal(doc.filename);
+                                                }}
+                                              >
+                                                <Pencil size={14} /> Sửa chủ đề
+                                              </button>
+                                            </div>
+                                            <div className="modal-topics-grid">
+                                              {docTopics.map((topic, idx) => {
+                                                const isSelected = isTopicSelectedInModal(topic.name, doc.filename);
+                                                return (
+                                                  <button
+                                                    key={idx}
+                                                    type="button"
+                                                    className={`modal-topic-tag ${isSelected ? 'selected' : ''}`}
+                                                    onClick={() => toggleTopicInModal(topic.name, doc.filename)}
+                                                  >
+                                                    {isSelected && <Check size={14} className="check-icon" />}
+                                                    <span>{topic.name}</span>
+                                                  </button>
+                                                );
+                                              })}
+                                            </div>
+                                          </>
+                                        ) : (
+                                          <div className="modal-loading-topics">
+                                            <Loader2 size={16} className="spin" />
+                                            <span>Đang tải chủ đề...</span>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
                           )}
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
+                      );
+                    });
+                  })()
+                )}
               </div>
 
               {/* Pagination controls for indexed documents in modal */}
@@ -4436,6 +4628,73 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
           display: flex;
           flex-direction: column;
           gap: 12px;
+        }
+
+        /* Course group styles for Canvas tab */
+        .course-group {
+          border: 1px solid rgba(56, 189, 248, 0.15);
+          border-radius: 14px;
+          overflow: hidden;
+          background: rgba(15, 23, 42, 0.3);
+        }
+
+        .course-group-header {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 12px 16px;
+          background: rgba(15, 23, 42, 0.6);
+          cursor: pointer;
+          transition: background 0.2s ease;
+          user-select: none;
+        }
+
+        .course-group-header:hover {
+          background: rgba(56, 189, 248, 0.08);
+        }
+
+        .course-expand-icon {
+          display: flex;
+          align-items: center;
+          color: rgba(148, 163, 184, 0.8);
+          transition: transform 0.2s ease;
+        }
+
+        .course-icon {
+          color: rgba(56, 189, 248, 0.7);
+          flex-shrink: 0;
+        }
+
+        .course-group-name {
+          font-weight: 600;
+          font-size: 0.92rem;
+          color: rgba(226, 232, 240, 0.95);
+          flex: 1;
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .course-group-badge {
+          font-size: 0.78rem;
+          color: rgba(148, 163, 184, 0.8);
+          background: rgba(56, 189, 248, 0.1);
+          padding: 2px 10px;
+          border-radius: 10px;
+          white-space: nowrap;
+          flex-shrink: 0;
+        }
+
+        .course-group-docs {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          padding: 10px 12px;
+        }
+
+        .course-group-docs .modal-doc-card {
+          border-radius: 10px;
         }
 
         .modal-doc-card {

@@ -215,6 +215,54 @@ def test_second_refill_threshold_is_conditional():
     assert QuizGenerator._should_run_second_refill(20, 5) is False
 
 
+def test_partial_success_threshold_uses_95_percent_rule():
+    assert QuizGenerator._partial_success_threshold(50) == 48
+    assert QuizGenerator._partial_success_threshold(30) == 29
+    assert QuizGenerator._partial_success_threshold(20) == 19
+    assert QuizGenerator._partial_success_threshold(10) == 10
+
+
+def test_partial_success_classification_matches_near_complete_policy():
+    generator = QuizGenerator(retriever=_DummyRetriever(), llm_provider=_StubLLM(model="stub"))
+
+    assert generator._is_partial_success(50, 48) is True
+    assert generator._is_partial_success(50, 47) is False
+    assert generator._is_partial_success(30, 29) is True
+    assert generator._is_partial_success(20, 19) is True
+    assert generator._is_partial_success(10, 9) is False
+
+
+def test_shortfall_message_prioritizes_budget_and_large_request_reasons():
+    generator = QuizGenerator(retriever=_DummyRetriever(), llm_provider=_StubLLM(model="stub"))
+
+    message = generator._build_user_facing_shortfall_message(
+        num_questions=50,
+        final_count=48,
+        blueprint_skip_reason="blueprint skipped due to large request",
+        remaining_slots=[{"slot_id": "S49"}, {"slot_id": "S50"}],
+        plan_stats={"budget_cap_hit": True},
+    )
+
+    assert "Đã tạo 48/50 câu hỏi, thiếu 2 câu." in message
+    assert "chi phí an toàn" in message
+    assert "tiết kiệm token" in message
+
+
+def test_shortfall_message_uses_remaining_slot_reason_for_thin_context():
+    generator = QuizGenerator(retriever=_DummyRetriever(), llm_provider=_StubLLM(model="stub"))
+
+    message = generator._build_user_facing_shortfall_message(
+        num_questions=20,
+        final_count=19,
+        blueprint_skip_reason=None,
+        remaining_slots=[{"slot_id": "S20"}],
+        plan_stats={"budget_cap_hit": False},
+    )
+
+    assert "Đã tạo 19/20 câu hỏi, thiếu 1 câu." in message
+    assert "chưa đủ phủ hết mọi góc hỏi cần thiết" in message
+
+
 def test_execute_exact_count_plan_uses_global_refill_1_and_conditional_refill_2_for_large_requests():
     generator = QuizGenerator(retriever=_DummyRetriever(), llm_provider=_StubLLM(model="stub"))
     blueprint = generator._normalize_blueprint({}, topic="Word2Vec, CBOW", num_questions=50)
