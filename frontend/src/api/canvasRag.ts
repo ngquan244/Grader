@@ -134,6 +134,7 @@ export interface CanvasIndexedDocument {
   chunks_added: number;
   topic_count: number;
   course_id?: number;
+  course_name?: string;
 }
 
 export interface CanvasStats {

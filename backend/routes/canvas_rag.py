@@ -19,6 +19,7 @@ from backend.modules.document_rag.canvas_rag_service import get_canvas_rag_servi
 from backend.database.base import SessionLocal
 from backend.services.canvas_permission import canvas_permission
 from backend.services.canvas_headers import extract_canvas_headers
+from backend.services.canvas_service import fetch_canvas_courses
 from backend.services.groq_key_service import get_effective_groq_key
 
 logger = logging.getLogger(__name__)
@@ -386,6 +387,22 @@ async def list_indexed_canvas_documents(
         result["page_size"] = page_size
         result["pages"] = (total + page_size - 1) // page_size if total else 1
         result.pop("count", None)
+        
+        # Resolve course names from Canvas API
+        canvas_base_url, canvas_token = extract_canvas_headers(http_request)
+        if canvas_base_url and canvas_token:
+            cids = {d.get("course_id") for d in result["documents"] if d.get("course_id") is not None}
+            if cids:
+                try:
+                    courses_resp = await fetch_canvas_courses(canvas_token, canvas_base_url)
+                    if courses_resp.get("success"):
+                        name_map = {c["id"]: c["name"] for c in courses_resp.get("courses", []) if "id" in c and "name" in c}
+                        for doc in result["documents"]:
+                            cid = doc.get("course_id")
+                            if cid is not None and cid in name_map:
+                                doc["course_name"] = name_map[cid]
+                except Exception:
+                    pass  # Graceful — documents still returned without course_name
         
         return result
     except HTTPException:

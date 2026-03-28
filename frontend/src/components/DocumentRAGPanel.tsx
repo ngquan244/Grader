@@ -69,7 +69,6 @@ import {
   updateCanvasDocumentTopics,
   asyncCanvasGenerateQuiz,
 } from '../api/canvasRag';
-import { fetchCourses } from '../api/canvas';
 import CanvasImportModal from './CanvasImportModal';
 
 // Indexed document info
@@ -79,6 +78,7 @@ interface IndexedDocument {
   topic_count: number;
   indexed_at: string;
   course_id?: number;
+  course_name?: string;
 }
 
 // Topic source type
@@ -205,7 +205,6 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
     loadIndexedDocuments();
     loadCanvasIndexedDocuments();
     loadLLMProviderInfo();
-    loadCourseNames();
   }, []);
 
   // Handle quiz job completion — extract result into component state
@@ -267,30 +266,21 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
           topic_count: d.topic_count,
           indexed_at: d.indexed_at,
           course_id: d.course_id,
+          course_name: d.course_name,
         }));
         setCanvasIndexedDocuments(docs);
+        // Build course name map from the response
+        const map: Record<number, string> = {};
+        for (const d of response.documents) {
+          if (d.course_id != null && d.course_name) {
+            map[d.course_id] = d.course_name;
+          }
+        }
+        setCourseNameMap(prev => ({ ...prev, ...map }));
         console.log('Set canvasIndexedDocuments:', docs.length, 'documents');
       }
     } catch (error) {
       console.error('Error loading Canvas indexed documents:', error);
-    }
-  };
-
-  // Load course names for Canvas course grouping
-  const loadCourseNames = async () => {
-    try {
-      const response = await fetchCourses();
-      if (response.success && response.courses) {
-        const map: Record<number, string> = {};
-        for (const c of response.courses) {
-          map[c.id] = c.name;
-        }
-        setCourseNameMap(map);
-      } else {
-        console.warn('Could not load course names:', response.error);
-      }
-    } catch (err) {
-      console.warn('Failed to fetch courses for name resolution:', err);
     }
   };
 
