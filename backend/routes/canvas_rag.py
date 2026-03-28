@@ -300,7 +300,13 @@ async def extract_topics_for_canvas_file(
 
     def _do_extract():
         service = get_canvas_rag_service()
-        return service.extract_topics_for_file(filename, num_topics, user_id=user_id)
+        with SessionLocal() as db:
+            return service.extract_topics_for_file(
+                filename,
+                num_topics,
+                user_id=user_id,
+                db_session=db,
+            )
 
     return await asyncio.to_thread(_do_extract)
 
@@ -440,7 +446,8 @@ async def list_indexed_canvas_documents(
 def get_canvas_stats(user: CurrentUser):
     """Get Canvas index statistics."""
     service = get_canvas_rag_service()
-    stats = service.get_index_stats(user_id=str(user.id))
+    with SessionLocal() as db:
+        stats = service.get_index_stats(user_id=str(user.id), db_session=db)
     return {"success": True, "stats": stats}
 
 

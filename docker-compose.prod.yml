@@ -19,9 +19,6 @@
 
 services:
   postgres:
-    # Don't expose ports directly in production (use internal network)
-    ports: []
-    
     # Stricter resource limits for production
     deploy:
       resources:
@@ -40,9 +37,6 @@ services:
         max-file: "10"
 
   redis:
-    # Don't expose ports directly in production
-    ports: []
-    
     # Production memory settings
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD}
 
@@ -124,7 +118,6 @@ services:
       - INVITE_SECRET=${INVITE_SECRET}
       - LLM_PROVIDER=groq
       - GROQ_API_KEY=${GROQ_API_KEY}
-      - RUN_MIGRATIONS=true
     
     # Backend is NOT exposed externally — nginx proxies to it
     ports: []
@@ -198,7 +191,6 @@ services:
   # Flower — internal only, access via SSH tunnel: ssh -L 5555:localhost:5555 root@VPS
   flower:
     command: celery -A backend.celery_app flower --port=5555 --broker=redis://:${REDIS_PASSWORD}@redis:6379/0
-    ports: []
     environment:
       - REDIS_HOST=redis
       - REDIS_PASSWORD=${REDIS_PASSWORD}

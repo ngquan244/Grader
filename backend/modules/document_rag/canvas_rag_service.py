@@ -11,7 +11,6 @@ collection to eliminate write lock contention between users.
 import os
 import uuid as _uuid
 import hashlib
-import json
 import logging
 import threading
 from pathlib import Path
@@ -38,6 +37,7 @@ from .llm_providers import BaseLLM, LLMFactory
 from .rag_repository import SyncRAGCollectionRepository
 from backend.database.models.rag_document import RAGSourceType
 from backend.core.logger import quiz_logger, canvas_logger
+from backend.utils.file_state import locked_json_state, read_json_file
 
 logger = canvas_logger
 
@@ -52,15 +52,21 @@ class CanvasTopicStorage:
         self.storage_dir = Path(storage_dir)
         self.storage_file = self.storage_dir / "canvas_document_topics.json"
         self._topics: Dict[str, Dict[str, Any]] = {}
+        self._lock = threading.RLock()
         
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self._load()
+
+    @staticmethod
+    def _make_key(file_hash: str, user_id: Optional[str] = None) -> str:
+        if user_id:
+            return f"{user_id}:{file_hash}"
+        return file_hash
     
     def _load(self):
         try:
-            if self.storage_file.exists():
-                with open(self.storage_file, 'r', encoding='utf-8') as f:
-                    self._topics = json.load(f)
+            with self._lock:
+                self._topics = read_json_file(self.storage_file, dict)
                 logger.info(f"Loaded Canvas topics for {len(self._topics)} documents")
         except Exception as e:
             logger.warning(f"Could not load Canvas topics: {e}")
@@ -68,67 +74,102 @@ class CanvasTopicStorage:
     
     def _save(self):
         try:
-            with open(self.storage_file, 'w', encoding='utf-8') as f:
-                json.dump(self._topics, f, ensure_ascii=False, indent=2)
+            with self._lock:
+                with locked_json_state(self.storage_file, dict) as state:
+                    state.clear()
+                    state.update(self._topics)
+                    self._topics = dict(state)
         except Exception as e:
             logger.error(f"Could not save Canvas topics: {e}")
     
-    def save_topics(self, file_hash: str, filename: str, topics: List[Dict[str, str]]):
-        self._topics[file_hash] = {
+    def save_topics(
+        self,
+        file_hash: str,
+        filename: str,
+        topics: List[Dict[str, str]],
+        user_id: Optional[str] = None,
+    ):
+        key = self._make_key(file_hash, user_id)
+        self._topics[key] = {
             "filename": filename,
             "topics": topics,
-            "extracted_at": datetime.now().isoformat()
+            "extracted_at": datetime.now().isoformat(),
+            "user_id": user_id,
         }
         self._save()
     
-    def get_topics(self, file_hash: str) -> Optional[List[Dict[str, str]]]:
-        if file_hash in self._topics:
-            return self._topics[file_hash].get("topics", [])
+    def get_topics(self, file_hash: str, user_id: Optional[str] = None) -> Optional[List[Dict[str, str]]]:
+        key = self._make_key(file_hash, user_id)
+        if key in self._topics:
+            return self._topics[key].get("topics", [])
         return None
     
-    def get_topics_by_filename(self, filename: str) -> Optional[List[Dict[str, str]]]:
+    def get_topics_by_filename(
+        self,
+        filename: str,
+        user_id: Optional[str] = None,
+    ) -> Optional[List[Dict[str, str]]]:
         logger.info(f"Looking for topics with filename: {filename}")
         logger.info(f"Available files in topics: {[d.get('filename') for h, d in self._topics.items()]}")
-        for file_hash, data in self._topics.items():
-            if data.get("filename") == filename:
+        for _file_hash, data in self._topics.items():
+            if data.get("filename") == filename and (user_id is None or data.get("user_id") == user_id):
                 topics = data.get("topics", [])
                 logger.info(f"Found {len(topics)} topics for {filename}")
                 return topics
         logger.info(f"No topics found for {filename}")
         return None
     
-    def has_topics(self, file_hash: str) -> bool:
-        return file_hash in self._topics
+    def has_topics(self, file_hash: str, user_id: Optional[str] = None) -> bool:
+        return self._make_key(file_hash, user_id) in self._topics
     
-    def get_all_documents(self) -> List[Dict[str, Any]]:
+    def get_all_documents(self, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
         documents = []
-        for file_hash, data in self._topics.items():
+        for key, data in self._topics.items():
+            entry_user = data.get("user_id")
+            if user_id is not None and entry_user != user_id:
+                continue
+            file_hash = key.split(":", 1)[1] if ":" in key else key
             documents.append({
                 "file_hash": file_hash,
                 "filename": data.get("filename", "unknown"),
                 "topic_count": len(data.get("topics", [])),
-                "extracted_at": data.get("extracted_at")
+                "extracted_at": data.get("extracted_at"),
+                "user_id": entry_user,
             })
         return documents
     
-    def remove_document(self, file_hash: str) -> bool:
-        if file_hash in self._topics:
-            del self._topics[file_hash]
+    def remove_document(self, file_hash: str, user_id: Optional[str] = None) -> bool:
+        key = self._make_key(file_hash, user_id)
+        if key in self._topics:
+            del self._topics[key]
             self._save()
             return True
         return False
     
-    def update_topics_by_filename(self, filename: str, topics: List[Dict[str, str]]) -> bool:
+    def update_topics_by_filename(
+        self,
+        filename: str,
+        topics: List[Dict[str, str]],
+        user_id: Optional[str] = None,
+    ) -> bool:
         for file_hash, data in self._topics.items():
-            if data.get("filename") == filename:
+            if data.get("filename") == filename and (user_id is None or data.get("user_id") == user_id):
                 self._topics[file_hash]["topics"] = topics
                 self._topics[file_hash]["updated_at"] = datetime.now().isoformat()
                 self._save()
                 return True
         return False
     
-    def clear(self):
-        self._topics = {}
+    def clear(self, user_id: Optional[str] = None):
+        if user_id is None:
+            self._topics = {}
+        else:
+            keys_to_remove = [
+                key for key, data in self._topics.items()
+                if data.get("user_id") == user_id
+            ]
+            for key in keys_to_remove:
+                del self._topics[key]
         self._save()
 
 
@@ -255,20 +296,19 @@ class CanvasRAGService:
     def _load_md5_registry(self, user_id: Optional[str] = None) -> Dict[str, str]:
         """Load MD5 registry for Canvas files (per-user if user_id provided)"""
         registry_file = self._get_user_md5_registry_file(user_id) if user_id else self.md5_registry_file
-        if registry_file.exists():
-            try:
-                with open(registry_file, 'r') as f:
-                    return json.load(f)
-            except Exception as e:
-                logger.warning(f"Failed to load Canvas MD5 registry: {e}")
-        return {}
+        try:
+            return read_json_file(registry_file, dict)
+        except Exception as e:
+            logger.warning(f"Failed to load Canvas MD5 registry: {e}")
+            return {}
     
     def _save_md5_registry(self, registry: Dict[str, str], user_id: Optional[str] = None):
         """Save MD5 registry for Canvas files (per-user if user_id provided)"""
         registry_file = self._get_user_md5_registry_file(user_id) if user_id else self.md5_registry_file
         try:
-            with open(registry_file, 'w') as f:
-                json.dump(registry, f, indent=2)
+            with locked_json_state(registry_file, dict) as state:
+                state.clear()
+                state.update(registry)
         except Exception as e:
             logger.error(f"Failed to save Canvas MD5 registry: {e}")
     
@@ -285,20 +325,19 @@ class CanvasRAGService:
     def _load_indexed_registry(self, user_id: Optional[str] = None) -> Dict[str, Dict]:
         """Load registry of indexed Canvas files (per-user if user_id provided)"""
         registry_file = self._get_user_indexed_registry_file(user_id) if user_id else self.indexed_files_registry
-        if registry_file.exists():
-            try:
-                with open(registry_file, 'r') as f:
-                    return json.load(f)
-            except Exception as e:
-                logger.warning(f"Failed to load indexed files registry: {e}")
-        return {}
+        try:
+            return read_json_file(registry_file, dict)
+        except Exception as e:
+            logger.warning(f"Failed to load indexed files registry: {e}")
+            return {}
     
     def _save_indexed_registry(self, registry: Dict[str, Dict], user_id: Optional[str] = None):
         """Save registry of indexed Canvas files (per-user if user_id provided)"""
         registry_file = self._get_user_indexed_registry_file(user_id) if user_id else self.indexed_files_registry
         try:
-            with open(registry_file, 'w') as f:
-                json.dump(registry, f, indent=2, ensure_ascii=False)
+            with locked_json_state(registry_file, dict) as state:
+                state.clear()
+                state.update(registry)
         except Exception as e:
             logger.error(f"Failed to save indexed files registry: {e}")
     
@@ -334,39 +373,36 @@ class CanvasRAGService:
             
             # Compute MD5
             md5_hash = self._compute_md5(content)
-            
-            # Check duplicate (per-user)
-            existing = self._check_duplicate(md5_hash, user_id)
-            if existing:
-                return {
-                    "success": True,
-                    "status": "duplicate",
-                    "md5_hash": md5_hash,
-                    "existing_filename": existing,
-                    "message": f"File already exists as: {existing}"
-                }
-            
-            # Sanitize and save
-            safe_filename = "".join(c for c in filename if c.isalnum() or c in "._- ")
-            if not safe_filename:
-                safe_filename = f"canvas_{file_id}.pdf"
-            if not safe_filename.lower().endswith('.pdf'):
-                safe_filename += '.pdf'
-            
-            file_path = target_dir / safe_filename
-            counter = 1
-            base_name = file_path.stem
-            while file_path.exists():
-                file_path = target_dir / f"{base_name}_{counter}.pdf"
-                counter += 1
-            
-            with open(file_path, 'wb') as f:
-                f.write(content)
-            
-            # Update MD5 registry (per-user)
-            registry = self._load_md5_registry(user_id)
-            registry[md5_hash] = file_path.name
-            self._save_md5_registry(registry, user_id)
+
+            registry_file = self._get_user_md5_registry_file(user_id) if user_id else self.md5_registry_file
+            with locked_json_state(registry_file, dict) as registry:
+                existing = registry.get(md5_hash)
+                if existing:
+                    return {
+                        "success": True,
+                        "status": "duplicate",
+                        "md5_hash": md5_hash,
+                        "existing_filename": existing,
+                        "message": f"File already exists as: {existing}"
+                    }
+
+                safe_filename = "".join(c for c in filename if c.isalnum() or c in "._- ")
+                if not safe_filename:
+                    safe_filename = f"canvas_{file_id}.pdf"
+                if not safe_filename.lower().endswith('.pdf'):
+                    safe_filename += '.pdf'
+
+                file_path = target_dir / safe_filename
+                counter = 1
+                base_name = file_path.stem
+                while file_path.exists():
+                    file_path = target_dir / f"{base_name}_{counter}.pdf"
+                    counter += 1
+
+                with open(file_path, 'wb') as f:
+                    f.write(content)
+
+                registry[md5_hash] = file_path.name
             
             return {
                 "success": True,
@@ -425,14 +461,57 @@ class CanvasRAGService:
             file_meta = get_file_metadata(file_path)
             file_hash = file_meta["file_hash"]
             filename = file_meta["filename"]
-            
-            # Check if already indexed using per-file collection manager
-            if self._collection_manager.is_indexed(file_hash):
+
+            already_indexed = False
+            collection_name = None
+            topics_extracted: List[Dict[str, str]] = []
+
+            if db_session and user_id:
+                try:
+                    user_uuid = _uuid.UUID(user_id)
+                    already_indexed = SyncRAGCollectionRepository.is_indexed(
+                        db_session,
+                        file_hash,
+                        user_uuid,
+                        source=RAGSourceType.CANVAS,
+                    )
+                    if already_indexed:
+                        collection_name = SyncRAGCollectionRepository.get_collection_name(
+                            db_session,
+                            file_hash,
+                            user_uuid,
+                            source=RAGSourceType.CANVAS,
+                        )
+                except Exception as e:
+                    logger.warning(f"Canvas DB indexed check failed: {e}")
+                    db_session.rollback()
+
+            if not already_indexed:
+                already_indexed = self._collection_manager.is_indexed(file_hash, user_id=user_id)
+                if already_indexed:
+                    collection_name = self._collection_manager.get_collection_name(
+                        file_hash,
+                        course_id,
+                        user_id=user_id,
+                    )
+
+            if already_indexed:
                 logger.info(f"Canvas document already indexed in per-file collection: {file_path}")
-                
-                collection_name = self._collection_manager.get_collection_name(file_hash, course_id)
-                has_topics = self._topic_storage.has_topics(file_hash)
-                topics_extracted = []
+
+                has_topics = False
+                if db_session and user_id:
+                    try:
+                        has_topics = SyncRAGCollectionRepository.has_topics(
+                            db_session,
+                            file_hash,
+                            _uuid.UUID(user_id),
+                            source=RAGSourceType.CANVAS,
+                        )
+                    except Exception as e:
+                        logger.warning(f"Canvas DB topics check failed: {e}")
+                        db_session.rollback()
+                if not has_topics:
+                    has_topics = self._topic_storage.has_topics(file_hash, user_id=user_id)
                 
                 # If already indexed but no topics, extract them now
                 if extract_topics and not has_topics:
@@ -440,9 +519,29 @@ class CanvasRAGService:
                     try:
                         topics_extracted = self._extract_and_save_topics(
                             file_hash=file_hash,
-                            filename=filename
+                            filename=filename,
+                            course_id=course_id,
+                            user_id=user_id,
                         )
                         has_topics = len(topics_extracted) > 0
+                        if has_topics and db_session and user_id:
+                            try:
+                                row = SyncRAGCollectionRepository.get(
+                                    db_session,
+                                    file_hash,
+                                    _uuid.UUID(user_id),
+                                    source=RAGSourceType.CANVAS,
+                                )
+                                if row:
+                                    SyncRAGCollectionRepository.save_topics(
+                                        db_session,
+                                        collection_id=row.id,
+                                        topics=topics_extracted,
+                                    )
+                                    db_session.commit()
+                            except Exception as e:
+                                logger.warning(f"Could not persist Canvas topics to PostgreSQL: {e}")
+                                db_session.rollback()
                     except Exception as e:
                         logger.warning(f"Failed to extract topics for indexed doc: {e}")
                 
@@ -479,36 +578,42 @@ class CanvasRAGService:
                 filename=filename,
                 documents=chunks,
                 course_id=course_id,
-                replace_existing=True  # Idempotent: re-indexing replaces old data
+                replace_existing=True,  # Idempotent: re-indexing replaces old data
+                user_id=user_id,
             )
             
-            collection_name = self._collection_manager.get_collection_name(file_hash, course_id)
+            collection_name = self._collection_manager.get_collection_name(
+                file_hash,
+                course_id,
+                user_id=user_id,
+            )
             logger.info(f"Successfully ingested {added_count} chunks from Canvas file into collection: {collection_name}")
             
             # Extract and save topics (pass chunks directly for efficiency)
-            topics_extracted = []
             if extract_topics and added_count > 0:
                 try:
                     topics_extracted = self._extract_and_save_topics(
                         file_hash=file_hash,
                         filename=filename,
-                        chunks=chunks
+                        chunks=chunks,
+                        course_id=course_id,
+                        user_id=user_id,
                     )
                 except Exception as e:
                     logger.warning(f"Failed to extract topics: {e}")
             
             # Update indexed files registry (per-user)
-            indexed_registry = self._load_indexed_registry(user_id)
-            indexed_registry[file_hash] = {
-                "filename": filename,
-                "file_path": file_path,
-                "collection_name": collection_name,
-                "course_id": course_id,
-                "indexed_at": datetime.now().isoformat(),
-                "chunks_added": added_count,
-                "topic_count": len(topics_extracted)
-            }
-            self._save_indexed_registry(indexed_registry, user_id)
+            indexed_registry_file = self._get_user_indexed_registry_file(user_id) if user_id else self.indexed_files_registry
+            with locked_json_state(indexed_registry_file, dict) as indexed_registry:
+                indexed_registry[file_hash] = {
+                    "filename": filename,
+                    "file_path": file_path,
+                    "collection_name": collection_name,
+                    "course_id": course_id,
+                    "indexed_at": datetime.now().isoformat(),
+                    "chunks_added": added_count,
+                    "topic_count": len(topics_extracted)
+                }
             
             # ---- Persist to PostgreSQL when session available ----
             col_row = None
@@ -562,7 +667,8 @@ class CanvasRAGService:
         filename: str,
         num_topics: int = 10,
         chunks: Optional[List[Document]] = None,
-        course_id: Optional[int] = None
+        course_id: Optional[int] = None,
+        user_id: Optional[str] = None,
     ) -> List[Dict[str, str]]:
         """Extract topics from document and save to Canvas topic storage.
         
@@ -582,7 +688,8 @@ class CanvasRAGService:
                         file_hash=file_hash,
                         query="main topics content overview",  # Generic query to get content
                         k=15,
-                        course_id=course_id
+                        course_id=course_id,
+                        user_id=user_id,
                     )
                     logger.info(f"Got {len(docs)} documents from per-file collection")
                 except Exception as e:
@@ -633,7 +740,7 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
             
             # Save to Canvas topic storage
             if topics:
-                self._topic_storage.save_topics(file_hash, filename, topics)
+                self._topic_storage.save_topics(file_hash, filename, topics, user_id=user_id)
             
             return topics
             
@@ -641,17 +748,47 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
             logger.error(f"Error extracting topics: {e}")
             return []
     
-    def extract_topics_for_file(self, filename: str, num_topics: int = 10, user_id: Optional[str] = None) -> Dict[str, Any]:
+    def extract_topics_for_file(
+        self,
+        filename: str,
+        num_topics: int = 10,
+        user_id: Optional[str] = None,
+        db_session: Optional[Session] = None,
+    ) -> Dict[str, Any]:
         """Extract topics for a specific file by filename."""
         self._ensure_initialized()
-        
-        # Find file hash from indexed registry (per-user)
-        indexed_registry = self._load_indexed_registry(user_id)
+
         file_hash = None
-        for hash_val, data in indexed_registry.items():
-            if data.get("filename") == filename:
-                file_hash = hash_val
-                break
+        course_id = None
+
+        if db_session and user_id:
+            try:
+                row = SyncRAGCollectionRepository.get_by_filename(
+                    db_session,
+                    filename,
+                    _uuid.UUID(user_id),
+                    source=RAGSourceType.CANVAS,
+                )
+                if row:
+                    file_hash = row.file_hash
+                    course_id = row.course_id
+            except Exception as e:
+                logger.warning(f"DB lookup failed for extract_topics_for_file: {e}")
+                db_session.rollback()
+
+        if not file_hash:
+            indexed_registry = self._load_indexed_registry(user_id)
+            for hash_val, data in indexed_registry.items():
+                if data.get("filename") == filename:
+                    file_hash = hash_val
+                    course_id = data.get("course_id")
+                    break
+
+        if not file_hash:
+            matching = self._collection_manager.registry.get_by_filenames([filename], user_id=user_id)
+            if matching:
+                file_hash = matching[0].file_hash
+                course_id = matching[0].course_id
         
         if not file_hash:
             return {
@@ -660,7 +797,31 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
             }
         
         try:
-            topics = self._extract_and_save_topics(file_hash, filename, num_topics)
+            topics = self._extract_and_save_topics(
+                file_hash,
+                filename,
+                num_topics,
+                course_id=course_id,
+                user_id=user_id,
+            )
+            if topics and db_session and user_id:
+                try:
+                    row = SyncRAGCollectionRepository.get(
+                        db_session,
+                        file_hash,
+                        _uuid.UUID(user_id),
+                        source=RAGSourceType.CANVAS,
+                    )
+                    if row:
+                        SyncRAGCollectionRepository.save_topics(
+                            db_session,
+                            collection_id=row.id,
+                            topics=topics,
+                        )
+                        db_session.commit()
+                except Exception as e:
+                    logger.warning(f"Could not persist extracted Canvas topics: {e}")
+                    db_session.rollback()
             return {
                 "success": True,
                 "topics": [t["name"] for t in topics],
@@ -687,13 +848,16 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
         if db_session and user_id:
             try:
                 topics = SyncRAGCollectionRepository.get_topics_by_filename(
-                    db_session, filename, _uuid.UUID(user_id),
+                    db_session,
+                    filename,
+                    _uuid.UUID(user_id),
+                    source=RAGSourceType.CANVAS,
                 )
             except Exception as e:
                 logger.warning(f"DB query failed for get_document_topics, falling back to legacy: {e}")
                 db_session.rollback()
         if topics is None:
-            raw = self._topic_storage.get_topics_by_filename(filename)
+            raw = self._topic_storage.get_topics_by_filename(filename, user_id=user_id)
             if raw:
                 topics = raw
         
@@ -727,13 +891,19 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
         if db_session and user_id:
             try:
                 success = SyncRAGCollectionRepository.update_topics_by_filename(
-                    db_session, filename, topic_dicts, _uuid.UUID(user_id),
+                    db_session,
+                    filename,
+                    topic_dicts,
+                    _uuid.UUID(user_id),
+                    source=RAGSourceType.CANVAS,
                 )
+                if success:
+                    db_session.commit()
             except Exception as e:
                 logger.warning(f"DB query failed for update_document_topics, falling back to legacy: {e}")
                 db_session.rollback()
         if not success:
-            success = self._topic_storage.update_topics_by_filename(filename, topic_dicts)
+            success = self._topic_storage.update_topics_by_filename(filename, topic_dicts, user_id=user_id)
         
         return {
             "success": success,
@@ -783,7 +953,7 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
             if file_hash in seen_hashes:
                 continue
             filename = data.get("filename", "unknown")
-            topics = self._topic_storage.get_topics(file_hash) or []
+            topics = self._topic_storage.get_topics(file_hash, user_id=user_id) or []
             documents.append({
                 "filename": filename,
                 "original_filename": filename,
@@ -798,12 +968,12 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
         # Source 2: Get from collection_manager (per-file collections)
         # This catches files indexed via collection_manager but not in indexed_registry
         try:
-            indexed_files = self._collection_manager.get_indexed_files()
+            indexed_files = self._collection_manager.get_indexed_files(user_id=user_id)
             for file_info in indexed_files:
                 file_hash = file_info.get("file_hash")
                 if file_hash and file_hash not in seen_hashes:
                     filename = file_info.get("filename", "unknown")
-                    topics = self._topic_storage.get_topics(file_hash) or []
+                    topics = self._topic_storage.get_topics(file_hash, user_id=user_id) or []
                     documents.append({
                         "filename": filename,
                         "original_filename": filename,
@@ -833,7 +1003,7 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
             # Also get indexed files from collection_manager
             collection_indexed_files = set()
             try:
-                for file_info in self._collection_manager.get_indexed_files():
+                for file_info in self._collection_manager.get_indexed_files(user_id=user_id):
                     collection_indexed_files.add(file_info.get("filename", ""))
             except Exception as e:
                 logger.warning(f"Could not get collection manager files: {e}")
@@ -872,19 +1042,34 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
                 "files": []
             }
     
-    def get_index_stats(self, user_id: Optional[str] = None) -> Dict[str, Any]:
+    def get_index_stats(
+        self,
+        user_id: Optional[str] = None,
+        db_session: Optional[Session] = None,
+    ) -> Dict[str, Any]:
         """Get Canvas index statistics for a specific user."""
         self._ensure_initialized()
         
         try:
-            stats = self._vector_store.get_collection_stats()
-            indexed_registry = self._load_indexed_registry(user_id)
-            
+            if db_session and user_id:
+                rows = SyncRAGCollectionRepository.get_all(
+                    db_session,
+                    _uuid.UUID(user_id),
+                    source=RAGSourceType.CANVAS,
+                )
+                return {
+                    "total_documents": len(rows),
+                    "total_chunks": sum(row.chunk_count or 0 for row in rows),
+                    "collection_name": "per-file-canvas-collections",
+                    "unique_files": len(rows),
+                }
+
+            indexed_files = self._collection_manager.get_indexed_files(user_id=user_id)
             return {
-                "total_documents": len(indexed_registry),
-                "total_chunks": stats.get("total_documents", 0),
-                "collection_name": self.CANVAS_COLLECTION_NAME,
-                "unique_files": len(indexed_registry)
+                "total_documents": len(indexed_files),
+                "total_chunks": sum(file_info.get("chunk_count", 0) for file_info in indexed_files),
+                "collection_name": "per-file-canvas-collections",
+                "unique_files": len(indexed_files)
             }
         except Exception as e:
             logger.error(f"Error getting Canvas stats: {e}")
@@ -926,8 +1111,19 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
                     logger.warning(f"Canvas DB get_by_filenames failed during query: {e}")
                     db_session.rollback()
             if not target_hashes:
-                matching = self._collection_manager.registry.get_by_filenames(selected_documents)
+                matching = self._collection_manager.registry.get_by_filenames(selected_documents, user_id=user_id)
                 target_hashes = [row.file_hash for row in matching]
+        elif db_session and user_id:
+            try:
+                rows = SyncRAGCollectionRepository.get_all(
+                    db_session,
+                    _uuid.UUID(user_id),
+                    source=RAGSourceType.CANVAS,
+                )
+                target_hashes = [row.file_hash for row in rows]
+            except Exception as e:
+                logger.warning(f"Canvas DB get_all failed during query: {e}")
+                db_session.rollback()
 
         return self._rag_chain.query(
             question,
@@ -968,9 +1164,6 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
             # isolation and future-proofing.
             self._collection_manager.ensure_fresh_state()
 
-            # Resolve target file hashes from selected_documents
-            # Canvas collections are registered WITHOUT user_id (user_id=null),
-            # so we must NOT filter by user_id in registry lookups.
             target_hashes = None
             if selected_documents:
                 target_hashes = []
@@ -986,14 +1179,25 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
                         logger.warning(f"Canvas DB get_by_filenames failed: {e}")
                         quiz_logger.warning(f"Canvas DB get_by_filenames failed: {e}")
                         db_session.rollback()
-                # Fallback to in-memory registry (no user_id filter — canvas entries have user_id=null)
                 if not target_hashes:
-                    matching = self._collection_manager.registry.get_by_filenames(selected_documents)
+                    matching = self._collection_manager.registry.get_by_filenames(selected_documents, user_id=user_id)
                     target_hashes = [m.file_hash for m in matching]
                     quiz_logger.info(f"Canvas registry fallback: matched {len(matching)} of {len(selected_documents)} docs: {[(m.filename, m.file_hash[:8]) for m in matching]}")
                 quiz_logger.info(f"Canvas resolved {len(target_hashes)} hashes from {len(selected_documents)} docs: {selected_documents} -> {[h[:8] for h in target_hashes]}")
+            elif db_session and user_id:
+                try:
+                    rows = SyncRAGCollectionRepository.get_all(
+                        db_session,
+                        _uuid.UUID(user_id),
+                        source=RAGSourceType.CANVAS,
+                    )
+                    target_hashes = [row.file_hash for row in rows]
+                except Exception as e:
+                    logger.warning(f"Canvas DB get_all failed for quiz generation: {e}")
+                    quiz_logger.warning(f"Canvas DB get_all failed for quiz generation: {e}")
+                    db_session.rollback()
             else:
-                quiz_logger.warning(f"canvas selected_documents is None/empty ({selected_documents!r}) — will query ALL collections!")
+                quiz_logger.warning(f"canvas selected_documents is None/empty ({selected_documents!r}) — will query all user-scoped collections!")
 
             n_resolved = len(target_hashes) if target_hashes is not None else 'all'
 
@@ -1046,8 +1250,9 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
         self._ensure_initialized()
         
         try:
-            # Clear vector store
-            self._vector_store.reset()
+            self._collection_manager.reset_all()
+            if self._vector_store:
+                self._vector_store.reset()
             
             # Clear topic storage
             self._topic_storage.clear()
@@ -1056,10 +1261,18 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
             self._save_md5_registry({})
             self._save_indexed_registry({})
             
-            # Delete PDF files
-            for file_path in self.CANVAS_RAG_DIR.glob("*.pdf"):
+            # Delete PDF files and per-user registry directories
+            for file_path in self.CANVAS_RAG_DIR.rglob("*"):
                 try:
-                    file_path.unlink()
+                    if file_path.is_file() and (
+                        file_path.suffix.lower() == ".pdf"
+                        or file_path.name in {
+                            ".md5_registry.json",
+                            ".indexed_files.json",
+                            "canvas_document_topics.json",
+                        }
+                    ):
+                        file_path.unlink()
                 except Exception as e:
                     logger.warning(f"Could not delete {file_path}: {e}")
             
@@ -1100,7 +1313,7 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
             # Source 2: Find file hash in collection_manager registry
             if not hash_to_remove:
                 try:
-                    indexed_files = self._collection_manager.get_indexed_files()
+                    indexed_files = self._collection_manager.get_indexed_files(user_id=user_id)
                     for file_info in indexed_files:
                         if file_info.get("filename") == filename:
                             hash_to_remove = file_info.get("file_hash")
@@ -1111,14 +1324,14 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
             # Source 3: Find file hash from DB
             if not hash_to_remove and db_session and user_id:
                 try:
-                    rows = SyncRAGCollectionRepository.get_all_documents_with_topics(
-                        db_session, _uuid.UUID(user_id),
+                    row = SyncRAGCollectionRepository.get_by_filename(
+                        db_session,
+                        filename,
+                        _uuid.UUID(user_id),
                         source=RAGSourceType.CANVAS,
                     )
-                    for r in rows:
-                        if r.get("filename") == filename:
-                            hash_to_remove = r.get("file_hash")
-                            break
+                    if row:
+                        hash_to_remove = row.file_hash
                 except Exception as e:
                     logger.warning(f"Could not search DB for file hash: {e}")
             
@@ -1130,7 +1343,7 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
             
             # Remove from per-file collection manager
             try:
-                deleted = self._collection_manager.delete_collection(hash_to_remove)
+                deleted = self._collection_manager.delete_collection(hash_to_remove, user_id=user_id)
                 if deleted:
                     logger.info(f"Deleted collection for file hash: {hash_to_remove}")
                 else:
@@ -1149,12 +1362,12 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
                 logger.warning(f"Could not delete from vector store: {e}")
             
             # Remove from indexed registry (per-user)
-            if hash_to_remove in indexed_registry:
-                del indexed_registry[hash_to_remove]
-                self._save_indexed_registry(indexed_registry, user_id)
+            indexed_registry_file = self._get_user_indexed_registry_file(user_id) if user_id else self.indexed_files_registry
+            with locked_json_state(indexed_registry_file, dict) as registry_state:
+                registry_state.pop(hash_to_remove, None)
             
             # Remove topics
-            self._topic_storage.remove_document(hash_to_remove)
+            self._topic_storage.remove_document(hash_to_remove, user_id=user_id)
             
             # Remove from PostgreSQL
             if db_session and user_id:
@@ -1205,15 +1418,15 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
                 file_path.unlink()
             
             # Remove from MD5 registry (per-user)
-            registry = self._load_md5_registry(user_id)
             hash_to_remove = None
-            for hash_val, fname in registry.items():
-                if fname == filename:
-                    hash_to_remove = hash_val
-                    break
-            if hash_to_remove:
-                del registry[hash_to_remove]
-                self._save_md5_registry(registry, user_id)
+            registry_file = self._get_user_md5_registry_file(user_id) if user_id else self.md5_registry_file
+            with locked_json_state(registry_file, dict) as registry:
+                for hash_val, fname in registry.items():
+                    if fname == filename:
+                        hash_to_remove = hash_val
+                        break
+                if hash_to_remove:
+                    del registry[hash_to_remove]
             
             return {
                 "success": True,

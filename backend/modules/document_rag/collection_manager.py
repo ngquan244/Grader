@@ -16,21 +16,19 @@ Collection Naming Strategy:
 """
 
 import logging
-import os
 import re
-import tempfile
 import threading
 from pathlib import Path
 from typing import Dict, Optional, List, Any, Set, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
-import json
 
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.documents import Document
 
 from .config import rag_config
+from backend.utils.file_state import locked_json_state, read_json_file
 
 logger = logging.getLogger(__name__)
 
@@ -133,18 +131,43 @@ class CollectionRegistry:
         self.registry_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._registry: Dict[str, CollectionMetadata] = {}
+        self._last_mtime = 0.0
         self._load()
     
+    @staticmethod
+    def _meta_to_dict(meta: CollectionMetadata) -> Dict[str, Any]:
+        return {
+            'collection_name': meta.collection_name,
+            'file_hash': meta.file_hash,
+            'filename': meta.filename,
+            'course_id': meta.course_id,
+            'created_at': meta.created_at,
+            'updated_at': meta.updated_at,
+            'chunk_count': meta.chunk_count,
+            'is_indexed': meta.is_indexed,
+            'user_id': meta.user_id,
+        }
+
+    def _refresh_from_data(self, data: Dict[str, Dict[str, Any]]) -> None:
+        self._registry = {
+            key: CollectionMetadata(**meta_dict)
+            for key, meta_dict in data.items()
+        }
+        try:
+            self._last_mtime = self.registry_path.stat().st_mtime
+        except OSError:
+            self._last_mtime = 0.0
+
     def _load(self):
         """Load registry from disk."""
         try:
-            if self.registry_path.exists():
-                self._last_mtime = self.registry_path.stat().st_mtime
-                with open(self.registry_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    for key, meta_dict in data.items():
-                        self._registry[key] = CollectionMetadata(**meta_dict)
+            data = read_json_file(self.registry_path, dict)
+            if data:
+                self._refresh_from_data(data)
                 logger.info(f"Loaded collection registry with {len(self._registry)} entries")
+            elif self.registry_path.exists():
+                self._registry = {}
+                self._last_mtime = self.registry_path.stat().st_mtime
         except Exception as e:
             logger.warning(f"Could not load collection registry: {e}")
             self._registry = {}
@@ -171,34 +194,13 @@ class CollectionRegistry:
         """
         try:
             data = {
-                key: {
-                    'collection_name': meta.collection_name,
-                    'file_hash': meta.file_hash,
-                    'filename': meta.filename,
-                    'course_id': meta.course_id,
-                    'created_at': meta.created_at,
-                    'updated_at': meta.updated_at,
-                    'chunk_count': meta.chunk_count,
-                    'is_indexed': meta.is_indexed,
-                    'user_id': meta.user_id,
-                }
+                key: self._meta_to_dict(meta)
                 for key, meta in self._registry.items()
             }
-            # Write to a temp file in the same directory, then atomically replace.
-            fd, tmp_path = tempfile.mkstemp(
-                dir=str(self.registry_path.parent), suffix='.tmp'
-            )
-            try:
-                with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-                os.replace(tmp_path, str(self.registry_path))
-            except BaseException:
-                # Clean up temp file on any failure
-                try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
-                raise
+            with locked_json_state(self.registry_path, dict) as state:
+                state.clear()
+                state.update(data)
+            self._refresh_from_data(data)
         except Exception as e:
             logger.error(f"Could not save collection registry: {e}")
     
@@ -220,41 +222,58 @@ class CollectionRegistry:
         """Register a new or updated collection."""
         with self._lock:
             key = self._make_key(file_hash, user_id)
-            existing = self._registry.get(key)
-            if existing:
-                existing.updated_at = datetime.now().isoformat()
-                existing.chunk_count = chunk_count
-                existing.is_indexed = True
-                self._save()
-                return existing
-            
-            meta = CollectionMetadata(
-                collection_name=collection_name,
-                file_hash=file_hash,
-                filename=filename,
-                course_id=course_id,
-                chunk_count=chunk_count,
-                is_indexed=True,
-                user_id=user_id,
-            )
-            self._registry[key] = meta
-            self._save()
-            return meta
+            now = datetime.now().isoformat()
+
+            with locked_json_state(self.registry_path, dict) as data:
+                existing = data.get(key)
+                if existing:
+                    meta = CollectionMetadata(**existing)
+                    meta.collection_name = collection_name
+                    meta.filename = filename
+                    meta.course_id = course_id
+                    meta.updated_at = now
+                    meta.chunk_count = chunk_count
+                    meta.is_indexed = True
+                    meta.user_id = user_id
+                else:
+                    meta = CollectionMetadata(
+                        collection_name=collection_name,
+                        file_hash=file_hash,
+                        filename=filename,
+                        course_id=course_id,
+                        chunk_count=chunk_count,
+                        is_indexed=True,
+                        user_id=user_id,
+                    )
+                data[key] = self._meta_to_dict(meta)
+                self._refresh_from_data(data)
+
+            return self._registry[key]
     
     def unregister(self, file_hash: str, user_id: Optional[str] = None) -> bool:
         """Remove a collection entry from registry for a specific user."""
         with self._lock:
             key = self._make_key(file_hash, user_id)
-            if key in self._registry:
-                del self._registry[key]
-                self._save()
-                return True
-            return False
+            removed = False
+            with locked_json_state(self.registry_path, dict) as data:
+                if key in data:
+                    del data[key]
+                    removed = True
+                self._refresh_from_data(data)
+            return removed
     
     def count_references(self, file_hash: str) -> int:
         """Count how many registry entries reference the same file_hash (across users)."""
         with self._lock:
             return sum(1 for meta in self._registry.values() if meta.file_hash == file_hash)
+
+    def count_collection_references(self, collection_name: str) -> int:
+        """Count how many registry entries point at the same physical collection."""
+        with self._lock:
+            return sum(
+                1 for meta in self._registry.values()
+                if meta.collection_name == collection_name
+            )
     
     def is_indexed(self, file_hash: str, user_id: Optional[str] = None) -> bool:
         """Check if a file is already indexed (scoped to user when provided)."""
@@ -308,16 +327,17 @@ class CollectionRegistry:
     def clear(self, user_id: Optional[str] = None):
         """Clear registry entries. If user_id given, only clear that user's entries."""
         with self._lock:
-            if user_id is None:
-                self._registry.clear()
-            else:
-                keys_to_remove = [
-                    key for key, meta in self._registry.items()
-                    if meta.user_id == user_id
-                ]
-                for key in keys_to_remove:
-                    del self._registry[key]
-            self._save()
+            with locked_json_state(self.registry_path, dict) as data:
+                if user_id is None:
+                    data.clear()
+                else:
+                    keys_to_remove = [
+                        key for key, meta_dict in data.items()
+                        if meta_dict.get("user_id") == user_id
+                    ]
+                    for key in keys_to_remove:
+                        del data[key]
+                self._refresh_from_data(data)
 
 
 class PerFileCollectionManager:
@@ -491,7 +511,8 @@ class PerFileCollectionManager:
     def get_collection_name(
         self,
         file_hash: str,
-        course_id: Optional[int] = None
+        course_id: Optional[int] = None,
+        user_id: Optional[str] = None,
     ) -> str:
         """
         Get deterministic collection name for a file.
@@ -503,13 +524,17 @@ class PerFileCollectionManager:
         Returns:
             Deterministic collection name
         """
+        meta = self.registry.get(file_hash, user_id=user_id)
+        if meta:
+            return meta.collection_name
         return CollectionNameGenerator.for_document(file_hash, course_id)
     
     def get_or_create_collection(
         self,
         file_hash: str,
         filename: str,
-        course_id: Optional[int] = None
+        course_id: Optional[int] = None,
+        user_id: Optional[str] = None,
     ) -> Tuple[Chroma, str]:
         """
         Get existing collection or create new one for a file.
@@ -524,12 +549,12 @@ class PerFileCollectionManager:
         """
         # First check if we already have metadata for this file in registry
         # This ensures we use the correct collection name for existing files
-        meta = self.registry.get(file_hash)
+        meta = self.registry.get(file_hash, user_id=user_id)
         if meta:
             collection_name = meta.collection_name
         else:
             # New file - generate collection name
-            collection_name = self.get_collection_name(file_hash, course_id)
+            collection_name = self.get_collection_name(file_hash, course_id, user_id=user_id)
         
         lock = self._get_collection_lock(collection_name)
         
@@ -583,7 +608,7 @@ class PerFileCollectionManager:
             return 0
         
         collection, collection_name = self.get_or_create_collection(
-            file_hash, filename, course_id
+            file_hash, filename, course_id, user_id=user_id
         )
         lock = self._get_collection_lock(collection_name)
         
@@ -630,6 +655,7 @@ class PerFileCollectionManager:
         query: str,
         k: int = 4,
         course_id: Optional[int] = None,
+        user_id: Optional[str] = None,
         **kwargs
     ) -> List[Document]:
         """
@@ -646,14 +672,14 @@ class PerFileCollectionManager:
         """
         # First try to get collection name and course_id from registry
         # This ensures we use the correct collection name even if course_id isn't passed
-        meta = self.registry.get(file_hash)
+        meta = self.registry.get(file_hash, user_id=user_id)
         if not meta:
             # Registry may be stale in multi-process Docker (e.g., worker-llm
             # hasn't seen backend's ingest). Reload once from disk before
             # falling back to generated name, which would produce the WRONG
             # name (doc_* instead of canvas_*) and create an empty collection.
             self.registry.reload()
-            meta = self.registry.get(file_hash)
+            meta = self.registry.get(file_hash, user_id=user_id)
         if meta:
             collection_name = meta.collection_name
             actual_course_id = meta.course_id
@@ -663,14 +689,17 @@ class PerFileCollectionManager:
                 f"Registry miss for {file_hash[:8]} even after reload — "
                 f"falling back to generated name (course_id={course_id})"
             )
-            collection_name = self.get_collection_name(file_hash, course_id)
+            collection_name = self.get_collection_name(file_hash, course_id, user_id=user_id)
             actual_course_id = course_id
         
         if collection_name not in self._collections:
             # Try to load the collection
             try:
                 collection, _ = self.get_or_create_collection(
-                    file_hash, meta.filename if meta else "unknown", actual_course_id
+                    file_hash,
+                    meta.filename if meta else "unknown",
+                    actual_course_id,
+                    user_id=user_id,
                 )
             except Exception as e:
                 logger.warning(f"Could not load collection {collection_name}: {e}")
@@ -686,6 +715,7 @@ class PerFileCollectionManager:
         query: str,
         k: int = 4,
         course_id: Optional[int] = None,
+        user_id: Optional[str] = None,
         **kwargs
     ) -> List[Document]:
         """
@@ -709,6 +739,7 @@ class PerFileCollectionManager:
                     query=query,
                     k=k,
                     course_id=course_id,
+                    user_id=user_id,
                     **kwargs
                 )
                 all_results.extend(results)
@@ -724,7 +755,8 @@ class PerFileCollectionManager:
         file_hash: str,
         course_id: Optional[int] = None,
         search_type: str = "mmr",
-        search_kwargs: Optional[Dict] = None
+        search_kwargs: Optional[Dict] = None,
+        user_id: Optional[str] = None,
     ):
         """
         Get a retriever for a specific file's collection.
@@ -739,7 +771,7 @@ class PerFileCollectionManager:
             Langchain retriever object
         """
         # Get metadata from registry to use correct collection name
-        meta = self.registry.get(file_hash)
+        meta = self.registry.get(file_hash, user_id=user_id)
         if meta:
             actual_course_id = meta.course_id
             filename = meta.filename
@@ -748,7 +780,7 @@ class PerFileCollectionManager:
             filename = "unknown"
         
         collection, collection_name = self.get_or_create_collection(
-            file_hash, filename, actual_course_id
+            file_hash, filename, actual_course_id, user_id=user_id
         )
         
         if search_kwargs is None:
@@ -783,9 +815,9 @@ class PerFileCollectionManager:
             for meta in self.registry.get_all(user_id=user_id)
         ]
     
-    def get_collection_stats(self, file_hash: str) -> Dict[str, Any]:
+    def get_collection_stats(self, file_hash: str, user_id: Optional[str] = None) -> Dict[str, Any]:
         """Get statistics for a specific file's collection."""
-        meta = self.registry.get(file_hash)
+        meta = self.registry.get(file_hash, user_id=user_id)
         if not meta:
             return {"error": "Collection not found"}
         
@@ -802,7 +834,7 @@ class PerFileCollectionManager:
         # Get actual count from collection
         try:
             collection, _ = self.get_or_create_collection(
-                file_hash, meta.filename, meta.course_id
+                file_hash, meta.filename, meta.course_id, user_id=user_id
             )
             stats["actual_document_count"] = collection._collection.count()
         except Exception as e:
@@ -837,7 +869,7 @@ class PerFileCollectionManager:
             logger.info(f"Unregistered collection from registry: {collection_name} (user={user_id})")
             
             # 2. Only delete actual ChromaDB data if no other users reference this hash
-            remaining_refs = self.registry.count_references(file_hash)
+            remaining_refs = self.registry.count_collection_references(collection_name)
             if remaining_refs > 0:
                 logger.info(f"Collection {collection_name} still referenced by {remaining_refs} user(s), keeping data")
                 return True
@@ -910,13 +942,13 @@ class PerFileCollectionManager:
             if len(contents) >= max_docs:
                 break
                 
-            meta = self.registry.get(fh)
+            meta = self.registry.get(fh, user_id=user_id)
             if not meta:
                 continue
             
             try:
                 collection, _ = self.get_or_create_collection(
-                    fh, meta.filename, meta.course_id
+                    fh, meta.filename, meta.course_id, user_id=user_id
                 )
                 
                 # Get all documents from collection

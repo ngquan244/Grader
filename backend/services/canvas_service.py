@@ -13,6 +13,7 @@ import httpx
 
 from backend.core.config import settings
 from backend.core.logger import canvas_logger as logger
+from backend.utils.file_state import locked_json_state, read_json_file, write_json_file
 
 # Directory for storing Canvas downloads with MD5 deduplication
 CANVAS_DOWNLOADS_DIR = settings.DATA_DIR / "canvas_downloads"
@@ -27,21 +28,18 @@ def ensure_download_dir():
 def load_md5_registry() -> dict[str, str]:
     """Load MD5 registry from disk"""
     ensure_download_dir()
-    if MD5_REGISTRY_FILE.exists():
-        try:
-            with open(MD5_REGISTRY_FILE, 'r') as f:
-                return json.load(f)
-        except (json.JSONDecodeError, IOError) as e:
-            logger.warning(f"Failed to load MD5 registry: {e}")
-    return {}
+    try:
+        return read_json_file(MD5_REGISTRY_FILE, dict)
+    except Exception as e:
+        logger.warning(f"Failed to load MD5 registry: {e}")
+        return {}
 
 
 def save_md5_registry(registry: dict[str, str]):
     """Save MD5 registry to disk"""
     ensure_download_dir()
     try:
-        with open(MD5_REGISTRY_FILE, 'w') as f:
-            json.dump(registry, f, indent=2)
+        write_json_file(MD5_REGISTRY_FILE, registry)
     except IOError as e:
         logger.error(f"Failed to save MD5 registry: {e}")
 
@@ -175,7 +173,6 @@ async def download_file_with_dedup(
     Returns download status: queued, downloading, hashing, saved, duplicate, failed
     """
     ensure_download_dir()
-    registry = load_md5_registry()
     
     # Create course-specific subdirectory
     course_dir = CANVAS_DOWNLOADS_DIR / str(course_id)
@@ -191,41 +188,37 @@ async def download_file_with_dedup(
         # Compute MD5
         md5_hash = compute_md5(content)
         
-        # Check for duplicate
-        existing = check_duplicate(md5_hash, registry)
-        if existing:
-            logger.debug(f"Duplicate file detected: {filename} (matches {existing})")
-            return {
-                "success": True,
-                "file_id": file_id,
-                "filename": filename,
-                "status": "duplicate",
-                "md5_hash": md5_hash,
-                "existing_file": existing,
-            }
-        
-        # Save file
-        # Sanitize filename
-        safe_filename = "".join(c for c in filename if c.isalnum() or c in "._- ")
-        if not safe_filename:
-            safe_filename = f"file_{file_id}"
-        
-        # Ensure unique filename
-        file_path = course_dir / safe_filename
-        counter = 1
-        base_name = file_path.stem
-        suffix = file_path.suffix
-        while file_path.exists():
-            file_path = course_dir / f"{base_name}_{counter}{suffix}"
-            counter += 1
-        
-        with open(file_path, 'wb') as f:
-            f.write(content)
-        
-        # Update registry
-        registry[md5_hash] = str(file_path.relative_to(CANVAS_DOWNLOADS_DIR))
-        save_md5_registry(registry)
-        
+        with locked_json_state(MD5_REGISTRY_FILE, dict) as registry:
+            existing = check_duplicate(md5_hash, registry)
+            if existing:
+                logger.debug(f"Duplicate file detected: {filename} (matches {existing})")
+                return {
+                    "success": True,
+                    "file_id": file_id,
+                    "filename": filename,
+                    "status": "duplicate",
+                    "md5_hash": md5_hash,
+                    "existing_file": existing,
+                }
+
+            # Save file
+            safe_filename = "".join(c for c in filename if c.isalnum() or c in "._- ")
+            if not safe_filename:
+                safe_filename = f"file_{file_id}"
+
+            file_path = course_dir / safe_filename
+            counter = 1
+            base_name = file_path.stem
+            suffix = file_path.suffix
+            while file_path.exists():
+                file_path = course_dir / f"{base_name}_{counter}{suffix}"
+                counter += 1
+
+            with open(file_path, 'wb') as f:
+                f.write(content)
+
+            registry[md5_hash] = str(file_path.relative_to(CANVAS_DOWNLOADS_DIR))
+
         logger.debug(f"Saved file: {file_path}")
         return {
             "success": True,

@@ -33,12 +33,16 @@ FROM python:3.11-slim AS production
 
 WORKDIR /app
 
+ARG APP_UID=10001
+ARG APP_GID=10001
+
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     curl \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --create-home --shell /bin/bash appuser
+    && groupadd --gid "${APP_GID}" appuser \
+    && useradd --uid "${APP_UID}" --gid "${APP_GID}" --create-home --shell /bin/bash appuser
 
 # Copy virtual environment from builder
 COPY --from=builder /opt/venv /opt/venv
@@ -54,7 +58,7 @@ RUN chmod +x /app/entrypoint.sh
 # Switch to non-root user
 USER appuser
 
-# Entrypoint handles optional migrations before CMD
+# Entrypoint forwards to the runtime command.
 ENTRYPOINT ["/app/entrypoint.sh"]
 
 # Expose port
