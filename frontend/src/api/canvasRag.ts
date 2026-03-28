@@ -148,6 +148,7 @@ export interface CanvasQueryRequest {
   question: string;
   k?: number;
   return_context?: boolean;
+  selected_documents?: string[];
 }
 
 export interface CanvasQueryResponse {

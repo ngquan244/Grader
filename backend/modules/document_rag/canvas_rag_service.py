@@ -901,6 +901,7 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
         question: str,
         k: int = 6,
         return_context: bool = False,
+        selected_documents: Optional[List[str]] = None,
         user_id: Optional[str] = None,
         db_session: Optional[Session] = None,
     ) -> Dict[str, Any]:
@@ -908,7 +909,33 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
         self._ensure_initialized()
         # Sync registry state for cross-process freshness (fast mtime check).
         self._collection_manager.ensure_fresh_state()
-        return self._rag_chain.query(question, k=k, return_context=return_context)
+
+        target_hashes = None
+        if selected_documents:
+            target_hashes = []
+            if db_session and user_id:
+                try:
+                    rows = SyncRAGCollectionRepository.get_by_filenames(
+                        db_session,
+                        selected_documents,
+                        _uuid.UUID(user_id),
+                        source=RAGSourceType.CANVAS,
+                    )
+                    target_hashes = [row.file_hash for row in rows]
+                except Exception as e:
+                    logger.warning(f"Canvas DB get_by_filenames failed during query: {e}")
+                    db_session.rollback()
+            if not target_hashes:
+                matching = self._collection_manager.registry.get_by_filenames(selected_documents)
+                target_hashes = [row.file_hash for row in matching]
+
+        return self._rag_chain.query(
+            question,
+            k=k,
+            return_context=return_context,
+            target_file_hashes=target_hashes,
+            user_id=user_id,
+        )
     
     def generate_quiz(
         self,

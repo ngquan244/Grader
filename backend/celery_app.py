@@ -93,7 +93,7 @@ celery_app.conf.update(
     
     # Result backend settings
     result_expires=86400,  # 24 hours
-    result_extended=True,  # Store task name, args, kwargs in result
+    result_extended=False,  # Avoid persisting task args/kwargs that may contain sensitive data
     
     # Task execution settings
     task_acks_late=True,  # Acknowledge after task completes (safer for retries)
