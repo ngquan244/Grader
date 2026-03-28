@@ -90,12 +90,14 @@ class QuizQuestion(BaseModel):
 class GenerateQuizResponse(BaseModel):
     """Response model for quiz generation"""
     success: bool
+    partial: bool = False
     questions: list = []
     topic: str = ""
     num_questions_requested: Optional[int] = None
     num_questions_generated: Optional[int] = None
     context_used: Optional[str] = None
     raw_response: Optional[str] = None
+    message: Optional[str] = None
     error: Optional[str] = None
 
 
@@ -556,8 +558,10 @@ def generate_quiz_from_documents(request: GenerateQuizRequest, user: CurrentUser
                 for q in result.get("questions", [])
             ]
             return GenerateQuizResponse(
-                success=False,
+                success=result.get("success", False),
+                partial=result.get("partial", False),
                 error=result.get("error", "Failed to generate quiz"),
+                message=result.get("message"),
                 questions=partial_questions,
                 topic=", ".join(topics_list),
                 num_questions_requested=request.num_questions,
@@ -576,12 +580,14 @@ def generate_quiz_from_documents(request: GenerateQuizRequest, user: CurrentUser
         
         return GenerateQuizResponse(
             success=True,
+            partial=result.get("partial", False),
             questions=questions,
             topic=", ".join(topics_list),
             num_questions_requested=request.num_questions,
             num_questions_generated=len(questions),
             context_used=result.get("context_used"),
-            raw_response=result.get("raw_response") if request.language == "vi" else None
+            raw_response=result.get("raw_response") if request.language == "vi" else None,
+            message=result.get("message"),
         )
         
     except HTTPException:

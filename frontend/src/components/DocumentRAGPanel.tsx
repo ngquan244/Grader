@@ -52,6 +52,7 @@ import {
   getLLMProviderInfo,
   asyncUploadAndIndex,
   asyncGenerateQuiz,
+  type GenerateQuizResponse,
   type RAGIndexStats,
   type RAGUploadedFile,
   type LLMStatus,
@@ -125,6 +126,7 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
   const [generatedQuiz, setGeneratedQuiz] = useState<QuizQuestion[]>([]);
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
   const [quizError, setQuizError] = useState<string | null>(null);
+  const [quizMessage, setQuizMessage] = useState<string | null>(null);
   const [editingQuestionIndex, setEditingQuestionIndex] = useState<number | null>(null);
   const [editingQuestion, setEditingQuestion] = useState<QuizQuestion | null>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -205,20 +207,25 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
     if (!job) return;
 
     if (job.status === 'SUCCEEDED' && job.result) {
-      const r = job.result as { success?: boolean; questions?: QuizQuestion[]; error?: string };
+      const r = job.result as unknown as GenerateQuizResponse;
       if (r.success && r.questions && r.questions.length > 0) {
         setGeneratedQuiz(r.questions);
+        setQuizError(null);
+        setQuizMessage(r.partial ? (r.message || null) : null);
         setShowQuizModal(true);
       } else {
-        setQuizError(r.error || 'Không thể tạo quiz. Hãy thử lại với chủ đề khác.');
+        setQuizMessage(null);
+        setQuizError(r.error || r.message || 'Không thể tạo quiz. Hãy thử lại với chủ đề khác.');
       }
       setIsGeneratingQuiz(false);
       quizJob.reset();
     } else if (job.status === 'FAILED') {
+      setQuizMessage(null);
       setQuizError(job.error_message || 'Lỗi khi tạo quiz.');
       setIsGeneratingQuiz(false);
       quizJob.reset();
     } else if (job.status === 'CANCELED') {
+      setQuizMessage(null);
       setIsGeneratingQuiz(false);
       quizJob.reset();
     }
@@ -792,6 +799,7 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
       if (response.success) {
         setUploadMessage({ type: 'success', text: 'Đã xóa dữ liệu thành công' });
         setGeneratedQuiz([]);
+        setQuizMessage(null);
         await loadIndexStats();
       } else {
         setUploadMessage({ type: 'error', text: response.error || 'Lỗi khi xóa dữ liệu' });
@@ -812,12 +820,14 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
       : quizTopic.trim() ? [quizTopic.trim()] : [];
     
     if (topicsList.length === 0) {
+      setQuizMessage(null);
       setQuizError('Vui lòng chọn chủ đề quiz hoặc nhập chủ đề');
       return;
     }
 
     setIsGeneratingQuiz(true);
     setQuizError(null);
+    setQuizMessage(null);
     setGeneratedQuiz([]);
     setEditingQuestionIndex(null);
     setEditingQuestion(null);
@@ -847,6 +857,7 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
       }
     } catch (error) {
       console.error('Quiz generation error:', error);
+      setQuizMessage(null);
       setQuizError('Lỗi khi tạo quiz. Hãy kiểm tra hệ thống AI đang hoạt động và có tài liệu đã được xử lý.');
       setIsGeneratingQuiz(false);
     }
@@ -1280,7 +1291,7 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
                     onChange={(e) => setNumQuestions(Number(e.target.value))}
                     disabled={isGeneratingQuiz}
                   >
-                    {[3, 5, 7, 10, 15, 20, 30, 40, 50].map(n => (
+                    {[3, 5, 7, 10, 15, 20, 30, 40].map(n => (
                       <option key={n} value={n}>{n} câu</option>
                     ))}
                   </select>
@@ -1337,6 +1348,13 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
                 </div>
               )}
 
+              {quizMessage && !quizError && (
+                <div className="message info">
+                  <Info size={16} />
+                  {quizMessage}
+                </div>
+              )}
+
               {quizError && (
                 <div className="message error">
                   <AlertCircle size={16} />
@@ -1368,6 +1386,7 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
                       className="btn btn-secondary btn-new-quiz"
                       onClick={() => {
                         setGeneratedQuiz([]);
+                        setQuizMessage(null);
                         setQuizError(null);
                         setEditingQuestionIndex(null);
                         setEditingQuestion(null);
@@ -1747,6 +1766,13 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
             </div>
             
             <div className="quiz-modal-body">
+              {quizMessage && (
+                <div className="message info quiz-modal-message">
+                  <Info size={16} />
+                  {quizMessage}
+                </div>
+              )}
+
               <div className="quiz-questions">
                 {generatedQuiz.map((q, idx) => (
                   <div key={idx} className={`quiz-question ${editingQuestionIndex === idx ? 'editing' : ''}`}>

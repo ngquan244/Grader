@@ -106,7 +106,18 @@ def generate_quiz(
         
         if result.get("success"):
             n_questions = len(result.get("questions", []))
-            app_logger.info(f"[QUIZ] success questions={n_questions} duration={duration}s selected_docs={n_selected} resolved_hashes={n_resolved}")
+            if result.get("partial"):
+                message = result.get("message") or "Quiz generated with a small shortfall"
+                app_logger.info(
+                    f"[QUIZ] partial success questions={n_questions} duration={duration}s "
+                    f"selected_docs={n_selected} resolved_hashes={n_resolved} message=\"{message}\""
+                )
+                quiz_logger.warning(f"Quiz partial success: {message}, result_keys={list(result.keys())}")
+            else:
+                app_logger.info(
+                    f"[QUIZ] success questions={n_questions} duration={duration}s "
+                    f"selected_docs={n_selected} resolved_hashes={n_resolved}"
+                )
             result.pop("_resolved_hashes", None)
             job_service.complete_job(job_uuid, result)
         else:

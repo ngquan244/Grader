@@ -526,6 +526,7 @@ BLUEPRINT_SKIP_TOPIC_THRESHOLD = 8
 MAX_LLM_CALLS_PER_LARGE_QUIZ_NO_BLUEPRINT = 6
 MAX_LLM_CALLS_PER_LARGE_QUIZ_WITH_BLUEPRINT = 7
 MAX_EST_COMPLETION_TOKENS_PER_LARGE_QUIZ = 15_000
+PARTIAL_SUCCESS_RATIO = 0.95
 
 QUIZ_GENERATION_PROMPT_VNEXT_VI = """You are an expert teacher creating professional multiple-choice quiz questions.
 
@@ -867,6 +868,54 @@ class QuizGenerator:
         if remaining_slot_count <= 0:
             return False
         return remaining_slot_count <= min(8, math.ceil(num_questions * 0.2))
+
+    @staticmethod
+    def _partial_success_threshold(num_questions: int) -> int:
+        return math.ceil(num_questions * PARTIAL_SUCCESS_RATIO)
+
+    @staticmethod
+    def _is_partial_success(num_questions: int, generated_count: int) -> bool:
+        return (
+            generated_count < num_questions
+            and generated_count >= QuizGenerator._partial_success_threshold(num_questions)
+        )
+
+    def _build_user_facing_shortfall_message(
+        self,
+        *,
+        num_questions: int,
+        final_count: int,
+        blueprint_skip_reason: Optional[str],
+        plan_stats: Optional[Dict[str, Any]],
+        remaining_slots: Optional[List[Dict[str, Any]]] = None,
+    ) -> str:
+        missing_count = max(0, num_questions - final_count)
+        message_parts = [f"Đã tạo {final_count}/{num_questions} câu hỏi, thiếu {missing_count} câu."]
+        reasons: List[str] = []
+        plan_stats = plan_stats or {}
+
+        if plan_stats.get("budget_cap_hit"):
+            reasons.append("Hệ thống đã dừng ở mức chi phí an toàn để tránh tốn quá nhiều token.")
+
+        if blueprint_skip_reason in {
+            "blueprint skipped due to large request",
+            "blueprint skipped due to length limit",
+        }:
+            reasons.append("Yêu cầu lớn nên hệ thống dùng chế độ tiết kiệm token, có thể thiếu một vài câu hỏi.")
+
+        if remaining_slots:
+            reasons.append("Nội dung tài liệu chưa đủ phủ hết mọi góc hỏi cần thiết.")
+
+        if not reasons and blueprint_skip_reason == "blueprint skipped due to parse/generation fallback":
+            reasons.append("Hệ thống đã rút gọn bước lập kế hoạch để giữ kết quả ổn định.")
+
+        if not reasons and missing_count > 0:
+            reasons.append("Một số câu hỏi được lược bớt để giữ độ bám sát với tài liệu.")
+
+        if reasons:
+            message_parts.append(" ".join(reasons[:2]))
+
+        return " ".join(message_parts)
 
     @staticmethod
     def _existing_question_prompt_budget(
@@ -2346,6 +2395,7 @@ Return ONLY valid JSON, no additional text.""")
         if not raw_documents:
             return {
                 "success": False,
+                "partial": False,
                 "questions": [],
                 "message": "Context rong, khong the tao quiz",
                 "sources": [],
@@ -2425,39 +2475,37 @@ Return ONLY valid JSON, no additional text.""")
             remaining_slots = plan_result["remaining_slots"]
             final_count = len(formatted_quiz)
             exact_count_reached = final_count == num_questions
+            partial_success = self._is_partial_success(num_questions, final_count)
             plan_stats = plan_result.get("stats", {})
 
             if formatted_quiz:
                 logger.info("Sample question 1: %s", formatted_quiz[0])
 
             if not exact_count_reached:
-                failure_reasons: List[str] = []
-                if blueprint_skip_reason:
-                    failure_reasons.append(blueprint_skip_reason)
-                if plan_stats.get("budget_cap_hit"):
-                    failure_reasons.append("budget cap reached after refill attempts")
-
-                message = (
-                    f"Khong the tao du {num_questions} cau hoi grounded. "
-                    f"Da tao duoc {final_count}/{num_questions} cau hoi sau khi refill co kiem soat."
+                message = self._build_user_facing_shortfall_message(
+                    num_questions=num_questions,
+                    final_count=final_count,
+                    blueprint_skip_reason=blueprint_skip_reason,
+                    plan_stats=plan_stats,
+                    remaining_slots=remaining_slots,
                 )
-                if failure_reasons:
-                    message = f"{message} {'; '.join(failure_reasons)}."
                 return {
-                    "success": False,
+                    "success": partial_success,
+                    "partial": partial_success,
                     "questions": formatted_quiz,
                     "message": message,
                     "sources": sources,
                     "num_questions_requested": num_questions,
                     "num_questions_generated": final_count,
-                    "error": message,
+                    "error": None if partial_success else message,
                     "remaining_slots": [slot["slot_id"] for slot in remaining_slots],
                 }
 
             return {
                 "success": True,
+                "partial": False,
                 "questions": formatted_quiz,
-                "message": blueprint_skip_reason or "",
+                "message": "",
                 "sources": sources,
                 "num_questions_requested": num_questions,
                 "num_questions_generated": final_count,
@@ -2467,6 +2515,7 @@ Return ONLY valid JSON, no additional text.""")
             logger.error("Error generating quiz: %s", exc)
             return {
                 "success": False,
+                "partial": False,
                 "questions": [],
                 "message": f"Loi khi tao quiz: {str(exc)}",
                 "sources": sources,
@@ -2519,6 +2568,7 @@ Return ONLY valid JSON, no additional text.""")
             logger.warning("No documents retrieved for topic")
             return {
                 "success": False,
+                "partial": False,
                 "questions": [],
                 "message": f"Không tìm thấy nội dung về '{topic}' trong tài liệu",
                 "sources": []
@@ -2529,6 +2579,7 @@ Return ONLY valid JSON, no additional text.""")
         if not raw_documents:
             return {
                 "success": False,
+                "partial": False,
                 "questions": [],
                 "message": "Context rỗng, không thể tạo quiz",
                 "sources": []
@@ -2577,6 +2628,7 @@ Return ONLY valid JSON, no additional text.""")
         if not topics:
             return {
                 "success": False,
+                "partial": False,
                 "questions": [],
                 "message": "Cần có ít nhất một chủ đề",
                 "sources": []
@@ -2615,6 +2667,7 @@ Return ONLY valid JSON, no additional text.""")
             logger.warning("No documents retrieved for any topic")
             return {
                 "success": False,
+                "partial": False,
                 "questions": [],
                 "message": f"Không tìm thấy nội dung về các chủ đề: {', '.join(topics)}",
                 "sources": []
@@ -2626,6 +2679,7 @@ Return ONLY valid JSON, no additional text.""")
         if not unique_documents:
             return {
                 "success": False,
+                "partial": False,
                 "questions": [],
                 "message": "Context rỗng, không thể tạo quiz",
                 "sources": []
