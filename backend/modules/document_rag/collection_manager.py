@@ -283,6 +283,15 @@ class CollectionRegistry:
                 if key in data:
                     del data[key]
                     removed = True
+                elif user_id is not None:
+                    # Legacy pre-user-isolation entries were stored under the
+                    # plain file_hash key. If the current lookup resolved via
+                    # that fallback, remove the legacy key as well so delete
+                    # operations truly clear the registry entry.
+                    legacy = data.get(file_hash)
+                    if legacy and legacy.get("user_id") is None:
+                        del data[file_hash]
+                        removed = True
                 self._refresh_from_data(data)
             return removed
     

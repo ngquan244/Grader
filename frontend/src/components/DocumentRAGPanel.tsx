@@ -138,6 +138,8 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
   const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
   const [topicsCache, setTopicsCache] = useState<Record<string, TopicSuggestion[]>>({});
   const [topicsByDocument, setTopicsByDocument] = useState<Record<string, TopicSuggestion[]>>({});
+  const [topicLoadingState, setTopicLoadingState] = useState<Record<string, boolean>>({});
+  const [topicErrorState, setTopicErrorState] = useState<Record<string, string | null>>({});
   const [selectedTopics, setSelectedTopics] = useState<{topic: string, documentFilename: string}[]>([]);
   
   // Topic selector modal states
@@ -196,6 +198,7 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
   const [llmProviderInfo, setLlmProviderInfo] = useState<LLMProviderInfo | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const getTopicStateKey = (source: TopicSource, filename: string) => `${source}:${filename}`;
 
   // Load initial data
   useEffect(() => {
@@ -244,6 +247,13 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
       loadCanvasIndexedDocuments();
       // Clear canvas topics cache to force reload
       setCanvasTopicsCache({});
+      setTopicErrorState(prev => {
+        const next = { ...prev };
+        Object.keys(next).forEach((key) => {
+          if (key.startsWith('canvas:')) delete next[key];
+        });
+        return next;
+      });
     };
 
     window.addEventListener('canvas-topics-updated', handleCanvasTopicsUpdated);
@@ -386,6 +396,7 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
   // Modal - Toggle document selection
   const toggleDocumentInModal = async (filename: string) => {
     const isCurrentlySelected = tempSelectedDocuments.includes(filename);
+    const stateKey = getTopicStateKey(topicSource, filename);
     
     if (isCurrentlySelected) {
       // Remove document and its selected topics
@@ -404,14 +415,17 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
       const cache = topicSource === 'canvas' ? canvasTopicsCache : topicsCache;
       
       if (!cache[filename]) {
+        setTopicLoadingState(prev => ({ ...prev, [stateKey]: true }));
+        setTopicErrorState(prev => ({ ...prev, [stateKey]: null }));
         try {
           // Use appropriate API based on source
           const response = topicSource === 'canvas' 
             ? await getCanvasDocumentTopics(filename)
             : await getDocumentTopics(filename);
           
-          if (response.success && response.topics) {
-            const topics: TopicSuggestion[] = response.topics.map((name, idx) => ({
+          if (response.success) {
+            const topicNames = response.topics || [];
+            const topics: TopicSuggestion[] = topicNames.map((name, idx) => ({
               name,
               relevance_score: 1 - (idx * 0.05),
               description: ''
@@ -424,11 +438,20 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
               setTopicsCache(prev => ({ ...prev, [filename]: topics }));
             }
             setTempTopicsByDocument(prev => ({ ...prev, [filename]: topics }));
+            if (topics.length === 0) {
+              setTopicErrorState(prev => ({ ...prev, [stateKey]: 'Tai lieu nay chua co chu de nao.' }));
+            }
+          } else {
+            setTopicErrorState(prev => ({ ...prev, [stateKey]: 'Khong the tai chu de cho tai lieu nay.' }));
           }
         } catch (error) {
           console.error('Error loading topics for document:', error);
+          setTopicErrorState(prev => ({ ...prev, [stateKey]: 'Khong the tai chu de cho tai lieu nay.' }));
+        } finally {
+          setTopicLoadingState(prev => ({ ...prev, [stateKey]: false }));
         }
       } else {
+        setTopicErrorState(prev => ({ ...prev, [stateKey]: cache[filename].length === 0 ? 'Tai lieu nay chua co chu de nao.' : null }));
         setTempTopicsByDocument(prev => ({ ...prev, [filename]: cache[filename] }));
       }
     }
@@ -573,6 +596,12 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
         
         setTempTopicsByDocument(prev => ({ ...prev, [editingDocumentFilename]: updatedTopics }));
         setTopicsByDocument(prev => ({ ...prev, [editingDocumentFilename]: updatedTopics }));
+        setTopicErrorState(prev => ({
+          ...prev,
+          [getTopicStateKey(topicSource, editingDocumentFilename)]: topicsToSave.length === 0
+            ? 'Tai lieu nay chua co chu de nao.'
+            : null,
+        }));
         
         closeEditTopicsModal();
       } else {
@@ -1521,6 +1550,9 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
                     const isDocSelected = tempSelectedDocuments.includes(doc.filename);
                     const docTopics = tempTopicsByDocument[doc.filename] || [];
                     const selectedCount = tempSelectedTopics.filter(t => t.documentFilename === doc.filename).length;
+                    const topicStateKey = getTopicStateKey('upload', doc.filename);
+                    const isLoadingTopics = !!topicLoadingState[topicStateKey];
+                    const topicError = topicErrorState[topicStateKey];
                     
                     return (
                       <div 
@@ -1603,10 +1635,15 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
                                   })}
                                 </div>
                               </>
-                            ) : (
+                            ) : isLoadingTopics ? (
                               <div className="modal-loading-topics">
                                 <Loader2 size={16} className="spin" />
                                 <span>Đang tải chủ đề...</span>
+                              </div>
+                            ) : (
+                              <div className="modal-loading-topics">
+                                <AlertCircle size={16} />
+                                <span>{topicError || 'Tai lieu nay chua co chu de.'}</span>
                               </div>
                             )}
                           </div>
@@ -1675,6 +1712,9 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
                                 const isDocSelected = tempSelectedDocuments.includes(doc.filename);
                                 const docTopics = tempTopicsByDocument[doc.filename] || [];
                                 const selectedCount = tempSelectedTopics.filter(t => t.documentFilename === doc.filename).length;
+                                const topicStateKey = getTopicStateKey('canvas', doc.filename);
+                                const isLoadingTopics = !!topicLoadingState[topicStateKey];
+                                const topicError = topicErrorState[topicStateKey];
 
                                 return (
                                   <div 
@@ -1757,10 +1797,15 @@ const DocumentRAGPanel: React.FC<DocumentRAGPanelProps> = ({ onDeployToCanvas })
                                               })}
                                             </div>
                                           </>
-                                        ) : (
+                                        ) : isLoadingTopics ? (
                                           <div className="modal-loading-topics">
                                             <Loader2 size={16} className="spin" />
                                             <span>Đang tải chủ đề...</span>
+                                          </div>
+                                        ) : (
+                                          <div className="modal-loading-topics">
+                                            <AlertCircle size={16} />
+                                            <span>{topicError || 'Tai lieu nay chua co chu de.'}</span>
                                           </div>
                                         )}
                                       </div>
