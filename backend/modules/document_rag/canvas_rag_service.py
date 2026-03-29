@@ -462,6 +462,9 @@ class CanvasRAGService:
             file_hash = file_meta["file_hash"]
             filename = file_meta["filename"]
 
+            # Pick up delete/reindex changes made by other processes before duplicate checks.
+            self._collection_manager.ensure_fresh_state()
+
             already_indexed = False
             collection_name = None
             topics_extracted: List[Dict[str, str]] = []
@@ -487,13 +490,36 @@ class CanvasRAGService:
                     db_session.rollback()
 
             if not already_indexed:
-                already_indexed = self._collection_manager.is_indexed(file_hash, user_id=user_id)
-                if already_indexed:
-                    collection_name = self._collection_manager.get_collection_name(
-                        file_hash,
-                        course_id,
-                        user_id=user_id,
+                registry_meta = self._collection_manager.registry.get(file_hash, user_id=user_id)
+
+                # Self-heal stale legacy entries that no longer have a user-scoped
+                # indexed-registry row or DB record. These can be left behind by
+                # older delete flows and would otherwise block re-indexing.
+                if (
+                    registry_meta is not None
+                    and user_id is not None
+                    and registry_meta.user_id is None
+                    and file_hash not in self._load_indexed_registry(user_id)
+                ):
+                    logger.warning(
+                        "Detected stale legacy Canvas registry entry for %s; removing it before re-index",
+                        filename,
                     )
+                    try:
+                        self._collection_manager.delete_collection(file_hash, user_id=user_id)
+                    except Exception as e:
+                        logger.warning(f"Could not delete stale legacy Canvas registry entry: {e}")
+                        try:
+                            self._collection_manager.registry.unregister(file_hash, user_id=user_id)
+                        except Exception:
+                            pass
+                    self._topic_storage.remove_document(file_hash, user_id=user_id)
+                    self._topic_storage.remove_document(file_hash, user_id=None)
+                    registry_meta = self._collection_manager.registry.get(file_hash, user_id=user_id)
+
+                if registry_meta is not None and registry_meta.is_indexed:
+                    already_indexed = True
+                    collection_name = registry_meta.collection_name
 
             if already_indexed:
                 logger.info(f"Canvas document already indexed in per-file collection: {file_path}")
@@ -1313,10 +1339,13 @@ Danh sách {num_topics} chủ đề chính (mỗi dòng một chủ đề):"""
             # Source 2: Find file hash in collection_manager registry
             if not hash_to_remove:
                 try:
-                    indexed_files = self._collection_manager.get_indexed_files(user_id=user_id)
-                    for file_info in indexed_files:
-                        if file_info.get("filename") == filename:
-                            hash_to_remove = file_info.get("file_hash")
+                    registry_matches = self._collection_manager.registry.get_by_filenames(
+                        [filename],
+                        user_id=user_id,
+                    )
+                    for meta in registry_matches:
+                        if meta.filename == filename:
+                            hash_to_remove = meta.file_hash
                             break
                 except Exception as e:
                     logger.warning(f"Could not search collection_manager: {e}")

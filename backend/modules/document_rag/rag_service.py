@@ -118,6 +118,18 @@ class RAGService:
                 return
             self._do_initialize()
 
+    @staticmethod
+    def _is_upload_collection_entry(item: Any) -> bool:
+        """Return True only for regular uploaded-document entries."""
+        if isinstance(item, dict):
+            course_id = item.get("course_id")
+            collection_name = item.get("collection_name", "")
+        else:
+            course_id = getattr(item, "course_id", None)
+            collection_name = getattr(item, "collection_name", "")
+
+        return course_id is None and not str(collection_name).startswith("canvas_")
+
     def _do_initialize(self):
         """Actual initialization — must be called under _init_lock."""
         logger.info("Initializing RAG components with per-file collection manager...")
@@ -208,6 +220,9 @@ class RAGService:
             file_meta = get_file_metadata(file_path)
             file_hash = file_meta["file_hash"]
             filename = file_meta["filename"]
+
+            # Pick up delete/reindex changes made by other processes before duplicate checks.
+            self._collection_manager.ensure_fresh_state()
             
             # Check for duplicates — check DB first, then legacy
             already_indexed = False
@@ -400,7 +415,10 @@ class RAGService:
             if db_session and user_id:
                 try:
                     rows = SyncRAGCollectionRepository.get_by_filenames(
-                        db_session, selected_documents, uuid.UUID(user_id),
+                        db_session,
+                        selected_documents,
+                        uuid.UUID(user_id),
+                        source=RAGSourceType.UPLOAD,
                     )
                     target_hashes = [r.file_hash for r in rows]
                 except Exception as e:
@@ -409,6 +427,8 @@ class RAGService:
             # Also check legacy to cover pre-migration documents
             if not target_hashes:
                 for meta in self._collection_manager.registry.get_all(user_id=user_id):
+                    if not self._is_upload_collection_entry(meta):
+                        continue
                     if meta.filename in selected_documents:
                         target_hashes.append(meta.file_hash)
         
@@ -417,14 +437,20 @@ class RAGService:
             if db_session and user_id:
                 try:
                     all_rows = SyncRAGCollectionRepository.get_all(
-                        db_session, uuid.UUID(user_id),
+                        db_session,
+                        uuid.UUID(user_id),
+                        source=RAGSourceType.UPLOAD,
                     )
                     target_hashes = [r.file_hash for r in all_rows]
                 except Exception as e:
                     logger.warning(f"DB get_all failed: {e}")
                     db_session.rollback()
             # Merge with legacy hashes
-            legacy_hashes = {meta.file_hash for meta in self._collection_manager.registry.get_all(user_id=user_id)}
+            legacy_hashes = {
+                meta.file_hash
+                for meta in self._collection_manager.registry.get_all(user_id=user_id)
+                if self._is_upload_collection_entry(meta)
+            }
             existing = set(target_hashes)
             for h in legacy_hashes:
                 if h not in existing:
@@ -486,7 +512,9 @@ class RAGService:
         if db_session and user_id:
             try:
                 rows = SyncRAGCollectionRepository.get_all(
-                    db_session, uuid.UUID(user_id),
+                    db_session,
+                    uuid.UUID(user_id),
+                    source=RAGSourceType.UPLOAD,
                 )
                 db_indexed = [
                     {
@@ -504,7 +532,11 @@ class RAGService:
 
         # Always merge with legacy to show pre-migration files
         seen_hashes = {f["file_hash"] for f in db_indexed}
-        legacy_files = self._collection_manager.get_indexed_files(user_id=user_id)
+        legacy_files = [
+            file_info
+            for file_info in self._collection_manager.get_indexed_files(user_id=user_id)
+            if self._is_upload_collection_entry(file_info)
+        ]
         for f in legacy_files:
             if f.get("file_hash") not in seen_hashes:
                 db_indexed.append(f)
@@ -543,12 +575,24 @@ class RAGService:
         
         try:
             # Reset per-file collections (ChromaDB)
-            success = self._collection_manager.reset_all(user_id=user_id)
+            if user_id:
+                success = True
+                upload_entries = [
+                    meta
+                    for meta in self._collection_manager.registry.get_all(user_id=user_id)
+                    if self._is_upload_collection_entry(meta)
+                ]
+                for meta in upload_entries:
+                    success = self._collection_manager.delete_collection(meta.file_hash, user_id=user_id) and success
+            else:
+                success = self._collection_manager.reset_all(user_id=user_id)
             
             # Clear DB records if session available
             if db_session and user_id:
                 SyncRAGCollectionRepository.clear(
-                    db_session, uuid.UUID(user_id),
+                    db_session,
+                    uuid.UUID(user_id),
+                    source=RAGSourceType.UPLOAD,
                 )
                 logger.debug(f"Cleared DB collection records (user={user_id})")
             
@@ -753,7 +797,10 @@ class RAGService:
                 if db_session and user_id:
                     try:
                         rows = SyncRAGCollectionRepository.get_by_filenames(
-                            db_session, selected_documents, uuid.UUID(user_id),
+                            db_session,
+                            selected_documents,
+                            uuid.UUID(user_id),
+                            source=RAGSourceType.UPLOAD,
                         )
                         target_hashes = [r.file_hash for r in rows]
                         quiz_logger.info(f"DB get_by_filenames: {len(rows)} rows: {[(r.filename, r.file_hash[:8]) for r in rows]}")
@@ -763,7 +810,11 @@ class RAGService:
                         db_session.rollback()
                 # Fallback to in-memory registry
                 if not target_hashes:
-                    all_registry = self._collection_manager.registry.get_all(user_id=user_id)
+                    all_registry = [
+                        meta
+                        for meta in self._collection_manager.registry.get_all(user_id=user_id)
+                        if self._is_upload_collection_entry(meta)
+                    ]
                     quiz_logger.info(f"DB returned 0 rows, falling back to registry ({len(all_registry)} entries): {[(m.filename, m.file_hash[:8]) for m in all_registry]}")
                     for meta in all_registry:
                         if meta.filename in selected_documents:
@@ -941,7 +992,10 @@ class RAGService:
             if db_session and user_id:
                 try:
                     rows = SyncRAGCollectionRepository.get_by_filenames(
-                        db_session, [filename], uuid.UUID(user_id),
+                        db_session,
+                        [filename],
+                        uuid.UUID(user_id),
+                        source=RAGSourceType.UPLOAD,
                     )
                     if rows:
                         col_row = rows[0]
@@ -951,7 +1005,11 @@ class RAGService:
                     db_session.rollback()
             # Fallback to legacy if DB returned nothing
             if not file_hash:
-                indexed_files = self._collection_manager.get_indexed_files(user_id=user_id)
+                indexed_files = [
+                    file_info
+                    for file_info in self._collection_manager.get_indexed_files(user_id=user_id)
+                    if self._is_upload_collection_entry(file_info)
+                ]
                 for file_info in indexed_files:
                     if file_info.get("filename") == filename:
                         file_hash = file_info.get("file_hash")
@@ -1049,7 +1107,9 @@ class RAGService:
             # DB path — single authoritative query
             try:
                 rows = SyncRAGCollectionRepository.get_all_documents_with_topics(
-                    db_session, uuid.UUID(user_id),
+                    db_session,
+                    uuid.UUID(user_id),
+                    source=RAGSourceType.UPLOAD,
                 )
                 db_documents = [
                     {
@@ -1075,7 +1135,11 @@ class RAGService:
             if d["filename"] not in docs_dict:
                 docs_dict[d["filename"]] = d
         
-        indexed_files = self._collection_manager.get_indexed_files(user_id=user_id)
+        indexed_files = [
+            file_info
+            for file_info in self._collection_manager.get_indexed_files(user_id=user_id)
+            if self._is_upload_collection_entry(file_info)
+        ]
         for file_info in indexed_files:
             filename = file_info.get("filename", "unknown")
             if filename not in docs_dict:
